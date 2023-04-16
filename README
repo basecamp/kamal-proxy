@@ -1,0 +1,21 @@
+# mproxy - A minimal HTTP proxy for zero-downtime deployments
+
+## Introduction
+
+`mproxy` is a simple HTTP proxy designed to make it easy to coordinate
+zero-downtime deployments.
+
+By running your service behind an `mproxy` instance, you can add and remove
+instances of your service without dropping any active connections. The process
+for deploying a new service instance is essentially:
+
+- Start a new service instance (e.g. a container)
+- `mproxy add {new host}` (this blocks until the new instance is ready to accept
+  traffic)
+- `mproxy remove {old host}` (this blocks until the old instance has
+  been drained of active traffic) - Stop the old service instance
+
+Because of the blocking of the commands, the old instance won't be removed from
+the pool until the new one is able to serve traffic. The draining means that the
+old instance has a chance to complete all its current requests before it's
+stopped.
