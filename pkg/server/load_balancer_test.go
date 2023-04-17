@@ -7,12 +7,18 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
+var typicalConfig = Config{
+	AddTimeout:   time.Second * 5,
+	DrainTimeout: time.Second * 5,
+}
+
 func TestLoadBalancer_Empty(t *testing.T) {
-	lb := NewLoadBalancer()
+	lb := NewLoadBalancer(typicalConfig)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -22,7 +28,7 @@ func TestLoadBalancer_Empty(t *testing.T) {
 }
 
 func TestLoadBalancer_SingleService(t *testing.T) {
-	lb := NewLoadBalancer()
+	lb := NewLoadBalancer(typicalConfig)
 	_, backendURL := testBackend(t, "first")
 
 	require.NoError(t, lb.Add([]*url.URL{backendURL}))
@@ -36,7 +42,7 @@ func TestLoadBalancer_SingleService(t *testing.T) {
 }
 
 func TestLoadBalancer_RoundRobinBetweenMultipleServices(t *testing.T) {
-	lb := NewLoadBalancer()
+	lb := NewLoadBalancer(typicalConfig)
 
 	for i := 0; i < 5; i++ {
 		_, backendURL := testBackend(t, strconv.Itoa(i))
@@ -59,7 +65,7 @@ func TestLoadBalancer_RoundRobinBetweenMultipleServices(t *testing.T) {
 }
 
 func TestLoadBalancer_AddAndRemoveSameService(t *testing.T) {
-	lb := NewLoadBalancer()
+	lb := NewLoadBalancer(typicalConfig)
 	_, backendURL := testBackend(t, "first")
 
 	for i := 0; i < 5; i++ {

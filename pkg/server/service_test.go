@@ -30,7 +30,7 @@ func TestService_AddedServiceBecomesHealthy(t *testing.T) {
 	s := NewService(backendURL)
 	s.BeginHealthChecks(c)
 
-	require.True(t, s.WaitUntilHealthy())
+	require.True(t, s.WaitUntilHealthy(time.Second))
 	require.Equal(t, ServiceStateHealthy, s.state)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -46,7 +46,7 @@ func TestService_DrainWhenEmpty(t *testing.T) {
 	_, backendURL := testBackend(t, "ok")
 
 	s := NewService(backendURL)
-	s.Drain()
+	s.Drain(time.Second)
 }
 
 func TestService_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
@@ -71,7 +71,7 @@ func TestService_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	}
 
 	started.Wait()
-	s.Drain()
+	s.Drain(time.Second)
 
 	require.Equal(t, n, served)
 }
@@ -95,7 +95,6 @@ func TestService_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	})
 
 	s := NewService(backendURL)
-	s.drainTimeout = time.Millisecond * 20
 
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -104,7 +103,7 @@ func TestService_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	}
 
 	started.Wait()
-	s.Drain()
+	s.Drain(time.Millisecond * 10)
 
 	require.Equal(t, 0, served)
 }

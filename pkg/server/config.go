@@ -1,6 +1,15 @@
 package server
 
+import "time"
+
+const (
+	DefaultDrainTimeout = time.Second * 5
+	DefaultAddTimeout   = time.Second * 5
+)
+
 type Config struct {
-	ListenAddress string
-	SocketPath    string
+	ListenPort   int
+	SocketPath   string
+	AddTimeout   time.Duration
+	DrainTimeout time.Duration
 }

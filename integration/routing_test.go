@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
@@ -143,7 +144,9 @@ func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server 
 	})
 
 	proxyServer := server.NewServer(server.Config{
-		SocketPath: path.Join(dir, "mproxy.sock"),
+		SocketPath:   path.Join(dir, "mproxy.sock"),
+		AddTimeout:   time.Second,
+		DrainTimeout: time.Second,
 	})
 	err = proxyServer.Start()
 	require.NoError(t, err)

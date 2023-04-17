@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -24,7 +25,7 @@ type Server struct {
 func NewServer(c Config) *Server {
 	server := &Server{
 		config:       c,
-		loadBalancer: NewLoadBalancer(),
+		loadBalancer: NewLoadBalancer(c),
 	}
 
 	server.commandHandler = NewCommandHandler(server.loadBalancer)
@@ -47,7 +48,7 @@ func (s *Server) Start() error {
 	log.Info().Msg("Server starting")
 
 	s.httpServer = &http.Server{
-		Addr:    s.config.ListenAddress,
+		Addr:    fmt.Sprintf(":%d", s.config.ListenPort),
 		Handler: s.loadBalancer,
 
 		ReadTimeout:  5 * time.Second,

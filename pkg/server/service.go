@@ -24,11 +24,6 @@ type ServiceStateChangeConsumer interface {
 	StateChanged(service *Service)
 }
 
-const (
-	DefaultDrainTimeout = time.Second * 5
-	DefaultAddTimeout   = time.Second * 5
-)
-
 func (s ServiceState) String() string {
 	switch s {
 	case ServiceStateHealthy:
@@ -46,10 +41,8 @@ func (s ServiceState) String() string {
 type inflightMap map[*http.Request]context.CancelFunc
 
 type Service struct {
-	hostURL      *url.URL
-	proxy        *httputil.ReverseProxy
-	drainTimeout time.Duration
-	addTimeout   time.Duration
+	hostURL *url.URL
+	proxy   *httputil.ReverseProxy
 
 	state        ServiceState
 	inflight     inflightMap
@@ -62,9 +55,7 @@ type Service struct {
 
 func NewService(hostURL *url.URL) *Service {
 	service := &Service{
-		hostURL:      hostURL,
-		drainTimeout: DefaultDrainTimeout,
-		addTimeout:   DefaultAddTimeout,
+		hostURL: hostURL,
 
 		state:    ServiceStateAdding,
 		inflight: inflightMap{},
@@ -96,13 +87,13 @@ func (s *Service) Rewrite(req *httputil.ProxyRequest) {
 	req.SetURL(s.hostURL)
 }
 
-func (s *Service) Drain() {
+func (s *Service) Drain(timeout time.Duration) {
 	s.updateState(ServiceStateDraining)
 	if s.healthcheck != nil {
 		s.healthcheck.Close()
 	}
 
-	deadline := time.After(s.drainTimeout)
+	deadline := time.After(timeout)
 	toCancel := s.pendingRequestsToCancel()
 
 WAIT_FOR_REQUESTS_TO_COMPLETE:
@@ -125,9 +116,9 @@ func (s *Service) BeginHealthChecks(consumer ServiceStateChangeConsumer) {
 	s.healthcheck = NewHealthCheck(s, s.hostURL.JoinPath("up"), time.Second, time.Second*10)
 }
 
-func (s *Service) WaitUntilHealthy() bool {
+func (s *Service) WaitUntilHealthy(timeout time.Duration) bool {
 	select {
-	case <-time.After(s.addTimeout):
+	case <-time.After(timeout):
 		return false
 	case <-s.becameHealthy:
 		return true

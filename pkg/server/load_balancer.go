@@ -12,6 +12,7 @@ import (
 type serviceMap map[url.URL]*Service
 
 type LoadBalancer struct {
+	config         Config
 	services       serviceMap
 	activeServices []*Service
 	serviceLock    sync.RWMutex
@@ -24,8 +25,9 @@ var (
 	ErrorServiceFailedToBecomeHealthy = errors.New("Service failed to become healthy")
 )
 
-func NewLoadBalancer() *LoadBalancer {
+func NewLoadBalancer(config Config) *LoadBalancer {
 	return &LoadBalancer{
+		config:   config,
 		services: make(serviceMap),
 	}
 }
@@ -64,7 +66,7 @@ func (lb *LoadBalancer) Add(hostURLs []*url.URL) error {
 	}
 
 	for _, service := range services {
-		healthy := service.WaitUntilHealthy()
+		healthy := service.WaitUntilHealthy(lb.config.AddTimeout)
 		if !healthy {
 			log.Info().Str("host", service.Host()).Msg("Service failed to become healthy")
 			return ErrorServiceFailedToBecomeHealthy
@@ -86,7 +88,7 @@ func (lb *LoadBalancer) Remove(hostURLs []*url.URL) error {
 	for _, service := range services {
 		// TODO: drain in parallel -- maybe split "start drain" and "wait for drain"?
 		log.Info().Str("host", service.Host()).Msg("Draining service")
-		service.Drain()
+		service.Drain(lb.config.DrainTimeout)
 		log.Info().Str("host", service.Host()).Msg("Removed service")
 	}
 
