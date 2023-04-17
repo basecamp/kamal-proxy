@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -66,6 +67,18 @@ func Test502WhenUpstreamCrashes(t *testing.T) {
 	resp, err := http.Get("http://" + proxyServer.Addr())
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadGateway, resp.StatusCode)
+}
+
+func TestMaxRequestBodySizeIsEnforced(t *testing.T) {
+	proxyServer := testProxyServer(t, func(w http.ResponseWriter, r *http.Request) {})
+
+	resp, err := http.Post("http://"+proxyServer.Addr(), "text/plain", bytes.NewReader(make([]byte, 100)))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Post("http://"+proxyServer.Addr(), "text/plain", bytes.NewReader(make([]byte, 1e6)))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestMultipleUpstreamsShareTraffic(t *testing.T) {
@@ -144,9 +157,10 @@ func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server 
 	})
 
 	proxyServer := server.NewServer(server.Config{
-		SocketPath:   path.Join(dir, "mproxy.sock"),
-		AddTimeout:   time.Second,
-		DrainTimeout: time.Second,
+		SocketPath:         path.Join(dir, "mproxy.sock"),
+		AddTimeout:         time.Second,
+		DrainTimeout:       time.Second,
+		MaxRequestBodySize: 1024,
 	})
 	err = proxyServer.Start()
 	require.NoError(t, err)

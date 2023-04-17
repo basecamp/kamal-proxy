@@ -49,7 +49,7 @@ func (s *Server) Start() error {
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.config.ListenPort),
-		Handler: s.loadBalancer,
+		Handler: s.addMiddleware(),
 
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
@@ -89,3 +89,7 @@ func (s *Server) Stop() error {
 }
 
 // Private
+
+func (s *Server) addMiddleware() http.Handler {
+	return MaxRequestBodyMiddleare(s.config.MaxRequestBodySize, s.loadBalancer)
+}

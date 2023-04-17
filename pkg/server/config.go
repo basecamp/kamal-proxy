@@ -8,8 +8,9 @@ const (
 )
 
 type Config struct {
-	ListenPort   int
-	SocketPath   string
-	AddTimeout   time.Duration
-	DrainTimeout time.Duration
+	ListenPort         int
+	SocketPath         string
+	AddTimeout         time.Duration
+	DrainTimeout       time.Duration
+	MaxRequestBodySize int
 }

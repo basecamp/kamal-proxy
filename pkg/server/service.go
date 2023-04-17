@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -62,7 +63,8 @@ func NewService(hostURL *url.URL) *Service {
 	}
 
 	service.proxy = &httputil.ReverseProxy{
-		Rewrite: service.Rewrite,
+		Rewrite:      service.Rewrite,
+		ErrorHandler: service.handleProxyError,
 	}
 
 	return service
@@ -155,6 +157,16 @@ func (s *Service) HealthCheckCompleted(success bool) {
 }
 
 // Private
+
+func (s *Service) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Err(err).Str("host", s.Host()).Str("path", r.URL.Path).Msg("error while proxying")
+
+	if errors.Is(err, ErrRequestBodyTooLarge) {
+		w.WriteHeader(http.StatusBadRequest)
+	} else {
+		w.WriteHeader(http.StatusBadGateway)
+	}
+}
 
 func (s *Service) updateState(state ServiceState) {
 	s.inflightLock.Lock()
