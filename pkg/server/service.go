@@ -159,7 +159,7 @@ func (s *Service) HealthCheckCompleted(success bool) {
 // Private
 
 func (s *Service) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Err(err).Str("host", s.Host()).Str("path", r.URL.Path).Msg("error while proxying")
+	log.Err(err).Str("host", s.Host()).Str("path", r.URL.Path).Msg("Error while proxying")
 
 	if errors.Is(err, ErrRequestBodyTooLarge) {
 		w.WriteHeader(http.StatusBadRequest)

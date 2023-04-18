@@ -85,3 +85,38 @@ func TestLoadBalancer_AddAndRemoveSameService(t *testing.T) {
 
 	require.Empty(t, lb.GetServices())
 }
+
+func TestLoadBalancer_RestoreStateOnRestart(t *testing.T) {
+	lb := NewLoadBalancer(typicalConfig)
+	_, backendURL := testBackend(t, "first")
+
+	lb.Add([]*url.URL{backendURL})
+	services := lb.GetServices()
+
+	require.Equal(t, 1, len(services))
+	require.Equal(t, ServiceStateHealthy, services[0].state)
+
+	lb2 := NewLoadBalancer(typicalConfig)
+	require.NoError(t, lb2.RestoreFromStateFile())
+
+	services2 := lb2.GetServices()
+	require.Equal(t, 1, len(services2))
+	services2[0].WaitUntilHealthy(time.Second)
+
+	require.Equal(t, ServiceStateHealthy, services2[0].state)
+	require.Equal(t, services[0].Host(), services2[0].Host())
+}
+
+func TestLoadBalancer_RestoreEmptyStateOnRestart(t *testing.T) {
+	lb := NewLoadBalancer(typicalConfig)
+	_, backendURL := testBackend(t, "first")
+
+	lb.Add([]*url.URL{backendURL})
+	lb.Remove([]*url.URL{backendURL})
+
+	require.Empty(t, lb.GetServices())
+
+	lb2 := NewLoadBalancer(typicalConfig)
+	require.NoError(t, lb2.RestoreFromStateFile())
+	require.Empty(t, lb2.GetServices())
+}

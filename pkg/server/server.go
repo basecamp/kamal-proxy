@@ -79,17 +79,19 @@ func (s *Server) Start() error {
 
 func (s *Server) Stop() error {
 	log.Info().Msg("Server stopping")
+	defer log.Info().Msg("Server stopped")
 
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	err := s.httpServer.Shutdown(ctx)
+	if err != nil {
+		return err
+	}
 	s.httpServer = nil
 	s.httpListener = nil
 
-	s.commandHandler.Stop()
-
-	return err
+	return s.commandHandler.Stop()
 }
 
 // Private

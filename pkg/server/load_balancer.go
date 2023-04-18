@@ -106,20 +106,28 @@ func (lb *LoadBalancer) RestoreFromStateFile() error {
 			log.Info().Msg("No state file present; starting empty")
 			return nil
 		}
-		log.Err(err).Msg("failed to open state file")
+		log.Err(err).Msg("Failed to open state file")
 		return err
 	}
 	defer f.Close()
 
 	err = json.NewDecoder(f).Decode(&sf)
 	if err != nil {
-		log.Err(err).Msg("failed to read file")
+		log.Err(err).Msg("Failed to read file")
 		return err
 	}
 
-	services, err := lb.addServicesUnlessExists(sf.HostURLs)
+	hostURLs := []*url.URL{}
+	for _, hostname := range sf.Hosts {
+		hostURL, err := url.Parse("http://" + hostname)
+		if err == nil {
+			hostURLs = append(hostURLs, hostURL)
+		}
+	}
+
+	services, err := lb.addServicesUnlessExists(hostURLs)
 	if err != nil {
-		log.Err(err).Msg("failed to restore services from state file")
+		log.Err(err).Msg("Failed to restore services from state file")
 		return err
 	}
 
@@ -182,7 +190,7 @@ func (lb *LoadBalancer) addServicesUnlessExists(hostURLs []*url.URL) ([]*Service
 		}
 	}
 
-	if len(services) == 0 {
+	if len(services) == 0 && len(hostURLs) > 0 {
 		return nil, ErrorServiceAlreadyExists
 	}
 
@@ -207,7 +215,7 @@ func (lb *LoadBalancer) removeAndReturnServices(hostURLs []*url.URL) ([]*Service
 		}
 	}
 
-	if len(services) == 0 {
+	if len(services) == 0 && len(hostURLs) > 0 {
 		return nil, ErrorServiceNotFound
 	}
 
@@ -218,20 +226,20 @@ func (lb *LoadBalancer) removeAndReturnServices(hostURLs []*url.URL) ([]*Service
 }
 
 type stateFile struct {
-	HostURLs []*url.URL `json:"hosts"`
+	Hosts []string `json:"hosts"`
 }
 
 func (lb *LoadBalancer) writeStateFile() error {
 	sf := stateFile{
-		HostURLs: []*url.URL{},
+		Hosts: []string{},
 	}
 	for hostURL := range lb.services {
-		sf.HostURLs = append(sf.HostURLs, &hostURL)
+		sf.Hosts = append(sf.Hosts, hostURL.Host)
 	}
 
 	f, err := os.Create(lb.config.StatePath())
 	if err != nil {
-		log.Err(err).Msg("failed to create state file")
+		log.Err(err).Msg("Failed to create state file")
 		return err
 	}
 	defer f.Close()
