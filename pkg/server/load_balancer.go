@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -95,6 +97,41 @@ func (lb *LoadBalancer) Remove(hostURLs []*url.URL) error {
 	return nil
 }
 
+func (lb *LoadBalancer) RestoreFromStateFile() error {
+	var sf stateFile
+
+	f, err := os.Open(lb.config.StatePath())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			log.Info().Msg("No state file present; starting empty")
+			return nil
+		}
+		log.Err(err).Msg("failed to open state file")
+		return err
+	}
+	defer f.Close()
+
+	err = json.NewDecoder(f).Decode(&sf)
+	if err != nil {
+		log.Err(err).Msg("failed to read file")
+		return err
+	}
+
+	services, err := lb.addServicesUnlessExists(sf.HostURLs)
+	if err != nil {
+		log.Err(err).Msg("failed to restore services from state file")
+		return err
+	}
+
+	for _, service := range services {
+		service.BeginHealthChecks(lb)
+	}
+
+	log.Info().Msg("Restored previous state")
+
+	return nil
+}
+
 // ServiceStateChangeConsumer
 
 func (lb *LoadBalancer) StateChanged(service *Service) {
@@ -150,6 +187,8 @@ func (lb *LoadBalancer) addServicesUnlessExists(hostURLs []*url.URL) ([]*Service
 	}
 
 	lb.updateActive()
+	lb.writeStateFile()
+
 	return services, nil
 }
 
@@ -173,5 +212,29 @@ func (lb *LoadBalancer) removeAndReturnServices(hostURLs []*url.URL) ([]*Service
 	}
 
 	lb.updateActive()
+	lb.writeStateFile()
+
 	return services, nil
+}
+
+type stateFile struct {
+	HostURLs []*url.URL `json:"hosts"`
+}
+
+func (lb *LoadBalancer) writeStateFile() error {
+	sf := stateFile{
+		HostURLs: []*url.URL{},
+	}
+	for hostURL := range lb.services {
+		sf.HostURLs = append(sf.HostURLs, &hostURL)
+	}
+
+	f, err := os.Create(lb.config.StatePath())
+	if err != nil {
+		log.Err(err).Msg("failed to create state file")
+		return err
+	}
+	defer f.Close()
+
+	return json.NewEncoder(f).Encode(sf)
 }

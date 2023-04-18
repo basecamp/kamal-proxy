@@ -6,7 +6,11 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/kevinmcconnell/mproxy/pkg/server"
 )
+
+var serverConfig server.Config
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -14,10 +18,6 @@ var rootCmd = &cobra.Command{
 	Short:        "Minimal HTTP proxy for zero downtime deployments",
 	Long:         `TODO`,
 	SilenceUsage: true,
-}
-
-var globalOptions struct {
-	socketPath string
 }
 
 func Execute() {
@@ -28,10 +28,10 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&globalOptions.socketPath, "socket", defaultSocketFilename(), "Path to socket file")
+	rootCmd.PersistentFlags().StringVar(&serverConfig.ConfigDir, "config", defaultConfigLocation(), "Path to config location")
 }
 
-func defaultSocketFilename() string {
+func defaultConfigLocation() string {
 	home, err := os.UserConfigDir()
 	if err != nil {
 		home = os.TempDir()
@@ -43,5 +43,5 @@ func defaultSocketFilename() string {
 		folder = os.TempDir()
 	}
 
-	return path.Join(folder, "mproxy.sock")
+	return folder
 }

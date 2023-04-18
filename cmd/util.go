@@ -10,7 +10,7 @@ import (
 var hostRegex = regexp.MustCompile(`^(\w[-_.\w+]+)(:\d+)?$`)
 
 func withRPCClient(fn func(client *rpc.Client) error) error {
-	client, err := rpc.Dial("unix", globalOptions.socketPath)
+	client, err := rpc.Dial("unix", serverConfig.SocketPath())
 	if err != nil {
 		return err
 	}

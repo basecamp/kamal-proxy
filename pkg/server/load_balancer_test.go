@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"testing"
@@ -15,6 +16,7 @@ import (
 var typicalConfig = Config{
 	AddTimeout:   time.Second * 5,
 	DrainTimeout: time.Second * 5,
+	ConfigDir:    os.TempDir(),
 }
 
 func TestLoadBalancer_Empty(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -150,14 +149,14 @@ func TestWebsocketTraffic(t *testing.T) {
 // Helpers
 
 func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server {
-	dir, err := os.MkdirTemp("", "")
+	configDir, err := os.MkdirTemp("", "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		os.RemoveAll(dir)
+		os.RemoveAll(configDir)
 	})
 
 	proxyServer := server.NewServer(server.Config{
-		SocketPath:         path.Join(dir, "mproxy.sock"),
+		ConfigDir:          configDir,
 		AddTimeout:         time.Second,
 		DrainTimeout:       time.Second,
 		MaxRequestBodySize: 1024,
@@ -167,7 +166,6 @@ func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server 
 
 	t.Cleanup(func() {
 		proxyServer.Stop()
-		os.RemoveAll(dir)
 	})
 
 	for _, handler := range handlers {

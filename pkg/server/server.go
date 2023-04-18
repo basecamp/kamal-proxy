@@ -47,6 +47,11 @@ func (s *Server) Addr() string {
 func (s *Server) Start() error {
 	log.Info().Msg("Server starting")
 
+	err := s.loadBalancer.RestoreFromStateFile()
+	if err != nil {
+		return err
+	}
+
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.config.ListenPort),
 		Handler: s.addMiddleware(),
@@ -56,7 +61,6 @@ func (s *Server) Start() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	var err error
 	s.httpListener, err = net.Listen("tcp", s.httpServer.Addr)
 	if err != nil {
 		return err
@@ -64,7 +68,7 @@ func (s *Server) Start() error {
 
 	go s.httpServer.Serve(s.httpListener)
 
-	err = s.commandHandler.Start(s.config.SocketPath)
+	err = s.commandHandler.Start(s.config.SocketPath())
 	if err != nil {
 		return err
 	}

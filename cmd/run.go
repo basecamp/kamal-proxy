@@ -10,8 +10,6 @@ import (
 	"github.com/kevinmcconnell/mproxy/pkg/server"
 )
 
-var serverConfig server.Config
-
 // runCmd represents the run command
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -23,7 +21,6 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 
 	runCmd.Flags().IntVarP(&serverConfig.ListenPort, "port", "p", 80, "Port to serve HTTP traffic on")
-	runCmd.Flags().StringVarP(&serverConfig.SocketPath, "socket-path", "s", defaultSocketFilename(), "Location of command socket")
 	runCmd.Flags().DurationVar(&serverConfig.AddTimeout, "add-timeout", server.DefaultAddTimeout, "Max time to wait for new services to become healthy before returning an error")
 	runCmd.Flags().DurationVar(&serverConfig.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Time to wait for service to drain before killing connections")
 	runCmd.Flags().IntVar(&serverConfig.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (0 means unlimited)")
