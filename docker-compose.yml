@@ -1,0 +1,10 @@
+services:
+  mproxy:
+    build: ./
+    ports:
+      - 8000:80
+
+  web:
+    build: ./integration/upstream
+    deploy:
+      replicas: 4
