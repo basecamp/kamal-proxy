@@ -63,7 +63,7 @@ By using a tool like `ab` to consume the service while swapping containers, you
 can verify that no requests are dropped during the process, and that there are
 no latency spikes.
 
-You can add multiple active instances, in which case the proxy will round-robbin
+You can add multiple active instances, in which case the proxy will round-robin
 the traffic between them.
 
 You can also list the instances registered in the proxy, along with their status:
