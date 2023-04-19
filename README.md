@@ -49,15 +49,23 @@ container using `docker compose exec`:
 
 You should see some log output from the proxy with the progress:
 
-    mproxy-mproxy-1  | {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-18T21:28:47Z","message":"Service added"}
-    mproxy-mproxy-1  | {"level":"info","host":"mproxy-web-1:3000","from":"adding","to":"healthy","time":"2023-04-18T21:28:47Z","message":"Service health updated"}
-    mproxy-mproxy-1  | {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-18T21:28:47Z","message":"Service is now healthy"}
+    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-18T21:28:47Z","message":"Service added"}
+    {"level":"info","host":"mproxy-web-1:3000","from":"adding","to":"healthy","time":"2023-04-18T21:28:47Z","message":"Service health updated"}
+    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-18T21:28:47Z","message":"Service is now healthy"}
 
 You can now point a browser to http://localhost:8000/ to see the output from the web service.
 
 To switch traffic to a new web instance, deploy that instance:
 
     docker compose exec mproxy mproxy deploy mproxy-web-2:3000
+
+Which will add the new service instance, and drain the old one:
+
+    {"level":"info","host":"mproxy-web-2:3000","time":"2023-04-19T04:31:37Z","message":"Service added"}
+    {"level":"info","host":"mproxy-web-2:3000","from":"adding","to":"healthy","time":"2023-04-19T04:31:37Z","message":"Service health updated"}
+    {"level":"info","host":"mproxy-web-2:3000","time":"2023-04-19T04:31:37Z","message":"Service is now healthy"}
+    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-19T04:31:37Z","message":"Draining service"}
+    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-19T04:31:37Z","message":"Removed service"}
 
 By using a tool like `ab` to consume the service while swapping containers, you
 can verify that no requests are dropped during the process, and that there are
