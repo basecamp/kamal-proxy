@@ -160,6 +160,11 @@ func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server 
 		AddTimeout:         time.Second,
 		DrainTimeout:       time.Second,
 		MaxRequestBodySize: 1024,
+		HealthCheckConfig: server.HealthCheckConfig{
+			HealthCheckPath:     server.DefaultHealthCheckPath,
+			HealthCheckInterval: server.DefaultHealthCheckInterval,
+			HealthCheckTimeout:  server.DefaultHealthCheckTimeout,
+		},
 	})
 	err = proxyServer.Start()
 	require.NoError(t, err)

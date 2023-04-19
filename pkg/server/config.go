@@ -6,16 +6,29 @@ import (
 )
 
 const (
-	DefaultDrainTimeout = time.Second * 5
 	DefaultAddTimeout   = time.Second * 5
+	DefaultDrainTimeout = time.Second * 5
+
+	DefaultHealthCheckPath     = "/up"
+	DefaultHealthCheckInterval = time.Second
+	DefaultHealthCheckTimeout  = time.Second * 5
 )
 
+type HealthCheckConfig struct {
+	HealthCheckPath     string
+	HealthCheckInterval time.Duration
+	HealthCheckTimeout  time.Duration
+}
+
 type Config struct {
-	ListenPort         int
-	ConfigDir          string
+	ListenPort int
+	ConfigDir  string
+
 	AddTimeout         time.Duration
 	DrainTimeout       time.Duration
 	MaxRequestBodySize int
+
+	HealthCheckConfig
 }
 
 func (c Config) SocketPath() string {

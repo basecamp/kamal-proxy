@@ -13,10 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var defaultHealthCheckConfig = HealthCheckConfig{
+	HealthCheckPath:     DefaultHealthCheckPath,
+	HealthCheckInterval: DefaultHealthCheckInterval,
+	HealthCheckTimeout:  DefaultHealthCheckTimeout,
+}
+
 var typicalConfig = Config{
-	AddTimeout:   time.Second * 5,
-	DrainTimeout: time.Second * 5,
-	ConfigDir:    os.TempDir(),
+	AddTimeout:        time.Second * 5,
+	DrainTimeout:      time.Second * 5,
+	ConfigDir:         os.TempDir(),
+	HealthCheckConfig: defaultHealthCheckConfig,
 }
 
 func TestLoadBalancer_Empty(t *testing.T) {

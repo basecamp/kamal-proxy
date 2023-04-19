@@ -13,7 +13,7 @@ import (
 func TestService_Serve(t *testing.T) {
 	_, backendURL := testBackend(t, "ok")
 
-	s := NewService(backendURL)
+	s := NewService(backendURL, defaultHealthCheckConfig)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -27,7 +27,7 @@ func TestService_AddedServiceBecomesHealthy(t *testing.T) {
 	_, backendURL := testBackend(t, "ok")
 	c := &testServiceStateChangeConsumer{}
 
-	s := NewService(backendURL)
+	s := NewService(backendURL, defaultHealthCheckConfig)
 	s.BeginHealthChecks(c)
 
 	require.True(t, s.WaitUntilHealthy(time.Second))
@@ -45,7 +45,7 @@ func TestService_AddedServiceBecomesHealthy(t *testing.T) {
 func TestService_DrainWhenEmpty(t *testing.T) {
 	_, backendURL := testBackend(t, "ok")
 
-	s := NewService(backendURL)
+	s := NewService(backendURL, defaultHealthCheckConfig)
 	s.Drain(time.Second)
 }
 
@@ -62,7 +62,7 @@ func TestService_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 		served++
 	})
 
-	s := NewService(backendURL)
+	s := NewService(backendURL, defaultHealthCheckConfig)
 
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -94,7 +94,7 @@ func TestService_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 		served++
 	})
 
-	s := NewService(backendURL)
+	s := NewService(backendURL, defaultHealthCheckConfig)
 
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)

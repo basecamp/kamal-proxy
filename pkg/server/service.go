@@ -42,8 +42,9 @@ func (s ServiceState) String() string {
 type inflightMap map[*http.Request]context.CancelFunc
 
 type Service struct {
-	hostURL *url.URL
-	proxy   *httputil.ReverseProxy
+	hostURL           *url.URL
+	healthCheckConfig HealthCheckConfig
+	proxy             *httputil.ReverseProxy
 
 	state        ServiceState
 	inflight     inflightMap
@@ -54,9 +55,10 @@ type Service struct {
 	becameHealthy chan (bool)
 }
 
-func NewService(hostURL *url.URL) *Service {
+func NewService(hostURL *url.URL, healthCheckConfig HealthCheckConfig) *Service {
 	service := &Service{
-		hostURL: hostURL,
+		hostURL:           hostURL,
+		healthCheckConfig: healthCheckConfig,
 
 		state:    ServiceStateAdding,
 		inflight: inflightMap{},
@@ -115,7 +117,11 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 func (s *Service) BeginHealthChecks(consumer ServiceStateChangeConsumer) {
 	s.consumer = consumer
 	s.becameHealthy = make(chan bool)
-	s.healthcheck = NewHealthCheck(s, s.hostURL.JoinPath("up"), time.Second, time.Second*10)
+	s.healthcheck = NewHealthCheck(s,
+		s.hostURL.JoinPath(s.healthCheckConfig.HealthCheckPath),
+		s.healthCheckConfig.HealthCheckInterval,
+		s.healthCheckConfig.HealthCheckTimeout,
+	)
 }
 
 func (s *Service) WaitUntilHealthy(timeout time.Duration) bool {

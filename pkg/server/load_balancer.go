@@ -180,7 +180,7 @@ func (lb *LoadBalancer) addServicesUnlessExists(hostURLs []*url.URL) ([]*Service
 	services := []*Service{}
 	for _, hostURL := range hostURLs {
 		if lb.services[*hostURL] == nil {
-			service := NewService(hostURL)
+			service := NewService(hostURL, lb.config.HealthCheckConfig)
 			lb.services[*hostURL] = service
 			services = append(services, service)
 		} else {
