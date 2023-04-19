@@ -127,3 +127,37 @@ func TestLoadBalancer_RestoreEmptyStateOnRestart(t *testing.T) {
 	require.NoError(t, lb2.RestoreFromStateFile())
 	require.Empty(t, lb2.GetServices())
 }
+
+func TestLoadBalancer_DeployNewSetOfServices(t *testing.T) {
+	lb := NewLoadBalancer(typicalConfig)
+	_, backend1URL := testBackend(t, "first")
+	_, backend2URL := testBackend(t, "first")
+	_, backend3URL := testBackend(t, "first")
+
+	isDeployed := func(hostURL *url.URL) bool {
+		services := lb.GetServices()
+		for _, s := range services {
+			if s.Host() == hostURL.Host {
+				return true
+			}
+		}
+		return false
+	}
+
+	lb.Deploy(HostURLs{backend2URL, backend3URL})
+
+	require.Len(t, lb.GetServices(), 2)
+	require.True(t, isDeployed(backend2URL))
+	require.True(t, isDeployed(backend3URL))
+
+	lb.Deploy(HostURLs{backend1URL, backend3URL})
+
+	require.Len(t, lb.GetServices(), 2)
+	require.True(t, isDeployed(backend1URL))
+	require.True(t, isDeployed(backend3URL))
+
+	lb.Deploy(HostURLs{backend2URL})
+
+	require.Len(t, lb.GetServices(), 1)
+	require.True(t, isDeployed(backend2URL))
+}

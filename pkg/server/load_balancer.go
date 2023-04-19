@@ -11,6 +11,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type HostURLs []*url.URL
+
 type serviceMap map[url.URL]*Service
 
 type LoadBalancer struct {
@@ -55,7 +57,7 @@ func (lb *LoadBalancer) GetServices() []*Service {
 	return result
 }
 
-func (lb *LoadBalancer) Add(hostURLs []*url.URL, waitForHealthy bool) error {
+func (lb *LoadBalancer) Add(hostURLs HostURLs, waitForHealthy bool) error {
 	services, err := lb.addServicesUnlessExists(hostURLs)
 	if err != nil {
 		log.Err(err).Msg("Unable to add services")
@@ -82,7 +84,7 @@ func (lb *LoadBalancer) Add(hostURLs []*url.URL, waitForHealthy bool) error {
 	return nil
 }
 
-func (lb *LoadBalancer) Remove(hostURLs []*url.URL) error {
+func (lb *LoadBalancer) Remove(hostURLs HostURLs) error {
 	services, err := lb.removeAndReturnServices(hostURLs)
 	if err != nil {
 		log.Err(err).Msg("Unable to remove services")
@@ -94,6 +96,28 @@ func (lb *LoadBalancer) Remove(hostURLs []*url.URL) error {
 		log.Info().Str("host", service.Host()).Msg("Draining service")
 		service.Drain(lb.config.DrainTimeout)
 		log.Info().Str("host", service.Host()).Msg("Removed service")
+	}
+
+	return nil
+}
+
+func (lb *LoadBalancer) Deploy(hostURLs HostURLs) error {
+	toAdd, toRemove := lb.determineDeploymentChanges(hostURLs)
+
+	if len(toAdd) > 0 {
+		err := lb.Add(toAdd, true)
+		if err != nil {
+			log.Err(err).Msg("Failed to deploy new services")
+			return err
+		}
+	}
+
+	if len(toRemove) > 0 {
+		err := lb.Remove(toRemove)
+		if err != nil {
+			log.Err(err).Msg("Failed to remove old services")
+			return err
+		}
 	}
 
 	return nil
@@ -221,6 +245,38 @@ func (lb *LoadBalancer) removeAndReturnServices(hostURLs []*url.URL) ([]*Service
 	lb.writeStateFile()
 
 	return services, nil
+}
+
+func (lb *LoadBalancer) determineDeploymentChanges(hostURLs HostURLs) (HostURLs, HostURLs) {
+	lb.serviceLock.Lock()
+	defer lb.serviceLock.Unlock()
+
+	toAdd := HostURLs{}
+	toRemove := HostURLs{}
+
+	isBeingDeployed := func(hostURL *url.URL) bool {
+		for _, u := range hostURLs {
+			if u.Host == hostURL.Host {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, hostURL := range hostURLs {
+		if lb.services[*hostURL] == nil {
+			toAdd = append(toAdd, hostURL)
+		}
+	}
+
+	for hostURL := range lb.services {
+		hostURL := hostURL
+		if !isBeingDeployed(&hostURL) {
+			toRemove = append(toRemove, &hostURL)
+		}
+	}
+
+	return toAdd, toRemove
 }
 
 type stateFile struct {

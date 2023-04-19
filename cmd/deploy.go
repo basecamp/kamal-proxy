@@ -7,19 +7,19 @@ import (
 )
 
 // addCmd represents the add command
-var addCmd = &cobra.Command{
-	Use:        "add [flags] host [...host]",
-	Short:      "Add service instances to proxy",
-	RunE:       addHosts,
+var deployCmd = &cobra.Command{
+	Use:        "deploy [flags] host [...host]",
+	Short:      "Deploy service instances to proxy",
+	RunE:       deployHosts,
 	Args:       cobra.MinimumNArgs(1),
 	ArgAliases: []string{"hosts"},
 }
 
 func init() {
-	rootCmd.AddCommand(addCmd)
+	rootCmd.AddCommand(deployCmd)
 }
 
-func addHosts(cmd *cobra.Command, args []string) error {
+func deployHosts(cmd *cobra.Command, args []string) error {
 	hostURLs, err := parseHostURLs(args)
 	if err != nil {
 		return err
@@ -27,6 +27,6 @@ func addHosts(cmd *cobra.Command, args []string) error {
 
 	return withRPCClient(func(client *rpc.Client) error {
 		var response bool
-		return client.Call("mproxy.AddHosts", hostURLs, &response)
+		return client.Call("mproxy.DeployHosts", hostURLs, &response)
 	})
 }

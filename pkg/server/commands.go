@@ -14,8 +14,9 @@ import (
 var registered sync.Once
 
 type ServiceManager interface {
-	Add(hostURLs []*url.URL, waitForHealthy bool) error
-	Remove(hostURLs []*url.URL) error
+	Add(hostURLs HostURLs, waitForHealthy bool) error
+	Remove(hostURLs HostURLs) error
+	Deploy(hostURLs HostURLs) error
 	GetServices() []*Service
 }
 
@@ -93,6 +94,12 @@ func (h *CommandHandler) AddHosts(hostURLs []*url.URL, reply *bool) error {
 
 func (h *CommandHandler) RemoveHosts(hostURLs []*url.URL, reply *bool) error {
 	err := h.serviceManager.Remove(hostURLs)
+	*reply = (err == nil)
+	return err
+}
+
+func (h *CommandHandler) DeployHosts(hostURLs []*url.URL, reply *bool) error {
+	err := h.serviceManager.Deploy(hostURLs)
 	*reply = (err == nil)
 	return err
 }

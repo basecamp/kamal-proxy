@@ -18,7 +18,9 @@ for deploying a new service instance is essentially:
 
 You can also combine the add & remove steps by using the `deploy` action to
 specify the host(s) that should become active. Any other hosts not in the list
-will be drained and removed.
+will be drained and removed:
+
+    mproxy deploy {new host} {...new host}
 
 ## Trying it out
 
@@ -43,7 +45,7 @@ In order to serve the web service traffic through the proxy, we'll need to add
 at least one of the web instances. You can run `mproxy` commands in the proxy
 container using `docker compose exec`:
 
-    docker compose exec mproxy mproxy add mproxy-web-1:3000
+    docker compose exec mproxy mproxy deploy mproxy-web-1:3000
 
 You should see some log output from the proxy with the progress:
 
@@ -53,11 +55,9 @@ You should see some log output from the proxy with the progress:
 
 You can now point a browser to http://localhost:8000/ to see the output from the web service.
 
-To switch traffic to a new web instance, add the new one and then remove the
-previous one:
+To switch traffic to a new web instance, deploy that instance:
 
-    docker compose exec mproxy mproxy add mproxy-web-2:3000
-    docker compose exec mproxy mproxy remove mproxy-web-1:3000
+    docker compose exec mproxy mproxy deploy mproxy-web-2:3000
 
 By using a tool like `ab` to consume the service while swapping containers, you
 can verify that no requests are dropped during the process, and that there are
