@@ -12,7 +12,7 @@ for deploying a new service instance is essentially:
 - Start a new service instance (e.g. a container)
 - `mproxy add {new host}` (this blocks until the new instance is ready to accept
   traffic)
-- `mproxy remove {old host}` (this blocks until the old instance has
+- `mproxy rm {old host}` (this blocks until the old instance has
   been drained of active traffic)
 - Stop the old service instance
 

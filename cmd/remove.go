@@ -8,7 +8,7 @@ import (
 
 // addCmd represents the add command
 var removeCmd = &cobra.Command{
-	Use:        "remove [flags] host [...host]",
+	Use:        "rm [flags] host [...host]",
 	Short:      "Remove service instances from proxy",
 	RunE:       removeHosts,
 	Args:       cobra.MinimumNArgs(1),
