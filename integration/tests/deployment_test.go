@@ -30,13 +30,13 @@ func TestZeroDowntimeDeployment(t *testing.T) {
 
 	proxy := testProxyServer(t)
 	proxyURL, _ := url.Parse("http://" + proxy.Addr())
-	proxy.LoadBalancer().Add([]*url.URL{upstream1URL})
+	proxy.LoadBalancer().Add([]*url.URL{upstream1URL}, true)
 
 	clients := newClientConsumer(t, proxyURL)
 
 	time.Sleep(time.Second * 2)
 
-	proxy.LoadBalancer().Add([]*url.URL{upstream2URL})
+	proxy.LoadBalancer().Add([]*url.URL{upstream2URL}, true)
 	proxy.LoadBalancer().Remove([]*url.URL{upstream1URL})
 
 	time.Sleep(time.Second * 2)

@@ -33,7 +33,7 @@ func TestLoadBalancer_SingleService(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
 	_, backendURL := testBackend(t, "first")
 
-	require.NoError(t, lb.Add([]*url.URL{backendURL}))
+	require.NoError(t, lb.Add([]*url.URL{backendURL}, true))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -48,7 +48,7 @@ func TestLoadBalancer_RoundRobinBetweenMultipleServices(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		_, backendURL := testBackend(t, strconv.Itoa(i))
-		lb.Add([]*url.URL{backendURL})
+		lb.Add([]*url.URL{backendURL}, true)
 	}
 
 	results := []string{}
@@ -71,7 +71,7 @@ func TestLoadBalancer_AddAndRemoveSameService(t *testing.T) {
 	_, backendURL := testBackend(t, "first")
 
 	for i := 0; i < 5; i++ {
-		lb.Add([]*url.URL{backendURL})
+		lb.Add([]*url.URL{backendURL}, true)
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
@@ -90,7 +90,7 @@ func TestLoadBalancer_RestoreStateOnRestart(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
 	_, backendURL := testBackend(t, "first")
 
-	lb.Add([]*url.URL{backendURL})
+	lb.Add([]*url.URL{backendURL}, true)
 	services := lb.GetServices()
 
 	require.Equal(t, 1, len(services))
@@ -111,7 +111,7 @@ func TestLoadBalancer_RestoreEmptyStateOnRestart(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
 	_, backendURL := testBackend(t, "first")
 
-	lb.Add([]*url.URL{backendURL})
+	lb.Add([]*url.URL{backendURL}, true)
 	lb.Remove([]*url.URL{backendURL})
 
 	require.Empty(t, lb.GetServices())

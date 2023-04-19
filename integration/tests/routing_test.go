@@ -172,7 +172,7 @@ func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server 
 		upstream := httptest.NewServer(http.HandlerFunc(handler))
 
 		upstreamURL, _ := url.Parse(upstream.URL)
-		proxyServer.LoadBalancer().Add([]*url.URL{upstreamURL})
+		proxyServer.LoadBalancer().Add([]*url.URL{upstreamURL}, true)
 
 		t.Cleanup(func() {
 			proxyServer.LoadBalancer().Remove([]*url.URL{upstreamURL})

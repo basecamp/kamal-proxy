@@ -55,7 +55,7 @@ func (lb *LoadBalancer) GetServices() []*Service {
 	return result
 }
 
-func (lb *LoadBalancer) Add(hostURLs []*url.URL) error {
+func (lb *LoadBalancer) Add(hostURLs []*url.URL, waitForHealthy bool) error {
 	services, err := lb.addServicesUnlessExists(hostURLs)
 	if err != nil {
 		log.Err(err).Msg("Unable to add services")
@@ -67,14 +67,16 @@ func (lb *LoadBalancer) Add(hostURLs []*url.URL) error {
 		service.BeginHealthChecks(lb)
 	}
 
-	for _, service := range services {
-		healthy := service.WaitUntilHealthy(lb.config.AddTimeout)
-		if !healthy {
-			log.Info().Str("host", service.Host()).Msg("Service failed to become healthy")
-			return ErrorServiceFailedToBecomeHealthy
-		}
+	if waitForHealthy {
+		for _, service := range services {
+			healthy := service.WaitUntilHealthy(lb.config.AddTimeout)
+			if !healthy {
+				log.Info().Str("host", service.Host()).Msg("Service failed to become healthy")
+				return ErrorServiceFailedToBecomeHealthy
+			}
 
-		log.Info().Str("host", service.Host()).Msg("Service is now healthy")
+			log.Info().Str("host", service.Host()).Msg("Service is now healthy")
+		}
 	}
 
 	return nil
@@ -125,14 +127,10 @@ func (lb *LoadBalancer) RestoreFromStateFile() error {
 		}
 	}
 
-	services, err := lb.addServicesUnlessExists(hostURLs)
+	err = lb.Add(hostURLs, false)
 	if err != nil {
 		log.Err(err).Msg("Failed to restore services from state file")
 		return err
-	}
-
-	for _, service := range services {
-		service.BeginHealthChecks(lb)
 	}
 
 	log.Info().Msg("Restored previous state")
