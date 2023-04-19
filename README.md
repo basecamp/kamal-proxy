@@ -1,82 +1,101 @@
 # mproxy - A minimal HTTP proxy for zero-downtime deployments
 
-## Introduction
+## What it does
 
-`mproxy` is a simple HTTP proxy designed to make it easy to coordinate
-zero-downtime deployments.
+`mproxy` is a tiny HTTP proxy, designed to make it easy to coordinate
+zero-downtime deployments. By running a web application behind `mproxy` you can
+deploy changes to it without interruping any of the traffic that's in progress.
+No particular cooperation from the application is required for this to work.
 
-By running your service behind an `mproxy` instance, you can add and remove
-instances of your service without dropping any active connections. The process
-for deploying a new service instance is essentially:
+## A quick overview
 
-- Start a new service instance (e.g. a container)
-- `mproxy add {new host}` (this blocks until the new instance is ready to accept
-  traffic)
-- `mproxy rm {old host}` (this blocks until the old instance has
-  been drained of active traffic)
-- Stop the old service instance
+To run an instance of the proxy, use the `mproxy run` command. There's no
+configuration file, but there are some options you can specify if the defaults
+aren't right for your application.
 
-You can also combine the add & remove steps by using the `deploy` action to
-specify the host(s) that should become active. Any other hosts not in the list
-will be drained and removed:
+For example, to run the proxy on a port other than 80 (the default) you could:
 
-    mproxy deploy {new host} {...new host}
+    mproxy run --port 8080
+
+Run `mproxy help run` to see the full list of options.
+
+To route traffic through the proxy to a web application, you `deploy` instances of
+the application to the proxy. Deploying instances makes them available to the proxy,
+and also replaces any previous instances that are no longer being used.
+
+Use the format `hostname:port` when specifying the application instances. You
+can specify one or more instances in each deployment; if there's more than one,
+the traffic will be load-balanced between all of them.
+
+For example:
+
+    mproxy deploy web-1:3000
+
+This will instruct the proxy to register `web-1:3000` to receive traffic. It
+will immediately begin running HTTP health checks to ensure it's reachable and
+working and, as soon as those health checks succeed, will start routing traffic
+to it.
+
+If an instance fails to become healthy within the allowed time, `deploy` returns
+a non-zero exit code, so that deployment scripts can handle the failure
+appropriately.
+
+To deploy a new version of an application, call `deploy` again with the new
+instance(s) that should replace those currently running. For example:
+
+    mproxy deploy web-2:3000 web-3:3000
+
+This will do 2 things:
+
+- First, it will add the new instances, and wait for them to be healthy, in the
+  same way as before.
+- Second, any instances that were previously running, but are not listed in the
+  new deployment (so in this example, that's `web-1:3000`) will be considered
+  outdated. They'll stop receiving new traffic, and will be given some time to
+  drain any requests that are in inflight. As soon as the draining is complete,
+  they'll be removed from the list.
+
+Processing the steps in this order ensures that there's no downtime or failed
+requests during the deployment.
+
+If you need more control of the timing or sequence of adding and removing
+instances, you can use the `add` and `rm` commands to perform the steps
+individually. For example:
+
+    mproxy add web-4:3000
+
+or:
+
+    mproxy rm web-{5,6,7}
+
+Lastly, you can list the currently registered instances, along with their
+status:
+
+    $ mproxy list
+    web-2:3000        (healthy)
+    web-3:3000        (healthy)
+    web-4:3000        (unhealthy)
+    web-5:3000        (adding)
+
+## Building
+
+To build `mproxy` locally, if you have a working Go environment you can:
+
+    make
+
+Alternatively, build as a Docker container:
+
+    make docker
 
 ## Trying it out
 
-You can try out adding & removing hosts using the docker compose setup. Start it
-with:
+You can start up a sample environment to try it out using Docker Compose:
 
-    docker compose up
+    docker compose up --build
 
-One it starts, view the running containers:
+This will start the proxy, and 4 instances of a simple web server. You can run
+proxy commands with `docker compose exec proxy ...`, for example:
 
-    docker compose ps
+    docker compose exec proxy mproxy deploy mproxy-web-1:3000
 
-You should see an instance of the `mproxy` container, as well as 4 instances of
-a sample web service. Docker Compose will have named the web services
-`mproxy-web-1`, `mproxy-web-2`, and so on.
-
-The mproxy service is exposed locally as port 8000. But at this point no web
-instances have been added to the `mproxy` service, so accessing it will result
-in a 503 response.
-
-In order to serve the web service traffic through the proxy, we'll need to add
-at least one of the web instances. You can run `mproxy` commands in the proxy
-container using `docker compose exec`:
-
-    docker compose exec mproxy mproxy deploy mproxy-web-1:3000
-
-You should see some log output from the proxy with the progress:
-
-    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-18T21:28:47Z","message":"Service added"}
-    {"level":"info","host":"mproxy-web-1:3000","from":"adding","to":"healthy","time":"2023-04-18T21:28:47Z","message":"Service health updated"}
-    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-18T21:28:47Z","message":"Service is now healthy"}
-
-You can now point a browser to http://localhost:8000/ to see the output from the web service.
-
-To switch traffic to a new web instance, deploy that instance:
-
-    docker compose exec mproxy mproxy deploy mproxy-web-2:3000
-
-Which will add the new service instance, and drain the old one:
-
-    {"level":"info","host":"mproxy-web-2:3000","time":"2023-04-19T04:31:37Z","message":"Service added"}
-    {"level":"info","host":"mproxy-web-2:3000","from":"adding","to":"healthy","time":"2023-04-19T04:31:37Z","message":"Service health updated"}
-    {"level":"info","host":"mproxy-web-2:3000","time":"2023-04-19T04:31:37Z","message":"Service is now healthy"}
-    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-19T04:31:37Z","message":"Draining service"}
-    {"level":"info","host":"mproxy-web-1:3000","time":"2023-04-19T04:31:37Z","message":"Removed service"}
-
-By using a tool like `ab` to consume the service while swapping containers, you
-can verify that no requests are dropped during the process, and that there are
-no latency spikes.
-
-You can add multiple active instances, in which case the proxy will round-robin
-the traffic between them.
-
-You can also list the instances registered in the proxy, along with their status:
-
-    $ docker compose exec mproxy mproxy list
-    mproxy-web-1:3000        (healthy)
-    mproxy-web-2:3000        (healthy)
-    mproxy-web-3:3000        (healthy)
+And then access the proxy from a browser at http://localhost:8000/.

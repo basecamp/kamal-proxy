@@ -8,4 +8,5 @@ RUN make
 FROM ubuntu as base
 
 COPY --from=build /app/bin/mproxy /usr/local/bin/
-CMD [ "mproxy", "-p", "80", "run" ]
+EXPOSE 80
+CMD [ "mproxy", "run" ]

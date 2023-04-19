@@ -1,5 +1,5 @@
 services:
-  mproxy:
+  proxy:
     build: ./
     ports:
       - 8000:80

@@ -3,3 +3,6 @@ build:
 
 test:
 	go test ./...
+
+docker:
+	docker build -t mproxy .
