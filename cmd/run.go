@@ -23,7 +23,7 @@ func init() {
 	runCmd.Flags().IntVarP(&serverConfig.ListenPort, "port", "p", 80, "Port to serve HTTP traffic on")
 	runCmd.Flags().DurationVar(&serverConfig.AddTimeout, "add-timeout", server.DefaultAddTimeout, "Max time to wait for new services to become healthy before returning an error")
 	runCmd.Flags().DurationVar(&serverConfig.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Time to wait for service to drain before killing connections")
-	runCmd.Flags().IntVar(&serverConfig.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (0 means unlimited)")
+	runCmd.Flags().IntVar(&serverConfig.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")
 	runCmd.Flags().StringVar(&serverConfig.HealthCheckPath, "health-path", server.DefaultHealthCheckPath, "Path for healthcheck")
 	runCmd.Flags().DurationVar(&serverConfig.HealthCheckInterval, "health-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	runCmd.Flags().DurationVar(&serverConfig.HealthCheckTimeout, "health-timeout", server.DefaultHealthCheckTimeout, "Max time allowed for health check to respond")
