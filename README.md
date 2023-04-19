@@ -13,11 +13,12 @@ for deploying a new service instance is essentially:
 - `mproxy add {new host}` (this blocks until the new instance is ready to accept
   traffic)
 - `mproxy remove {old host}` (this blocks until the old instance has
-  been drained of active traffic) - Stop the old service instance
+  been drained of active traffic)
+- Stop the old service instance
 
-Because of the blocking of the commands, the old instance won't be removed
-before the new one is serving traffic. The draining means that the old instance
-has a chance to complete all its current requests before it's stopped.
+You can also combine the add & remove steps by using the `deploy` action to
+specify the host(s) that should become active. Any other hosts not in the list
+will be drained and removed.
 
 ## Trying it out
 
