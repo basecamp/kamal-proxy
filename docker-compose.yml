@@ -3,8 +3,10 @@ services:
     build: ./
     ports:
       - 8000:80
+    restart: unless-stopped
 
   web:
     build: ./integration/upstream
     deploy:
       replicas: 4
+    restart: unless-stopped
