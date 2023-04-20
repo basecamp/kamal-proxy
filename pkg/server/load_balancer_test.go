@@ -3,7 +3,6 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -38,9 +37,9 @@ func TestLoadBalancer_Empty(t *testing.T) {
 
 func TestLoadBalancer_SingleService(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
-	_, backendURL := testBackend(t, "first")
+	_, host := testBackend(t, "first")
 
-	require.NoError(t, lb.Add([]*url.URL{backendURL}, true))
+	require.NoError(t, lb.Add(Hosts{host}, true))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -54,8 +53,8 @@ func TestLoadBalancer_RoundRobinBetweenMultipleServices(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
 
 	for i := 0; i < 5; i++ {
-		_, backendURL := testBackend(t, strconv.Itoa(i))
-		lb.Add([]*url.URL{backendURL}, true)
+		_, host := testBackend(t, strconv.Itoa(i))
+		lb.Add(Hosts{host}, true)
 	}
 
 	results := []string{}
@@ -75,10 +74,10 @@ func TestLoadBalancer_RoundRobinBetweenMultipleServices(t *testing.T) {
 
 func TestLoadBalancer_AddAndRemoveSameService(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
-	_, backendURL := testBackend(t, "first")
+	_, host := testBackend(t, "first")
 
 	for i := 0; i < 5; i++ {
-		lb.Add([]*url.URL{backendURL}, true)
+		lb.Add(Hosts{host}, true)
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
@@ -87,7 +86,7 @@ func TestLoadBalancer_AddAndRemoveSameService(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Result().StatusCode)
 		require.Equal(t, "first", string(w.Body.String()))
 
-		lb.Remove([]*url.URL{backendURL})
+		lb.Remove(Hosts{host})
 	}
 
 	require.Empty(t, lb.GetServices())
@@ -95,9 +94,9 @@ func TestLoadBalancer_AddAndRemoveSameService(t *testing.T) {
 
 func TestLoadBalancer_RestoreStateOnRestart(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
-	_, backendURL := testBackend(t, "first")
+	_, host := testBackend(t, "first")
 
-	lb.Add([]*url.URL{backendURL}, true)
+	lb.Add(Hosts{host}, true)
 	services := lb.GetServices()
 
 	require.Equal(t, 1, len(services))
@@ -116,10 +115,10 @@ func TestLoadBalancer_RestoreStateOnRestart(t *testing.T) {
 
 func TestLoadBalancer_RestoreEmptyStateOnRestart(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
-	_, backendURL := testBackend(t, "first")
+	_, host := testBackend(t, "first")
 
-	lb.Add([]*url.URL{backendURL}, true)
-	lb.Remove([]*url.URL{backendURL})
+	lb.Add(Hosts{host}, true)
+	lb.Remove(Hosts{host})
 
 	require.Empty(t, lb.GetServices())
 
@@ -130,34 +129,34 @@ func TestLoadBalancer_RestoreEmptyStateOnRestart(t *testing.T) {
 
 func TestLoadBalancer_DeployNewSetOfServices(t *testing.T) {
 	lb := NewLoadBalancer(typicalConfig)
-	_, backend1URL := testBackend(t, "first")
-	_, backend2URL := testBackend(t, "first")
-	_, backend3URL := testBackend(t, "first")
+	_, host1 := testBackend(t, "first")
+	_, host2 := testBackend(t, "first")
+	_, host3 := testBackend(t, "first")
 
-	isDeployed := func(hostURL *url.URL) bool {
+	isDeployed := func(host Host) bool {
 		services := lb.GetServices()
 		for _, s := range services {
-			if s.Host() == hostURL.Host {
+			if s.Host() == host.String() {
 				return true
 			}
 		}
 		return false
 	}
 
-	lb.Deploy(HostURLs{backend2URL, backend3URL})
+	lb.Deploy(Hosts{host1, host2})
 
 	require.Len(t, lb.GetServices(), 2)
-	require.True(t, isDeployed(backend2URL))
-	require.True(t, isDeployed(backend3URL))
+	require.True(t, isDeployed(host1))
+	require.True(t, isDeployed(host2))
 
-	lb.Deploy(HostURLs{backend1URL, backend3URL})
+	lb.Deploy(Hosts{host1, host3})
 
 	require.Len(t, lb.GetServices(), 2)
-	require.True(t, isDeployed(backend1URL))
-	require.True(t, isDeployed(backend3URL))
+	require.True(t, isDeployed(host1))
+	require.True(t, isDeployed(host3))
 
-	lb.Deploy(HostURLs{backend2URL})
+	lb.Deploy(Hosts{host2})
 
 	require.Len(t, lb.GetServices(), 1)
-	require.True(t, isDeployed(backend2URL))
+	require.True(t, isDeployed(host2))
 }

@@ -4,18 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
-
-	"github.com/kevinmcconnell/mproxy/pkg/server"
 )
 
 func Test503WhenNoUpstreams(t *testing.T) {
@@ -144,46 +138,4 @@ func TestWebsocketTraffic(t *testing.T) {
 	var msg string
 	require.NoError(t, conn.ReadJSON(&msg))
 	require.Equal(t, "polo", msg)
-}
-
-// Helpers
-
-func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server {
-	configDir, err := os.MkdirTemp("", "")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(configDir)
-	})
-
-	proxyServer := server.NewServer(server.Config{
-		ConfigDir:          configDir,
-		AddTimeout:         time.Second,
-		DrainTimeout:       time.Second,
-		MaxRequestBodySize: 1024,
-		HealthCheckConfig: server.HealthCheckConfig{
-			HealthCheckPath:     server.DefaultHealthCheckPath,
-			HealthCheckInterval: server.DefaultHealthCheckInterval,
-			HealthCheckTimeout:  server.DefaultHealthCheckTimeout,
-		},
-	})
-	err = proxyServer.Start()
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		proxyServer.Stop()
-	})
-
-	for _, handler := range handlers {
-		upstream := httptest.NewServer(http.HandlerFunc(handler))
-
-		upstreamURL, _ := url.Parse(upstream.URL)
-		proxyServer.LoadBalancer().Add([]*url.URL{upstreamURL}, true)
-
-		t.Cleanup(func() {
-			proxyServer.LoadBalancer().Remove([]*url.URL{upstreamURL})
-			upstream.Close()
-		})
-	}
-
-	return proxyServer
 }

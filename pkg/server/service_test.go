@@ -11,9 +11,10 @@ import (
 )
 
 func TestService_Serve(t *testing.T) {
-	_, backendURL := testBackend(t, "ok")
+	_, host := testBackend(t, "ok")
+	hostURL, _ := host.ToURL()
 
-	s := NewService(backendURL, defaultHealthCheckConfig)
+	s := NewService(hostURL, defaultHealthCheckConfig)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -24,10 +25,11 @@ func TestService_Serve(t *testing.T) {
 }
 
 func TestService_AddedServiceBecomesHealthy(t *testing.T) {
-	_, backendURL := testBackend(t, "ok")
+	_, host := testBackend(t, "ok")
+	hostURL, _ := host.ToURL()
 	c := &testServiceStateChangeConsumer{}
 
-	s := NewService(backendURL, defaultHealthCheckConfig)
+	s := NewService(hostURL, defaultHealthCheckConfig)
 	s.BeginHealthChecks(c)
 
 	require.True(t, s.WaitUntilHealthy(time.Second))
@@ -43,9 +45,10 @@ func TestService_AddedServiceBecomesHealthy(t *testing.T) {
 }
 
 func TestService_DrainWhenEmpty(t *testing.T) {
-	_, backendURL := testBackend(t, "ok")
+	_, host := testBackend(t, "ok")
+	hostURL, _ := host.ToURL()
 
-	s := NewService(backendURL, defaultHealthCheckConfig)
+	s := NewService(hostURL, defaultHealthCheckConfig)
 	s.Drain(time.Second)
 }
 
@@ -56,13 +59,14 @@ func TestService_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, backendURL := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
 		time.Sleep(time.Millisecond * 200)
 		served++
 	})
+	hostURL, _ := host.ToURL()
 
-	s := NewService(backendURL, defaultHealthCheckConfig)
+	s := NewService(hostURL, defaultHealthCheckConfig)
 
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -83,7 +87,7 @@ func TestService_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, backendURL := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
 		for i := 0; i < 500; i++ {
 			time.Sleep(time.Millisecond * 10)
@@ -93,8 +97,9 @@ func TestService_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 		}
 		served++
 	})
+	hostURL, _ := host.ToURL()
 
-	s := NewService(backendURL, defaultHealthCheckConfig)
+	s := NewService(hostURL, defaultHealthCheckConfig)
 
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)

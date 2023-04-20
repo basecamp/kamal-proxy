@@ -3,17 +3,44 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sync"
 
 	"github.com/rs/zerolog/log"
 )
 
-type HostURLs []*url.URL
+var (
+	ErrorInvalidHostPattern           = errors.New("invalid host pattern")
+	ErrorServiceAlreadyExists         = errors.New("service already exists")
+	ErrorServiceNotFound              = errors.New("service not found")
+	ErrorServiceFailedToBecomeHealthy = errors.New("service failed to become healthy")
+)
 
-type serviceMap map[url.URL]*Service
+type Host string
+type Hosts []Host
+
+var hostRegex = regexp.MustCompile(`^(\w[-_.\w+]+)(:\d+)?$`)
+
+func NewHost(host string) (Host, error) {
+	if !hostRegex.MatchString(host) {
+		return "", fmt.Errorf("%s :%w", host, ErrorInvalidHostPattern)
+	}
+	return Host(host), nil
+}
+
+func (h Host) String() string {
+	return string(h)
+}
+
+func (h Host) ToURL() (*url.URL, error) {
+	return url.Parse("http://" + string(h))
+}
+
+type serviceMap map[Host]*Service
 
 type LoadBalancer struct {
 	config         Config
@@ -22,12 +49,6 @@ type LoadBalancer struct {
 	serviceLock    sync.RWMutex
 	serviceIndex   int
 }
-
-var (
-	ErrorServiceAlreadyExists         = errors.New("Service already exists")
-	ErrorServiceNotFound              = errors.New("Service not found")
-	ErrorServiceFailedToBecomeHealthy = errors.New("Service failed to become healthy")
-)
 
 func NewLoadBalancer(config Config) *LoadBalancer {
 	return &LoadBalancer{
@@ -57,8 +78,8 @@ func (lb *LoadBalancer) GetServices() []*Service {
 	return result
 }
 
-func (lb *LoadBalancer) Add(hostURLs HostURLs, waitForHealthy bool) error {
-	services, err := lb.addServicesUnlessExists(hostURLs)
+func (lb *LoadBalancer) Add(hosts Hosts, waitForHealthy bool) error {
+	services, err := lb.addServicesUnlessExists(hosts)
 	if err != nil {
 		log.Err(err).Msg("Unable to add services")
 		return err
@@ -84,8 +105,8 @@ func (lb *LoadBalancer) Add(hostURLs HostURLs, waitForHealthy bool) error {
 	return nil
 }
 
-func (lb *LoadBalancer) Remove(hostURLs HostURLs) error {
-	services, err := lb.removeAndReturnServices(hostURLs)
+func (lb *LoadBalancer) Remove(hosts Hosts) error {
+	services, err := lb.removeAndReturnServices(hosts)
 	if err != nil {
 		log.Err(err).Msg("Unable to remove services")
 		return err
@@ -101,8 +122,8 @@ func (lb *LoadBalancer) Remove(hostURLs HostURLs) error {
 	return nil
 }
 
-func (lb *LoadBalancer) Deploy(hostURLs HostURLs) error {
-	toAdd, toRemove := lb.determineDeploymentChanges(hostURLs)
+func (lb *LoadBalancer) Deploy(hosts Hosts) error {
+	toAdd, toRemove := lb.determineDeploymentChanges(hosts)
 
 	if len(toAdd) > 0 {
 		err := lb.Add(toAdd, true)
@@ -143,15 +164,7 @@ func (lb *LoadBalancer) RestoreFromStateFile() error {
 		return err
 	}
 
-	hostURLs := []*url.URL{}
-	for _, hostname := range sf.Hosts {
-		hostURL, err := url.Parse("http://" + hostname)
-		if err == nil {
-			hostURLs = append(hostURLs, hostURL)
-		}
-	}
-
-	err = lb.Add(hostURLs, false)
+	err = lb.Add(sf.Hosts, false)
 	if err != nil {
 		log.Err(err).Msg("Failed to restore services from state file")
 		return err
@@ -197,22 +210,28 @@ func (lb *LoadBalancer) updateActive() {
 	}
 }
 
-func (lb *LoadBalancer) addServicesUnlessExists(hostURLs []*url.URL) ([]*Service, error) {
+func (lb *LoadBalancer) addServicesUnlessExists(hosts Hosts) ([]*Service, error) {
 	lb.serviceLock.Lock()
 	defer lb.serviceLock.Unlock()
 
 	services := []*Service{}
-	for _, hostURL := range hostURLs {
-		if lb.services[*hostURL] == nil {
+	for _, host := range hosts {
+		if lb.services[host] == nil {
+			hostURL, err := host.ToURL()
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", host, ErrorInvalidHostPattern)
+			}
+
 			service := NewService(hostURL, lb.config.HealthCheckConfig)
-			lb.services[*hostURL] = service
+			lb.services[host] = service
+
 			services = append(services, service)
 		} else {
-			log.Info().Str("host", hostURL.Host).Msg("Service already exists; ignoring")
+			log.Info().Stringer("host", host).Msg("Service already exists; ignoring")
 		}
 	}
 
-	if len(services) == 0 && len(hostURLs) > 0 {
+	if len(services) == 0 && len(hosts) > 0 {
 		return nil, ErrorServiceAlreadyExists
 	}
 
@@ -222,22 +241,22 @@ func (lb *LoadBalancer) addServicesUnlessExists(hostURLs []*url.URL) ([]*Service
 	return services, nil
 }
 
-func (lb *LoadBalancer) removeAndReturnServices(hostURLs []*url.URL) ([]*Service, error) {
+func (lb *LoadBalancer) removeAndReturnServices(hosts Hosts) ([]*Service, error) {
 	lb.serviceLock.Lock()
 	defer lb.serviceLock.Unlock()
 
 	services := []*Service{}
-	for _, hostURL := range hostURLs {
-		service := lb.services[*hostURL]
+	for _, host := range hosts {
+		service := lb.services[host]
 		if service != nil {
 			services = append(services, service)
-			delete(lb.services, *hostURL)
+			delete(lb.services, host)
 		} else {
-			log.Info().Str("host", hostURL.Host).Msg("Service not found; ignoring")
+			log.Info().Stringer("host", host).Msg("Service not found; ignoring")
 		}
 	}
 
-	if len(services) == 0 && len(hostURLs) > 0 {
+	if len(services) == 0 && len(hosts) > 0 {
 		return nil, ErrorServiceNotFound
 	}
 
@@ -247,32 +266,31 @@ func (lb *LoadBalancer) removeAndReturnServices(hostURLs []*url.URL) ([]*Service
 	return services, nil
 }
 
-func (lb *LoadBalancer) determineDeploymentChanges(hostURLs HostURLs) (HostURLs, HostURLs) {
+func (lb *LoadBalancer) determineDeploymentChanges(hosts Hosts) (Hosts, Hosts) {
 	lb.serviceLock.Lock()
 	defer lb.serviceLock.Unlock()
 
-	toAdd := HostURLs{}
-	toRemove := HostURLs{}
+	toAdd := Hosts{}
+	toRemove := Hosts{}
 
-	isBeingDeployed := func(hostURL *url.URL) bool {
-		for _, u := range hostURLs {
-			if u.Host == hostURL.Host {
+	isBeingDeployed := func(host Host) bool {
+		for _, h := range hosts {
+			if h == host {
 				return true
 			}
 		}
 		return false
 	}
 
-	for _, hostURL := range hostURLs {
-		if lb.services[*hostURL] == nil {
-			toAdd = append(toAdd, hostURL)
+	for _, host := range hosts {
+		if lb.services[host] == nil {
+			toAdd = append(toAdd, host)
 		}
 	}
 
-	for hostURL := range lb.services {
-		hostURL := hostURL
-		if !isBeingDeployed(&hostURL) {
-			toRemove = append(toRemove, &hostURL)
+	for host := range lb.services {
+		if !isBeingDeployed(host) {
+			toRemove = append(toRemove, host)
 		}
 	}
 
@@ -280,15 +298,15 @@ func (lb *LoadBalancer) determineDeploymentChanges(hostURLs HostURLs) (HostURLs,
 }
 
 type stateFile struct {
-	Hosts []string `json:"hosts"`
+	Hosts Hosts `json:"hosts"`
 }
 
 func (lb *LoadBalancer) writeStateFile() error {
 	sf := stateFile{
-		Hosts: []string{},
+		Hosts: Hosts{},
 	}
-	for hostURL := range lb.services {
-		sf.Hosts = append(sf.Hosts, hostURL.Host)
+	for host := range lb.services {
+		sf.Hosts = append(sf.Hosts, host)
 	}
 
 	f, err := os.Create(lb.config.StatePath())

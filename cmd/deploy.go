@@ -20,13 +20,8 @@ func init() {
 }
 
 func deployHosts(cmd *cobra.Command, args []string) error {
-	hostURLs, err := parseHostURLs(args)
-	if err != nil {
-		return err
-	}
-
 	return withRPCClient(func(client *rpc.Client) error {
 		var response bool
-		return client.Call("mproxy.DeployHosts", hostURLs, &response)
+		return client.Call("mproxy.DeployHosts", args, &response)
 	})
 }

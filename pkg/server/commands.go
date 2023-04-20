@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
-	"net/url"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -14,9 +13,9 @@ import (
 var registered sync.Once
 
 type ServiceManager interface {
-	Add(hostURLs HostURLs, waitForHealthy bool) error
-	Remove(hostURLs HostURLs) error
-	Deploy(hostURLs HostURLs) error
+	Add(hosts Hosts, waitForHealthy bool) error
+	Remove(hosts Hosts) error
+	Deploy(hosts Hosts) error
 	GetServices() []*Service
 }
 
@@ -86,20 +85,20 @@ func (h *CommandHandler) List(_ bool, reply *ListResponse) error {
 	return nil
 }
 
-func (h *CommandHandler) AddHosts(hostURLs []*url.URL, reply *bool) error {
-	err := h.serviceManager.Add(hostURLs, true)
+func (h *CommandHandler) AddHosts(hosts Hosts, reply *bool) error {
+	err := h.serviceManager.Add(hosts, true)
 	*reply = (err == nil)
 	return err
 }
 
-func (h *CommandHandler) RemoveHosts(hostURLs []*url.URL, reply *bool) error {
-	err := h.serviceManager.Remove(hostURLs)
+func (h *CommandHandler) RemoveHosts(hosts Hosts, reply *bool) error {
+	err := h.serviceManager.Remove(hosts)
 	*reply = (err == nil)
 	return err
 }
 
-func (h *CommandHandler) DeployHosts(hostURLs []*url.URL, reply *bool) error {
-	err := h.serviceManager.Deploy(hostURLs)
+func (h *CommandHandler) DeployHosts(hosts Hosts, reply *bool) error {
+	err := h.serviceManager.Deploy(hosts)
 	*reply = (err == nil)
 	return err
 }
