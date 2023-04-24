@@ -1,4 +1,4 @@
-package server
+package middleware
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-func MaxRequestBodyMiddleare(maxBytes int, handler http.Handler) http.Handler {
+func MaxRequestBody(maxBytes int, handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = newLimitedReadCloser(r.Body, maxBytes)
 		handler.ServeHTTP(w, r)

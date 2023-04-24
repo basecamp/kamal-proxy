@@ -1,4 +1,4 @@
-package server
+package middleware
 
 import (
 	"io"
@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMaxRequestBodyMiddleware(t *testing.T) {
+func TestMaxRequestBody(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -18,10 +18,10 @@ func TestMaxRequestBodyMiddleware(t *testing.T) {
 		}
 	})
 
-	limitedServer := httptest.NewServer(MaxRequestBodyMiddleare(10, handler))
+	limitedServer := httptest.NewServer(MaxRequestBody(10, handler))
 	defer limitedServer.Close()
 
-	unlimitedServer := httptest.NewServer(MaxRequestBodyMiddleare(0, handler))
+	unlimitedServer := httptest.NewServer(MaxRequestBody(0, handler))
 	defer unlimitedServer.Close()
 
 	resp, err := http.Post(limitedServer.URL, "text/plain", nil)

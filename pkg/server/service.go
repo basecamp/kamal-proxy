@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kevinmcconnell/mproxy/pkg/middleware"
 	"github.com/rs/zerolog/log"
 )
 
@@ -167,7 +168,7 @@ func (s *Service) HealthCheckCompleted(success bool) {
 func (s *Service) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
 	log.Err(err).Str("host", s.Host()).Str("path", r.URL.Path).Msg("Error while proxying")
 
-	if errors.Is(err, ErrRequestBodyTooLarge) {
+	if errors.Is(err, middleware.ErrRequestBodyTooLarge) {
 		w.WriteHeader(http.StatusBadRequest)
 	} else {
 		w.WriteHeader(http.StatusBadGateway)
