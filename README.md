@@ -52,7 +52,7 @@ This will do 2 things:
 - Second, any instances that were previously running, but are not listed in the
   new deployment (so in this example, that's `web-1:3000`) will be considered
   outdated. They'll stop receiving new traffic, and will be given some time to
-  drain any requests that are in inflight. As soon as the draining is complete,
+  drain any requests that are in flight. As soon as the draining is complete,
   they'll be removed from the list.
 
 Processing the steps in this order ensures that there's no downtime or failed
