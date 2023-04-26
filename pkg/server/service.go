@@ -89,6 +89,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Service) Rewrite(req *httputil.ProxyRequest) {
+	// Preserve & append X-Forwarded-For
+	req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
+	req.SetXForwarded()
+
 	req.SetURL(s.hostURL)
 }
 

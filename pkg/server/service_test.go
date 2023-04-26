@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -22,6 +23,46 @@ func TestService_Serve(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
+}
+
+func TestService_HeadersAreCorrectlyPreserved(t *testing.T) {
+	var (
+		xForwardedFor   string
+		xForwardedProto string
+		customHeader    string
+	)
+
+	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		xForwardedFor = r.Header.Get("X-Forwarded-For")
+		xForwardedProto = r.Header.Get("X-Forwarded-Proto")
+		customHeader = r.Header.Get("Custom-Header")
+	})
+	hostURL, _ := host.ToURL()
+
+	s := NewService(hostURL, defaultHealthCheckConfig)
+
+	// Preserving headers where X-Forwarded-For exists
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	req.Header.Set("Custom-Header", "Custom value")
+
+	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, "1.2.3.4, "+clientIP, xForwardedFor)
+	require.Equal(t, "http", xForwardedProto)
+	require.Equal(t, "Custom value", customHeader)
+
+	// Adding X-Forwarded-For if the original does not have one
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, clientIP, xForwardedFor)
 }
 
 func TestService_AddedServiceBecomesHealthy(t *testing.T) {
