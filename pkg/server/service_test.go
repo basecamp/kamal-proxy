@@ -25,6 +25,25 @@ func TestService_Serve(t *testing.T) {
 	require.Equal(t, "ok", string(w.Body.String()))
 }
 
+func TestService_PreserveHostHeader(t *testing.T) {
+	var requestHost string
+
+	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		requestHost = r.Host
+	})
+	hostURL, _ := host.ToURL()
+
+	s := NewService(hostURL, defaultHealthCheckConfig)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "custom.example.com"
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, "custom.example.com", requestHost)
+}
+
 func TestService_HeadersAreCorrectlyPreserved(t *testing.T) {
 	var (
 		xForwardedFor   string

@@ -94,6 +94,7 @@ func (s *Service) Rewrite(req *httputil.ProxyRequest) {
 	req.SetXForwarded()
 
 	req.SetURL(s.hostURL)
+	req.Out.Host = req.In.Host
 }
 
 func (s *Service) Drain(timeout time.Duration) {
