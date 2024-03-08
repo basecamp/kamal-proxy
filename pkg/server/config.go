@@ -26,7 +26,7 @@ type Config struct {
 
 	AddTimeout         time.Duration
 	DrainTimeout       time.Duration
-	MaxRequestBodySize int
+	MaxRequestBodySize int64
 
 	HealthCheckConfig
 }

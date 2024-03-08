@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/kevinmcconnell/mproxy/pkg/middleware"
 	"github.com/rs/zerolog/log"
 )
 
@@ -98,5 +97,11 @@ func (s *Server) Stop() error {
 // Private
 
 func (s *Server) addMiddleware() http.Handler {
-	return middleware.MaxRequestBody(s.config.MaxRequestBodySize, s.loadBalancer)
+	var handler http.Handler = s.loadBalancer
+
+	if s.config.MaxRequestBodySize > 0 {
+		handler = http.MaxBytesHandler(handler, s.config.MaxRequestBodySize)
+	}
+
+	return handler
 }

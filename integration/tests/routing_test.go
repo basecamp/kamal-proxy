@@ -71,7 +71,7 @@ func TestMaxRequestBodySizeIsEnforced(t *testing.T) {
 
 	resp, err = http.Post("http://"+proxyServer.Addr(), "text/plain", bytes.NewReader(make([]byte, 1e6)))
 	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
 }
 
 func TestMultipleUpstreamsShareTraffic(t *testing.T) {
