@@ -29,6 +29,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&serverConfig.ConfigDir, "config", defaultConfigLocation(), "Path to config location")
+	rootCmd.PersistentFlags().BoolVar(&serverConfig.Debug, "debug", false, "Include debugging logs")
 }
 
 func defaultConfigLocation() string {

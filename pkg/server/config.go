@@ -23,6 +23,7 @@ type HealthCheckConfig struct {
 type Config struct {
 	ListenPort int
 	ConfigDir  string
+	Debug      bool
 
 	AddTimeout         time.Duration
 	DrainTimeout       time.Duration

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -28,6 +29,7 @@ func NewServer(c Config) *Server {
 	}
 
 	server.commandHandler = NewCommandHandler(server.loadBalancer)
+	server.setLogger()
 
 	return server
 }
@@ -103,4 +105,13 @@ func (s *Server) addMiddleware() http.Handler {
 	}
 
 	return handler
+}
+
+func (s *Server) setLogger() {
+	level := slog.LevelInfo
+	if s.config.Debug {
+		level = slog.LevelDebug
+	}
+
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 }
