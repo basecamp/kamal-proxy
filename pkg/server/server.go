@@ -104,6 +104,8 @@ func (s *Server) addMiddleware() http.Handler {
 		handler = http.MaxBytesHandler(handler, s.config.MaxRequestBodySize)
 	}
 
+	handler = NewLoggingMiddleware(slog.Default(), handler)
+
 	return handler
 }
 
