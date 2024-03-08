@@ -152,7 +152,7 @@ func (s *Service) HealthCheckCompleted(success bool) {
 	}
 
 	if s.state != oldState {
-		slog.Info("Service health updated", "host", s.hostURL.Host, "from", oldState, "to", s.state)
+		slog.Info("Service health updated", "host", s.hostURL.Host, "from", oldState.String(), "to", s.state.String())
 		s.consumer.StateChanged(s)
 
 		if s.state == ServiceStateHealthy && oldState == ServiceStateAdding {
