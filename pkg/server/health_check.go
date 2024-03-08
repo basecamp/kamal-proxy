@@ -2,11 +2,10 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 type HealthCheckConsumer interface {
@@ -65,20 +64,20 @@ func (hc *HealthCheck) check() {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, hc.endpoint.String(), nil)
 	if err != nil {
-		log.Err(err).Msg("Unable to create healthcheck request")
+		slog.Error("Unable to create healthcheck request", "error", err)
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Info().Err(err).Msg("Healthcheck failed")
+		slog.Info("Healthcheck failed", "error", err)
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		log.Info().Int("status", resp.StatusCode).Msg("Healthcheck failed")
+		slog.Info("Healthcheck failed", "status", resp.StatusCode)
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}

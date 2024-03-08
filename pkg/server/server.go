@@ -3,11 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -45,7 +44,7 @@ func (s *Server) Addr() string {
 }
 
 func (s *Server) Start() error {
-	log.Info().Msg("Server starting")
+	slog.Info("Server starting")
 
 	err := s.loadBalancer.RestoreFromStateFile()
 	if err != nil {
@@ -73,13 +72,13 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	log.Info().Msg("Server started")
+	slog.Info("Server started")
 	return nil
 }
 
 func (s *Server) Stop() error {
-	log.Info().Msg("Server stopping")
-	defer log.Info().Msg("Server stopped")
+	slog.Info("Server stopping")
+	defer slog.Info("Server stopped")
 
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

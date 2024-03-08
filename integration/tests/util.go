@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kevinmcconnell/mproxy/pkg/server"
-	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kevinmcconnell/mproxy/pkg/server"
 )
 
 func testProxyServer(t *testing.T, handlers ...http.HandlerFunc) *server.Server {
@@ -100,7 +101,7 @@ func newClientConsumer(t *testing.T, target *url.URL) *clientConsumer {
 }
 
 func (c *clientConsumer) Close() {
-	log.Debug().Msg("Closing client")
+	slog.Debug("Closing client")
 	close(c.done)
 	c.wg.Wait()
 }

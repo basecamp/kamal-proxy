@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"sync"
-
-	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -81,12 +80,12 @@ func (lb *LoadBalancer) GetServices() []*Service {
 func (lb *LoadBalancer) Add(hosts Hosts, waitForHealthy bool) error {
 	services, err := lb.addServicesUnlessExists(hosts)
 	if err != nil {
-		log.Err(err).Msg("Unable to add services")
+		slog.Error("Unable to add services", "error", err)
 		return err
 	}
 
 	for _, service := range services {
-		log.Info().Str("host", service.Host()).Msg("Service added")
+		slog.Info("Service added", "host", service.Host())
 		service.BeginHealthChecks(lb)
 	}
 
@@ -94,11 +93,11 @@ func (lb *LoadBalancer) Add(hosts Hosts, waitForHealthy bool) error {
 		for _, service := range services {
 			healthy := service.WaitUntilHealthy(lb.config.AddTimeout)
 			if !healthy {
-				log.Info().Str("host", service.Host()).Msg("Service failed to become healthy")
+				slog.Info("Service failed to become healthy", "host", service.Host())
 				return ErrorServiceFailedToBecomeHealthy
 			}
 
-			log.Info().Str("host", service.Host()).Msg("Service is now healthy")
+			slog.Info("Service is now healthy", "host", service.Host())
 		}
 	}
 
@@ -108,15 +107,15 @@ func (lb *LoadBalancer) Add(hosts Hosts, waitForHealthy bool) error {
 func (lb *LoadBalancer) Remove(hosts Hosts) error {
 	services, err := lb.removeAndReturnServices(hosts)
 	if err != nil {
-		log.Err(err).Msg("Unable to remove services")
+		slog.Error("Unable to remove services", "error", err)
 		return err
 	}
 
 	for _, service := range services {
 		// TODO: drain in parallel -- maybe split "start drain" and "wait for drain"?
-		log.Info().Str("host", service.Host()).Msg("Draining service")
+		slog.Info("Draining service", "host", service.Host())
 		service.Drain(lb.config.DrainTimeout)
-		log.Info().Str("host", service.Host()).Msg("Removed service")
+		slog.Info("Removed service", "host", service.Host())
 	}
 
 	return nil
@@ -128,7 +127,7 @@ func (lb *LoadBalancer) Deploy(hosts Hosts) error {
 	if len(toAdd) > 0 {
 		err := lb.Add(toAdd, true)
 		if err != nil {
-			log.Err(err).Msg("Failed to deploy new services")
+			slog.Error("Failed to deploy new services", "error", err)
 			return err
 		}
 	}
@@ -136,7 +135,7 @@ func (lb *LoadBalancer) Deploy(hosts Hosts) error {
 	if len(toRemove) > 0 {
 		err := lb.Remove(toRemove)
 		if err != nil {
-			log.Err(err).Msg("Failed to remove old services")
+			slog.Error("Failed to remove old services", "error", err)
 			return err
 		}
 	}
@@ -150,27 +149,27 @@ func (lb *LoadBalancer) RestoreFromStateFile() error {
 	f, err := os.Open(lb.config.StatePath())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			log.Info().Msg("No state file present; starting empty")
+			slog.Info("No state file present; starting empty")
 			return nil
 		}
-		log.Err(err).Msg("Failed to open state file")
+		slog.Error("Failed to open state file", "error", err)
 		return err
 	}
 	defer f.Close()
 
 	err = json.NewDecoder(f).Decode(&sf)
 	if err != nil {
-		log.Err(err).Msg("Failed to read file")
+		slog.Error("Failed to read state file", "error", err)
 		return err
 	}
 
 	err = lb.Add(sf.Hosts, false)
 	if err != nil {
-		log.Err(err).Msg("Failed to restore services from state file")
+		slog.Error("Failed to restore services from state file", "error", err)
 		return err
 	}
 
-	log.Info().Msg("Restored previous state")
+	slog.Info("Restored previous state")
 
 	return nil
 }
@@ -227,7 +226,7 @@ func (lb *LoadBalancer) addServicesUnlessExists(hosts Hosts) ([]*Service, error)
 
 			services = append(services, service)
 		} else {
-			log.Info().Stringer("host", host).Msg("Service already exists; ignoring")
+			slog.Info("Service already exists; ignoring", "host", host)
 		}
 	}
 
@@ -252,7 +251,7 @@ func (lb *LoadBalancer) removeAndReturnServices(hosts Hosts) ([]*Service, error)
 			services = append(services, service)
 			delete(lb.services, host)
 		} else {
-			log.Info().Stringer("host", host).Msg("Service not found; ignoring")
+			slog.Info("Service not found; ignoring", "host", host)
 		}
 	}
 
@@ -311,7 +310,7 @@ func (lb *LoadBalancer) writeStateFile() error {
 
 	f, err := os.Create(lb.config.StatePath())
 	if err != nil {
-		log.Err(err).Msg("Failed to create state file")
+		slog.Error("Failed to create state file", "error", err)
 		return err
 	}
 	defer f.Close()

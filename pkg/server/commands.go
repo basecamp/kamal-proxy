@@ -3,11 +3,10 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/rpc"
 	"sync"
-
-	"github.com/rs/zerolog/log"
 )
 
 var registered sync.Once
@@ -40,13 +39,13 @@ func (h *CommandHandler) Start(socketPath string) error {
 		err = rpc.RegisterName("mproxy", h)
 	})
 	if err != nil {
-		log.Err(err).Msg("Failed to register RPC handler")
+		slog.Error("Failed to register RPC handler", "error", err)
 		return err
 	}
 
 	h.rpcListener, err = net.Listen("unix", socketPath)
 	if err != nil {
-		log.Err(err).Msg("Failed to start RPC listener")
+		slog.Error("Failed to start RPC listener", "error", err)
 		return err
 	}
 
@@ -55,10 +54,10 @@ func (h *CommandHandler) Start(socketPath string) error {
 			conn, err := h.rpcListener.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
-					log.Debug().Msg("Closing RPC listener")
+					slog.Debug("Closing RPC listener")
 					return
 				} else {
-					log.Err(err).Msg("Error accepting RPC connection")
+					slog.Error("Error accepting RPC connection", "error", err)
 					continue
 				}
 			}

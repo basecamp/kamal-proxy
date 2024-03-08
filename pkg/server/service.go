@@ -3,13 +3,12 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 type ServiceState int
@@ -153,12 +152,7 @@ func (s *Service) HealthCheckCompleted(success bool) {
 	}
 
 	if s.state != oldState {
-		log.Info().
-			Str("host", s.hostURL.Host).
-			Stringer("from", oldState).
-			Stringer("to", s.state).
-			Msg("Service health updated")
-
+		slog.Info("Service health updated", "host", s.hostURL.Host, "from", oldState, "to", s.state)
 		s.consumer.StateChanged(s)
 
 		if s.state == ServiceStateHealthy && oldState == ServiceStateAdding {
@@ -170,7 +164,7 @@ func (s *Service) HealthCheckCompleted(success bool) {
 // Private
 
 func (s *Service) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Err(err).Str("host", s.Host()).Str("path", r.URL.Path).Msg("Error while proxying")
+	slog.Error("Error while proxying", "host", s.Host(), "path", r.URL.Path, "error", err)
 
 	if s.isRequestEntityTooLarge(err) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
