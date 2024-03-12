@@ -2,7 +2,8 @@ services:
   proxy:
     build: ./
     ports:
-      - 8000:80
+      - 80:80
+      - 443:443
     restart: unless-stopped
 
   web:
