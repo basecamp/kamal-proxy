@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -59,6 +60,7 @@ type inflightMap map[*http.Request]context.CancelFunc
 type Target struct {
 	targetURL         *url.URL
 	healthCheckConfig HealthCheckConfig
+	requireSSL        bool
 	proxy             *httputil.ReverseProxy
 
 	state        TargetState
@@ -69,7 +71,7 @@ type Target struct {
 	becameHealthy chan (bool)
 }
 
-func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig) (*Target, error) {
+func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requireSSL bool) (*Target, error) {
 	uri, err := parseTargetURL(targetURL)
 	if err != nil {
 		return nil, err
@@ -78,6 +80,7 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig) (*Target, 
 	service := &Target{
 		targetURL:         uri,
 		healthCheckConfig: healthCheckConfig,
+		requireSSL:        requireSSL,
 
 		state:    TargetStateAdding,
 		inflight: inflightMap{},
@@ -102,6 +105,12 @@ func (s *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	defer s.endInflightRequest(req)
+
+	wasSSL := req.TLS != nil
+	if s.requireSSL && !wasSSL {
+		s.redirectToHTTPS(w, req)
+		return
+	}
 
 	s.proxy.ServeHTTP(w, req)
 }
@@ -177,7 +186,9 @@ func (s *Target) HealthCheckCompleted(success bool) {
 // Private
 
 func (s *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.Error("Error while proxying", "target", s.Target(), "path", r.URL.Path, "error", err)
+	if !errors.Is(err, context.Canceled) {
+		slog.Error("Error while proxying", "target", s.Target(), "path", r.URL.Path, "error", err)
+	}
 
 	if s.isRequestEntityTooLarge(err) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
@@ -235,6 +246,18 @@ func (s *Target) pendingRequestsToCancel() inflightMap {
 		result[k] = v
 	}
 	return result
+}
+
+func (s *Target) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Connection", "close")
+
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+	}
+
+	url := "https://" + host + r.URL.RequestURI()
+	http.Redirect(w, r, url, http.StatusMovedPermanently)
 }
 
 func parseTargetURL(targetURL string) (*url.URL, error) {

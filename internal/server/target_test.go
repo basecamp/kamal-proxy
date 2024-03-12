@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -150,4 +151,27 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	target.Drain(time.Millisecond * 10)
 
 	require.Equal(t, 0, served)
+}
+
+func TestTarget_RedirectToHTTPWhenSSLRequired(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(server.Close)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, true)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	target.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
+
+	req = httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+	w = httptest.NewRecorder()
+	target.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }

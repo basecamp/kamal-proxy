@@ -25,8 +25,9 @@ func newRunCommand() *runCommand {
 		RunE:  runCommand.runServer,
 	}
 
-	runCommand.cmd.Flags().IntVarP(&runCommand.config.HttpPort, "port", "p", 80, "Port to serve HTTP traffic on")
 	runCommand.cmd.Flags().BoolVar(&runCommand.debugLogsEnabled, "debug", false, "Include debugging logs")
+	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpPort, "http-port", server.DefaultHttpPort, "Port to serve HTTP traffic on")
+	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpsPort, "https-port", server.DefaultHttpsPort, "Port to serve HTTPS traffic on")
 	runCommand.cmd.Flags().Int64Var(&runCommand.config.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")
 	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpIdleTimeout, "http-idle-timeout", server.DefaultHttpIdleTimeout, "Timeout before idle connection is closed")
 	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpReadTimeout, "http-read-timeout", server.DefaultHttpReadTimeout, "Tiemout for client to send a request")

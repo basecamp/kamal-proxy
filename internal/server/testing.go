@@ -29,7 +29,7 @@ func testBackendWithHandler(t *testing.T, handler http.HandlerFunc) (*httptest.S
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig)
+	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, false)
 	require.NoError(t, err)
 
 	return server, target

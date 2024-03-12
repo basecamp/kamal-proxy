@@ -117,6 +117,8 @@ func TestRouter_ValidateSSLDomain(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
+	first.requireSSL = true
+
 	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))
 	require.NoError(t, router.SetServiceTarget("", second, DefaultAddTimeout))
 

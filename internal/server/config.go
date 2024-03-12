@@ -7,6 +7,7 @@ import (
 
 const (
 	DefaultHttpPort           = 80
+	DefaultHttpsPort          = 443
 	DefaultHttpIdleTimeout    = 60 * time.Second
 	DefaultHttpReadTimeout    = 30 * time.Second
 	DefaultHttpWriteTimeout   = 30 * time.Second
@@ -16,6 +17,7 @@ const (
 type Config struct {
 	ConfigDir          string
 	HttpPort           int
+	HttpsPort          int
 	HttpIdleTimeout    time.Duration
 	HttpReadTimeout    time.Duration
 	HttpWriteTimeout   time.Duration

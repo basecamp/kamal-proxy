@@ -42,7 +42,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) SetServiceTarget(host string, target *Target, addTimeout time.Duration) error {
-	slog.Info("Deploying", "host", host, "target", target.targetURL.Host)
+	slog.Info("Deploying", "host", host, "target", target.targetURL.Host, "ssl", target.requireSSL)
 
 	service := r.setAddingService(host, target)
 
@@ -100,8 +100,12 @@ func (r *Router) ValidateSSLDomain(host string) bool {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	_, ok := r.services[host]
-	return ok
+	service, ok := r.services[host]
+	if ok && service.active != nil {
+		return service.active.requireSSL
+	}
+
+	return false
 }
 
 // Private
