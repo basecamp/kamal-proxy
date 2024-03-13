@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 func TestRouter_Empty(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 
 	statusCode, _ := sendRequest(router, "http://example.com/")
 
@@ -19,7 +20,7 @@ func TestRouter_Empty(t *testing.T) {
 }
 
 func TestRouter_ActiveServiceForHost(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
 	require.NoError(t, router.SetServiceTarget("dummy.example.com", target, DefaultAddTimeout))
@@ -31,7 +32,7 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 }
 
 func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
 	require.NoError(t, router.SetServiceTarget("", target, DefaultAddTimeout))
@@ -43,7 +44,7 @@ func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
 }
 
 func TestRouter_ReplacingActiveService(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
@@ -63,7 +64,7 @@ func TestRouter_ReplacingActiveService(t *testing.T) {
 }
 
 func TestRouter_RoutingMultipleHosts(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
@@ -80,7 +81,7 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 }
 
 func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
@@ -101,7 +102,7 @@ func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
 }
 
 func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 	_, target := testBackend(t, "", http.StatusInternalServerError)
 
 	err := router.SetServiceTarget("example.com", target, time.Millisecond*20)
@@ -113,7 +114,7 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 }
 
 func TestRouter_ValidateSSLDomain(t *testing.T) {
-	router := NewRouter()
+	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
@@ -126,7 +127,41 @@ func TestRouter_ValidateSSLDomain(t *testing.T) {
 	assert.False(t, router.ValidateSSLDomain("s2.example.com"))
 }
 
+func TestRouter_RestoreLastSavedState(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+	second.requireSSL = true
+
+	router := NewRouter(statePath)
+	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))
+	require.NoError(t, router.SetServiceTarget("", second, DefaultAddTimeout))
+
+	statusCode, body := sendRequest(router, "http://s1.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+
+	statusCode, _ = sendRequest(router, "http:/other.example.com/")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
+
+	router = NewRouter(statePath)
+	router.RestoreLastSavedState()
+
+	statusCode, body = sendRequest(router, "http://s1.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+
+	statusCode, _ = sendRequest(router, "http:/other.example.com/")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
+}
+
 // Helpers
+
+func testRouter(t *testing.T) *Router {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	return NewRouter(statePath)
+}
 
 func sendRequest(router *Router, url string) (int, string) {
 	req := httptest.NewRequest(http.MethodGet, url, nil)

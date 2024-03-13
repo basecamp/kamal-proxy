@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -22,14 +24,38 @@ type Service struct {
 type HostServiceMap map[string]*Service
 
 type Router struct {
+	statePath   string
 	services    HostServiceMap
 	serviceLock sync.RWMutex
 }
 
-func NewRouter() *Router {
+func NewRouter(statePath string) *Router {
 	return &Router{
-		services: HostServiceMap{},
+		statePath: statePath,
+		services:  HostServiceMap{},
 	}
+}
+
+func (r *Router) RestoreLastSavedState() error {
+	f, err := os.Open(r.statePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			slog.Debug("No state to restore", "path", r.statePath)
+			return nil
+		}
+		slog.Error("Failed to restore saved state", "path", r.statePath, "error", err)
+		return err
+	}
+
+	var state savedState
+	err = json.NewDecoder(f).Decode(&state)
+	if err != nil {
+		slog.Error("Failed to decode saved state", "path", r.statePath, "error", err)
+		return err
+	}
+
+	slog.Info("Restoring saved state", "path", r.statePath)
+	return r.restoreSnapshot(state)
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -55,43 +81,49 @@ func (r *Router) SetServiceTarget(host string, target *Target, addTimeout time.D
 	}
 
 	r.promoteToActive(service, target)
+	r.saveState()
+
 	slog.Info("Deployed", "host", host, "target", target.targetURL.Host)
 	return nil
 }
 
 func (r *Router) RemoveService(host string) error {
-	r.serviceLock.Lock()
-	defer r.serviceLock.Unlock()
+	err := r.withWriteLock(func() error {
+		service, ok := r.services[host]
+		if !ok {
+			return ErrorServiceNotFound
+		}
 
-	service, ok := r.services[host]
-	if !ok {
-		return ErrorServiceNotFound
-	}
+		if service.active != nil {
+			r.drainAndDispose(service, service.active, DefaultDrainTimeout)
+		}
+		if service.adding != nil {
+			service.adding.StopHealthChecks()
+		}
 
-	if service.active != nil {
-		r.drainAndDispose(service, service.active, DefaultDrainTimeout)
-	}
-	if service.adding != nil {
-		service.adding.StopHealthChecks()
-	}
+		delete(r.services, host)
+		return nil
+	})
 
-	delete(r.services, host)
-	return nil
+	r.saveState()
+
+	return err
 }
 
 func (r *Router) ListActiveServices() map[string]string {
-	r.serviceLock.RLock()
-	defer r.serviceLock.RUnlock()
-
 	result := map[string]string{}
-	for host, service := range r.services {
-		if host == "" {
-			host = "*"
+
+	r.withReadLock(func() error {
+		for host, service := range r.services {
+			if host == "" {
+				host = "*"
+			}
+			if service.active != nil {
+				result[host] = service.active.targetURL.Host
+			}
 		}
-		if service.active != nil {
-			result[host] = service.active.targetURL.Host
-		}
-	}
+		return nil
+	})
 
 	return result
 }
@@ -109,6 +141,75 @@ func (r *Router) ValidateSSLDomain(host string) bool {
 }
 
 // Private
+
+type savedTarget struct {
+	Target     string `json:"target"`
+	RequireSSL bool   `json:"require_ssl"`
+}
+
+type savedState struct {
+	ActiveTargets map[string]savedTarget `json:"active_targets"`
+}
+
+func (r *Router) saveState() error {
+	state := r.snaphostState()
+
+	f, err := os.Create(r.statePath)
+	if err != nil {
+		return err
+	}
+
+	err = json.NewEncoder(f).Encode(state)
+	if err != nil {
+		slog.Error("Unable to save state", "error", err, "path", r.statePath)
+		return err
+	}
+
+	slog.Debug("No state to restore", "path", r.statePath)
+	return nil
+}
+
+func (r *Router) restoreSnapshot(state savedState) error {
+	r.serviceLock.Lock()
+	defer r.serviceLock.Unlock()
+
+	r.services = HostServiceMap{}
+	for host, saved := range state.ActiveTargets {
+		target, err := NewTarget(saved.Target, HealthCheckConfig{}, saved.RequireSSL)
+		if err != nil {
+			return err
+		}
+
+		// Put the target back into the active state, regardless of its health. It
+		// may be rebooting or otherwise need more time to be reachable again.
+		target.state = TargetStateHealthy
+		r.services[host] = &Service{
+			active: target,
+		}
+	}
+
+	return nil
+}
+
+func (r *Router) snaphostState() savedState {
+	state := savedState{
+		ActiveTargets: map[string]savedTarget{},
+	}
+
+	r.withReadLock(func() error {
+		for host, service := range r.services {
+			if service.active != nil {
+				state.ActiveTargets[host] = savedTarget{
+					Target:     service.active.Target(),
+					RequireSSL: service.active.requireSSL,
+				}
+			}
+		}
+		return nil
+	})
+
+	return state
+}
 
 func (r *Router) activeTargetForRequest(req *http.Request) *Target {
 	r.serviceLock.RLock()
@@ -165,10 +266,10 @@ func (r *Router) drainAndDispose(service *Service, target *Target, drainTimeout 
 	go func() {
 		target.Drain(drainTimeout)
 
-		r.serviceLock.Lock()
-		defer r.serviceLock.Unlock()
-
-		service.draining = removeItem(service.draining, target)
+		r.withWriteLock(func() error {
+			service.draining = removeItem(service.draining, target)
+			return nil
+		})
 	}()
 }
 
@@ -179,4 +280,18 @@ func removeItem[T comparable](s []T, item T) []T {
 		}
 	}
 	return s
+}
+
+func (r *Router) withReadLock(fn func() error) error {
+	r.serviceLock.RLock()
+	defer r.serviceLock.RUnlock()
+
+	return fn()
+}
+
+func (r *Router) withWriteLock(fn func() error) error {
+	r.serviceLock.Lock()
+	defer r.serviceLock.Unlock()
+
+	return fn()
 }

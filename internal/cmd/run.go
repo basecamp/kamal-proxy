@@ -41,7 +41,10 @@ func (c *runCommand) runServer(cmd *cobra.Command, args []string) error {
 	c.setLogger()
 	c.config.ConfigDir = configDir
 
-	s := server.NewServer(&c.config, server.NewRouter())
+	router := server.NewRouter(c.config.StatePath())
+	router.RestoreLastSavedState()
+
+	s := server.NewServer(&c.config, router)
 	s.Start()
 	defer s.Stop()
 
