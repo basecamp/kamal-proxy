@@ -26,6 +26,7 @@ func newRunCommand() *runCommand {
 	}
 
 	runCommand.cmd.Flags().BoolVar(&runCommand.debugLogsEnabled, "debug", false, "Include debugging logs")
+	runCommand.cmd.Flags().BoolVar(&runCommand.config.ACMEUseStaging, "ssl-staging", false, "Use Let's Encrypt staging environment for SSL certificates")
 	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpPort, "http-port", server.DefaultHttpPort, "Port to serve HTTP traffic on")
 	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpsPort, "https-port", server.DefaultHttpsPort, "Port to serve HTTPS traffic on")
 	runCommand.cmd.Flags().Int64Var(&runCommand.config.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")

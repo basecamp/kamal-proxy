@@ -22,6 +22,7 @@ type Config struct {
 	HttpReadTimeout    time.Duration
 	HttpWriteTimeout   time.Duration
 	MaxRequestBodySize int64
+	ACMEUseStaging     bool
 }
 
 func (c Config) SocketPath() string {

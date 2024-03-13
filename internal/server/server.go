@@ -12,6 +12,10 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
+const (
+	ACMEStagingDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
+)
+
 var (
 	ErrorHostSSLNotPermitted = errors.New("host not permitted for SSL")
 )
@@ -95,8 +99,9 @@ func (s *Server) buildHandler() http.Handler {
 }
 
 func (s *Server) certManager() *autocert.Manager {
-	client := &acme.Client{
-		DirectoryURL: "https://acme-staging-v02.api.letsencrypt.org/directory",
+	client := &acme.Client{}
+	if s.config.ACMEUseStaging {
+		client.DirectoryURL = ACMEStagingDirectoryURL
 	}
 
 	slog.Debug("SSL: initializing", "directory", client.DirectoryURL)
