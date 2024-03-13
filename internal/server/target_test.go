@@ -11,54 +11,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestService_Serve(t *testing.T) {
-	_, host := testBackend(t, "ok")
-	hostURL, _ := host.ToURL()
-
-	s := NewService(hostURL, defaultHealthCheckConfig)
+func TestTarget_Serve(t *testing.T) {
+	_, target := testBackend(t, "ok", http.StatusOK)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
+	target.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
 }
 
-func TestService_PreserveHostHeader(t *testing.T) {
-	var requestHost string
+func TestTarget_PreserveTargetHeader(t *testing.T) {
+	var requestTarget string
 
-	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
-		requestHost = r.Host
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		requestTarget = r.Host
 	})
-	hostURL, _ := host.ToURL()
-
-	s := NewService(hostURL, defaultHealthCheckConfig)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "custom.example.com"
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
+	target.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-	require.Equal(t, "custom.example.com", requestHost)
+	require.Equal(t, "custom.example.com", requestTarget)
 }
 
-func TestService_HeadersAreCorrectlyPreserved(t *testing.T) {
+func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 	var (
 		xForwardedFor   string
 		xForwardedProto string
 		customHeader    string
 	)
 
-	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		xForwardedFor = r.Header.Get("X-Forwarded-For")
 		xForwardedProto = r.Header.Get("X-Forwarded-Proto")
 		customHeader = r.Header.Get("Custom-Header")
 	})
-	hostURL, _ := host.ToURL()
-
-	s := NewService(hostURL, defaultHealthCheckConfig)
 
 	// Preserving headers where X-Forwarded-For exists
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -69,7 +60,7 @@ func TestService_HeadersAreCorrectlyPreserved(t *testing.T) {
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
+	target.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "1.2.3.4, "+clientIP, xForwardedFor)
@@ -78,76 +69,67 @@ func TestService_HeadersAreCorrectlyPreserved(t *testing.T) {
 
 	// Adding X-Forwarded-For if the original does not have one
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
-	s.ServeHTTP(w, req)
+	target.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, clientIP, xForwardedFor)
 }
 
-func TestService_AddedServiceBecomesHealthy(t *testing.T) {
-	_, host := testBackend(t, "ok")
-	hostURL, _ := host.ToURL()
-	c := &testServiceStateChangeConsumer{}
+func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
+	_, target := testBackend(t, "ok", http.StatusOK)
 
-	s := NewService(hostURL, defaultHealthCheckConfig)
-	s.BeginHealthChecks(c)
+	target.BeginHealthChecks()
 
-	require.True(t, s.WaitUntilHealthy(time.Second))
-	require.Equal(t, ServiceStateHealthy, s.state)
+	require.True(t, target.WaitUntilHealthy(time.Second))
+	require.Equal(t, TargetStateHealthy, target.state)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
+	target.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
-	require.True(t, c.called)
 }
 
-func TestService_DrainWhenEmpty(t *testing.T) {
-	_, host := testBackend(t, "ok")
-	hostURL, _ := host.ToURL()
+func TestTarget_DrainWhenEmpty(t *testing.T) {
+	_, target := testBackend(t, "ok", http.StatusOK)
 
-	s := NewService(hostURL, defaultHealthCheckConfig)
-	s.Drain(time.Second)
+	target.Drain(time.Second)
 }
 
-func TestService_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
+func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	n := 3
 	served := 0
 
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
 		time.Sleep(time.Millisecond * 200)
 		served++
 	})
-	hostURL, _ := host.ToURL()
-
-	s := NewService(hostURL, defaultHealthCheckConfig)
 
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
-		go s.ServeHTTP(w, req)
+		go target.ServeHTTP(w, req)
 	}
 
 	started.Wait()
-	s.Drain(time.Second)
+	target.Drain(time.Second)
 
 	require.Equal(t, n, served)
 }
 
-func TestService_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
+func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	n := 20
 	served := 0
 
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, host := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
 		for i := 0; i < 500; i++ {
 			time.Sleep(time.Millisecond * 10)
@@ -157,28 +139,15 @@ func TestService_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 		}
 		served++
 	})
-	hostURL, _ := host.ToURL()
-
-	s := NewService(hostURL, defaultHealthCheckConfig)
 
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
-		go s.ServeHTTP(w, req)
+		go target.ServeHTTP(w, req)
 	}
 
 	started.Wait()
-	s.Drain(time.Millisecond * 10)
+	target.Drain(time.Millisecond * 10)
 
 	require.Equal(t, 0, served)
-}
-
-// Private helpers
-
-type testServiceStateChangeConsumer struct {
-	called bool
-}
-
-func (c *testServiceStateChangeConsumer) StateChanged(service *Service) {
-	c.called = true
 }
