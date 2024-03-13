@@ -7,6 +7,7 @@ zero-downtime deployments. By running a web application behind `mproxy` you can
 deploy changes to it without interruping any of the traffic that's in progress.
 No particular cooperation from the application is required for this to work.
 
+
 ## A quick overview
 
 To run an instance of the proxy, use the `mproxy run` command. There's no
@@ -15,17 +16,15 @@ aren't right for your application.
 
 For example, to run the proxy on a port other than 80 (the default) you could:
 
-    mproxy run --port 8080
+    mproxy run --http-port 8080
 
 Run `mproxy help run` to see the full list of options.
 
-To route traffic through the proxy to a web application, you `deploy` instances of
-the application to the proxy. Deploying instances makes them available to the proxy,
-and also replaces any previous instances that are no longer being used.
+To route traffic through the proxy to a web application, you `deploy` instances
+of the application to the proxy. Deploying an instance makes it available to the
+proxy, and replace the instance it was using before (if any).
 
-Use the format `hostname:port` when specifying the application instances. You
-can specify one or more instances in each deployment; if there's more than one,
-the traffic will be load-balanced between all of them.
+Use the format `hostname:port` when specifying the instance to deploy.
 
 For example:
 
@@ -36,46 +35,43 @@ will immediately begin running HTTP health checks to ensure it's reachable and
 working and, as soon as those health checks succeed, will start routing traffic
 to it.
 
-If an instance fails to become healthy within the allowed time, `deploy` returns
-a non-zero exit code, so that deployment scripts can handle the failure
-appropriately.
+If the instance fails to become healthy within a reasonable time, the `deploy`
+command will stop the deployment and return a non-zero exit code, so that
+deployment scripts can handle the failure appropriately.
 
-To deploy a new version of an application, call `deploy` again with the new
-instance(s) that should replace those currently running. For example:
+Each deployment takes over traffic from the previously deployed instance. As
+soon as mproxy determines that the new instance is healthy, it will route all
+new traffic to that instance.
 
-    mproxy deploy web-2:3000 web-3:3000
+The `deploy` command will wait for traffic to drain from the old instance before
+returning. This means it's safe to remove the old instance as soon as `deploy`
+returns successfully, without interrupting any in-flight requests.
 
-This will do 2 things:
+Because traffic is only routed to a new instance once it's healthy, and traffic
+is drained from old instances before they are removed, deployments take place
+with zero downtime.
 
-- First, it will add the new instances, and wait for them to be healthy, in the
-  same way as before.
-- Second, any instances that were previously running, but are not listed in the
-  new deployment (so in this example, that's `web-1:3000`) will be considered
-  outdated. They'll stop receiving new traffic, and will be given some time to
-  drain any requests that are in flight. As soon as the draining is complete,
-  they'll be removed from the list.
+### Host-based routing
 
-Processing the steps in this order ensures that there's no downtime or failed
-requests during the deployment.
+Host-based routing allows you to run multiple applications on the same server,
+using a single instance of `mproxy` to route traffic to all of them.
 
-If you need more control of the timing or sequence of adding and removing
-instances, you can use the `add` and `rm` commands to perform the steps
-individually. For example:
+When deploying an instance, you can specify a host that it should serve traffic
+for:
 
-    mproxy add web-4:3000
+    mproxy deploy web-1:3000 --host app1.example.com
 
-or:
+When deployed in this way, the instance will only receive traffic for the
+specified host. By deploying multiple instances, each with their own host, you
+can run multiple applications on the same server without port conflicts.
 
-    mproxy rm web-{5,6,7}
+### Automatic SSL
 
-Lastly, you can list the currently registered instances, along with their
-status:
+`mproxy` can automatically obtain and renew SSL certificates for your
+applications. To enable this, add the `--ssl` flag when deploying an instance:
 
-    $ mproxy list
-    web-2:3000        (healthy)
-    web-3:3000        (healthy)
-    web-4:3000        (unhealthy)
-    web-5:3000        (adding)
+    mproxy deploy web-1:3000 --host app1.example.com --ssl
+
 
 ## Building
 
@@ -86,6 +82,7 @@ To build `mproxy` locally, if you have a working Go environment you can:
 Alternatively, build as a Docker container:
 
     make docker
+
 
 ## Trying it out
 
@@ -98,4 +95,4 @@ proxy commands with `docker compose exec proxy ...`, for example:
 
     docker compose exec proxy mproxy deploy mproxy-web-1:3000
 
-And then access the proxy from a browser at http://localhost:8000/.
+And then access the proxy from a browser at http://localhost/.
