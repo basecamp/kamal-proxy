@@ -21,6 +21,8 @@ const (
 	DefaultHealthCheckPath     = "/up"
 	DefaultHealthCheckInterval = time.Second
 	DefaultHealthCheckTimeout  = time.Second * 5
+
+	MaxIdleConnsPerHost = 100
 )
 
 var (
@@ -89,6 +91,9 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requireSSL
 	service.proxy = &httputil.ReverseProxy{
 		Rewrite:      service.Rewrite,
 		ErrorHandler: service.handleProxyError,
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost: MaxIdleConnsPerHost,
+		},
 	}
 
 	return service, nil
