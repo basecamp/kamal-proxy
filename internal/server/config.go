@@ -31,3 +31,7 @@ func (c Config) SocketPath() string {
 func (c Config) StatePath() string {
 	return path.Join(c.ConfigDir, "mproxy.state")
 }
+
+func (c Config) CertificatePath() string {
+	return path.Join(c.ConfigDir, "certs")
+}

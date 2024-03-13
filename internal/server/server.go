@@ -102,7 +102,7 @@ func (s *Server) certManager() *autocert.Manager {
 	slog.Debug("SSL: initializing", "directory", client.DirectoryURL)
 
 	return &autocert.Manager{
-		Cache:      autocert.DirCache(s.config.StatePath()),
+		Cache:      autocert.DirCache(s.config.CertificatePath()),
 		Client:     client,
 		HostPolicy: s.SSLHostPolicy,
 		Prompt:     autocert.AcceptTOS,
