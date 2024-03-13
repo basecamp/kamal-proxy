@@ -1,15 +1,19 @@
 package server
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"nhooyr.io/websocket"
 )
 
 func TestTarget_Serve(t *testing.T) {
@@ -21,6 +25,30 @@ func TestTarget_Serve(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
+}
+
+func TestTarget_ServeWebSocket(t *testing.T) {
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+		require.NoError(t, err)
+		defer c.CloseNow()
+
+		c.Write(context.Background(), websocket.MessageText, []byte("hello"))
+	})
+
+	server := httptest.NewServer(target)
+	defer server.Close()
+
+	websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
+
+	c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
+	require.NoError(t, err)
+	defer c.CloseNow()
+
+	kind, body, err := c.Read(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, websocket.MessageText, kind)
+	assert.Equal(t, "hello", string(body))
 }
 
 func TestTarget_PreserveTargetHeader(t *testing.T) {
