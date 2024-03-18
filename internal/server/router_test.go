@@ -118,7 +118,7 @@ func TestRouter_ValidateTLSDomain(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	first.requireTLS = true
+	first.options.RequireTLS = true
 
 	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))
 	require.NoError(t, router.SetServiceTarget("", second, DefaultAddTimeout))
@@ -132,7 +132,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
-	second.requireTLS = true
+	second.options.RequireTLS = true
 
 	router := NewRouter(statePath)
 	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))

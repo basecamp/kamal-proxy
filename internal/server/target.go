@@ -32,9 +32,13 @@ var (
 )
 
 type HealthCheckConfig struct {
-	Path     string
-	Interval time.Duration
-	Timeout  time.Duration
+	Path     string        `json:"path"`
+	Interval time.Duration `json:"interval"`
+	Timeout  time.Duration `json:"timeout"`
+}
+
+type TargetOptions struct {
+	RequireTLS bool `json:"require_tls"`
 }
 
 type TargetState int
@@ -62,7 +66,7 @@ type inflightMap map[*http.Request]context.CancelFunc
 type Target struct {
 	targetURL         *url.URL
 	healthCheckConfig HealthCheckConfig
-	requireTLS        bool
+	options           TargetOptions
 	proxy             *httputil.ReverseProxy
 
 	state        TargetState
@@ -73,7 +77,7 @@ type Target struct {
 	becameHealthy chan (bool)
 }
 
-func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requireTLS bool) (*Target, error) {
+func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options TargetOptions) (*Target, error) {
 	uri, err := parseTargetURL(targetURL)
 	if err != nil {
 		return nil, err
@@ -82,7 +86,7 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requireTLS
 	service := &Target{
 		targetURL:         uri,
 		healthCheckConfig: healthCheckConfig,
-		requireTLS:        requireTLS,
+		options:           options,
 
 		state:    TargetStateAdding,
 		inflight: inflightMap{},
@@ -112,7 +116,7 @@ func (s *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer s.endInflightRequest(req)
 
 	wasTLS := req.TLS != nil
-	if s.requireTLS && !wasTLS {
+	if s.options.RequireTLS && !wasTLS {
 		s.redirectToHTTPS(w, req)
 		return
 	}

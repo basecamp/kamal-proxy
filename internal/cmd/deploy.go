@@ -12,11 +12,12 @@ import (
 )
 
 type deployCommand struct {
-	cmd         *cobra.Command
-	addTimeout  time.Duration
-	healthCheck server.HealthCheckConfig
-	host        string
-	tls         bool
+	cmd               *cobra.Command
+	addTimeout        time.Duration
+	healthCheckConfig server.HealthCheckConfig
+	targetOptions     server.TargetOptions
+	host              string
+	tls               bool
 }
 
 func newDeployCommand() *deployCommand {
@@ -31,10 +32,10 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.addTimeout, "timeout", server.DefaultAddTimeout, "Maximum time to wait for a target to become healthy")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.host, "host", "", "Host to serve this target on (empty for wildcard)")
-	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
-	deployCommand.cmd.Flags().StringVar(&deployCommand.healthCheck.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheck.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheck.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.targetOptions.RequireTLS, "tls", false, "Configure TLS for this target (requires a non-empty host)")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.healthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
 
 	return deployCommand
 }
@@ -45,18 +46,18 @@ func (c *deployCommand) deployTarget(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("host must be set when using TLS")
 	}
 
-	return c.invoke(socketPath, c.host, args[0], c.addTimeout, c.healthCheck)
+	return c.invoke(socketPath, c.host, args[0], c.addTimeout)
 }
 
-func (c *deployCommand) invoke(socketPath string, host string, targetURL string, timeout time.Duration, healthCheckConfig server.HealthCheckConfig) error {
+func (c *deployCommand) invoke(socketPath string, host string, targetURL string, timeout time.Duration) error {
 	return withRPCClient(socketPath, func(client *rpc.Client) error {
 		var response bool
 		args := server.DeployArgs{
 			Host:              host,
 			TargetURL:         targetURL,
 			Timeout:           timeout,
-			HealthCheckConfig: healthCheckConfig,
-			TLS:               c.tls,
+			HealthCheckConfig: c.healthCheckConfig,
+			TargetOptions:     c.targetOptions,
 		}
 
 		return client.Call("mproxy.Deploy", args, &response)

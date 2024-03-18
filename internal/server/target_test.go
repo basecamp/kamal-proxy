@@ -188,7 +188,7 @@ func TestTarget_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, true)
+	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, TargetOptions{RequireTLS: true})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)

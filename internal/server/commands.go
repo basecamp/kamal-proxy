@@ -21,7 +21,7 @@ type DeployArgs struct {
 	TargetURL         string
 	Timeout           time.Duration
 	HealthCheckConfig HealthCheckConfig
-	TLS               bool
+	TargetOptions     TargetOptions
 }
 
 type RemoveArgs struct {
@@ -79,7 +79,7 @@ func (h *CommandHandler) Stop() error {
 }
 
 func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
-	target, err := NewTarget(args.TargetURL, args.HealthCheckConfig, args.TLS)
+	target, err := NewTarget(args.TargetURL, args.HealthCheckConfig, args.TargetOptions)
 	if err != nil {
 		return err
 	}

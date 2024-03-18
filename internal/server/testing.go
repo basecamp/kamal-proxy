@@ -15,6 +15,10 @@ var defaultHealthCheckConfig = HealthCheckConfig{
 	Timeout:  DefaultHealthCheckTimeout,
 }
 
+var defaultTargetOptions = TargetOptions{
+	RequireTLS: false,
+}
+
 func testBackend(t *testing.T, body string, statusCode int) (*httptest.Server, *Target) {
 	return testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(statusCode)
@@ -29,7 +33,7 @@ func testBackendWithHandler(t *testing.T, handler http.HandlerFunc) (*httptest.S
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, false)
+	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultTargetOptions)
 	require.NoError(t, err)
 
 	return server, target
