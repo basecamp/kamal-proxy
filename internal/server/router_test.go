@@ -113,18 +113,18 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
 }
 
-func TestRouter_ValidateSSLDomain(t *testing.T) {
+func TestRouter_ValidateTLSDomain(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	first.requireSSL = true
+	first.requireTLS = true
 
 	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))
 	require.NoError(t, router.SetServiceTarget("", second, DefaultAddTimeout))
 
-	assert.True(t, router.ValidateSSLDomain("s1.example.com"))
-	assert.False(t, router.ValidateSSLDomain("s2.example.com"))
+	assert.True(t, router.ValidateTLSDomain("s1.example.com"))
+	assert.False(t, router.ValidateTLSDomain("s2.example.com"))
 }
 
 func TestRouter_RestoreLastSavedState(t *testing.T) {
@@ -132,7 +132,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
-	second.requireSSL = true
+	second.requireTLS = true
 
 	router := NewRouter(statePath)
 	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))

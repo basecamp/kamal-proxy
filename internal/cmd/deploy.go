@@ -16,7 +16,7 @@ type deployCommand struct {
 	addTimeout  time.Duration
 	healthCheck server.HealthCheckConfig
 	host        string
-	ssl         bool
+	tls         bool
 }
 
 func newDeployCommand() *deployCommand {
@@ -31,7 +31,7 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.addTimeout, "timeout", server.DefaultAddTimeout, "Maximum time to wait for a target to become healthy")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.host, "host", "", "Host to serve this target on (empty for wildcard)")
-	deployCommand.cmd.Flags().BoolVar(&deployCommand.ssl, "ssl", false, "Configure SSL for this target (requires a non-empty host)")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.healthCheck.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheck.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheck.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
@@ -41,8 +41,8 @@ func newDeployCommand() *deployCommand {
 
 func (c *deployCommand) deployTarget(cmd *cobra.Command, args []string) error {
 	socketPath := path.Join(configDir, "mproxy.sock") // TODO: move this somewhere shared
-	if c.ssl && c.host == "" {
-		return fmt.Errorf("host must be set when using SSL")
+	if c.tls && c.host == "" {
+		return fmt.Errorf("host must be set when using TLS")
 	}
 
 	return c.invoke(socketPath, c.host, args[0], c.addTimeout, c.healthCheck)
@@ -56,7 +56,7 @@ func (c *deployCommand) invoke(socketPath string, host string, targetURL string,
 			TargetURL:         targetURL,
 			Timeout:           timeout,
 			HealthCheckConfig: healthCheckConfig,
-			SSL:               c.ssl,
+			TLS:               c.tls,
 		}
 
 		return client.Call("mproxy.Deploy", args, &response)

@@ -65,12 +65,12 @@ When deployed in this way, the instance will only receive traffic for the
 specified host. By deploying multiple instances, each with their own host, you
 can run multiple applications on the same server without port conflicts.
 
-### Automatic SSL
+### Automatic TLS
 
-`mproxy` can automatically obtain and renew SSL certificates for your
-applications. To enable this, add the `--ssl` flag when deploying an instance:
+`mproxy` can automatically obtain and renew TLS certificates for your
+applications. To enable this, add the `--tls` flag when deploying an instance:
 
-    mproxy deploy web-1:3000 --host app1.example.com --ssl
+    mproxy deploy web-1:3000 --host app1.example.com --tls
 
 
 ## Building

@@ -68,7 +68,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) SetServiceTarget(host string, target *Target, addTimeout time.Duration) error {
-	slog.Info("Deploying", "host", host, "target", target.targetURL.Host, "ssl", target.requireSSL)
+	slog.Info("Deploying", "host", host, "target", target.targetURL.Host, "tls", target.requireTLS)
 
 	service := r.setAddingService(host, target)
 
@@ -128,13 +128,13 @@ func (r *Router) ListActiveServices() map[string]string {
 	return result
 }
 
-func (r *Router) ValidateSSLDomain(host string) bool {
+func (r *Router) ValidateTLSDomain(host string) bool {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
 	service, ok := r.services[host]
 	if ok && service.active != nil {
-		return service.active.requireSSL
+		return service.active.requireTLS
 	}
 
 	return false
@@ -144,7 +144,7 @@ func (r *Router) ValidateSSLDomain(host string) bool {
 
 type savedTarget struct {
 	Target     string `json:"target"`
-	RequireSSL bool   `json:"require_ssl"`
+	RequireTLS bool   `json:"require_tls"`
 }
 
 type savedState struct {
@@ -175,7 +175,7 @@ func (r *Router) restoreSnapshot(state savedState) error {
 
 	r.services = HostServiceMap{}
 	for host, saved := range state.ActiveTargets {
-		target, err := NewTarget(saved.Target, HealthCheckConfig{}, saved.RequireSSL)
+		target, err := NewTarget(saved.Target, HealthCheckConfig{}, saved.RequireTLS)
 		if err != nil {
 			return err
 		}
@@ -201,7 +201,7 @@ func (r *Router) snaphostState() savedState {
 			if service.active != nil {
 				state.ActiveTargets[host] = savedTarget{
 					Target:     service.active.Target(),
-					RequireSSL: service.active.requireSSL,
+					RequireTLS: service.active.requireTLS,
 				}
 			}
 		}

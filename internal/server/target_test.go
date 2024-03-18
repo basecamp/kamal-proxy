@@ -181,7 +181,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	require.Equal(t, 0, served)
 }
 
-func TestTarget_RedirectToHTTPWhenSSLRequired(t *testing.T) {
+func TestTarget_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(server.Close)
 

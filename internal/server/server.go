@@ -17,7 +17,7 @@ const (
 )
 
 var (
-	ErrorHostSSLNotPermitted = errors.New("host not permitted for SSL")
+	ErrorHostTLSNotPermitted = errors.New("host not permitted for TLS")
 )
 
 type Server struct {
@@ -104,20 +104,20 @@ func (s *Server) certManager() *autocert.Manager {
 		client.DirectoryURL = ACMEStagingDirectoryURL
 	}
 
-	slog.Debug("SSL: initializing", "directory", client.DirectoryURL)
+	slog.Debug("TLS: initializing", "directory", client.DirectoryURL)
 
 	return &autocert.Manager{
 		Cache:      autocert.DirCache(s.config.CertificatePath()),
 		Client:     client,
-		HostPolicy: s.SSLHostPolicy,
+		HostPolicy: s.TLSHostPolicy,
 		Prompt:     autocert.AcceptTOS,
 	}
 }
 
-func (s *Server) SSLHostPolicy(ctx context.Context, host string) error {
-	allowed := s.router.ValidateSSLDomain(host)
+func (s *Server) TLSHostPolicy(ctx context.Context, host string) error {
+	allowed := s.router.ValidateTLSDomain(host)
 	if !allowed {
-		return ErrorHostSSLNotPermitted
+		return ErrorHostTLSNotPermitted
 	}
 
 	return nil

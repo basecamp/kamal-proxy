@@ -62,7 +62,7 @@ type inflightMap map[*http.Request]context.CancelFunc
 type Target struct {
 	targetURL         *url.URL
 	healthCheckConfig HealthCheckConfig
-	requireSSL        bool
+	requireTLS        bool
 	proxy             *httputil.ReverseProxy
 
 	state        TargetState
@@ -73,7 +73,7 @@ type Target struct {
 	becameHealthy chan (bool)
 }
 
-func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requireSSL bool) (*Target, error) {
+func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requireTLS bool) (*Target, error) {
 	uri, err := parseTargetURL(targetURL)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requireSSL
 	service := &Target{
 		targetURL:         uri,
 		healthCheckConfig: healthCheckConfig,
-		requireSSL:        requireSSL,
+		requireTLS:        requireTLS,
 
 		state:    TargetStateAdding,
 		inflight: inflightMap{},
@@ -111,8 +111,8 @@ func (s *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	defer s.endInflightRequest(req)
 
-	wasSSL := req.TLS != nil
-	if s.requireSSL && !wasSSL {
+	wasTLS := req.TLS != nil
+	if s.requireTLS && !wasTLS {
 		s.redirectToHTTPS(w, req)
 		return
 	}
