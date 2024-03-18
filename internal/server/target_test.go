@@ -203,3 +203,26 @@ func TestTarget_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
+
+func TestTarget_EnforceMaxRequestBodySize(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(server.Close)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, TargetOptions{MaxRequestBodySize: 10})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
+	w := httptest.NewRecorder()
+	target.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	req = httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("Something longer than 10!"))
+	w = httptest.NewRecorder()
+	target.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
+}

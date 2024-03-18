@@ -29,7 +29,6 @@ func newRunCommand() *runCommand {
 	runCommand.cmd.Flags().BoolVar(&runCommand.config.ACMEUseStaging, "tls-staging", false, "Use Let's Encrypt staging environment for TLS certificates")
 	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpPort, "http-port", server.DefaultHttpPort, "Port to serve HTTP traffic on")
 	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpsPort, "https-port", server.DefaultHttpsPort, "Port to serve HTTPS traffic on")
-	runCommand.cmd.Flags().Int64Var(&runCommand.config.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")
 	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpIdleTimeout, "http-idle-timeout", server.DefaultHttpIdleTimeout, "Timeout before idle connection is closed")
 	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpReadTimeout, "http-read-timeout", server.DefaultHttpReadTimeout, "Tiemout for client to send a request")
 	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpWriteTimeout, "http-write-timeout", server.DefaultHttpWriteTimeout, "Timeout for client to receive a response")

@@ -16,7 +16,8 @@ var defaultHealthCheckConfig = HealthCheckConfig{
 }
 
 var defaultTargetOptions = TargetOptions{
-	RequireTLS: false,
+	RequireTLS:         false,
+	MaxRequestBodySize: 0,
 }
 
 func testBackend(t *testing.T, body string, statusCode int) (*httptest.Server, *Target) {

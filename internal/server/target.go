@@ -38,7 +38,8 @@ type HealthCheckConfig struct {
 }
 
 type TargetOptions struct {
-	RequireTLS bool `json:"require_tls"`
+	RequireTLS         bool  `json:"require_tls"`
+	MaxRequestBodySize int64 `json:"max_request_body_size"`
 }
 
 type TargetState int
@@ -67,7 +68,7 @@ type Target struct {
 	targetURL         *url.URL
 	healthCheckConfig HealthCheckConfig
 	options           TargetOptions
-	proxy             *httputil.ReverseProxy
+	proxyHandler      http.Handler
 
 	state        TargetState
 	inflight     inflightMap
@@ -92,13 +93,7 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options Ta
 		inflight: inflightMap{},
 	}
 
-	service.proxy = &httputil.ReverseProxy{
-		Rewrite:      service.Rewrite,
-		ErrorHandler: service.handleProxyError,
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost: MaxIdleConnsPerHost,
-		},
-	}
+	service.proxyHandler = service.createProxyHandler()
 
 	return service, nil
 }
@@ -121,7 +116,7 @@ func (s *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	s.proxy.ServeHTTP(w, req)
+	s.proxyHandler.ServeHTTP(w, req)
 }
 
 func (s *Target) Rewrite(req *httputil.ProxyRequest) {
@@ -193,6 +188,25 @@ func (s *Target) HealthCheckCompleted(success bool) {
 }
 
 // Private
+
+func (s *Target) createProxyHandler() http.Handler {
+	var handler http.Handler
+
+	handler = &httputil.ReverseProxy{
+		Rewrite:      s.Rewrite,
+		ErrorHandler: s.handleProxyError,
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost: MaxIdleConnsPerHost,
+		},
+	}
+
+	if s.options.MaxRequestBodySize > 0 {
+		handler = http.MaxBytesHandler(handler, s.options.MaxRequestBodySize)
+		slog.Debug("Using max request body limit", "target", s.Target(), "size", s.options.MaxRequestBodySize)
+	}
+
+	return handler
+}
 
 func (s *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
 	if !errors.Is(err, context.Canceled) {

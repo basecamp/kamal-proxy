@@ -89,13 +89,7 @@ func (s *Server) startCommandHandler() {
 }
 
 func (s *Server) buildHandler() http.Handler {
-	var handler http.Handler = s.router
-	if s.config.MaxRequestBodySize > 0 {
-		handler = http.MaxBytesHandler(handler, int64(s.config.MaxRequestBodySize))
-	}
-
-	handler = NewLoggingMiddleware(slog.Default(), handler)
-	return handler
+	return NewLoggingMiddleware(slog.Default(), s.router)
 }
 
 func (s *Server) certManager() *autocert.Manager {
