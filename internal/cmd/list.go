@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/rpc"
 	"os"
-	"path"
 
 	"github.com/spf13/cobra"
 
@@ -28,13 +27,7 @@ func newListCommand() *listCommand {
 }
 
 func (c *listCommand) run(cmd *cobra.Command, args []string) error {
-	socketPath := path.Join(configDir, "mproxy.sock") // TODO: move this somewhere shared
-
-	return c.invoke(socketPath)
-}
-
-func (c *listCommand) invoke(socketPath string) error {
-	return withRPCClient(socketPath, func(client *rpc.Client) error {
+	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		var response server.ListResponse
 
 		err := client.Call("mproxy.List", true, &response)

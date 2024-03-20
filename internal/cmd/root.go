@@ -6,9 +6,11 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/kevinmcconnell/mproxy/internal/server"
 )
 
-var configDir string
+var globalConfig server.Config
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -18,7 +20,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
-	rootCmd.PersistentFlags().StringVar(&configDir, "state-path", defaultConfigLocation(), "Path to store state")
+	rootCmd.PersistentFlags().StringVar(&globalConfig.ConfigDir, "state-path", defaultConfigLocation(), "Path to store state")
 
 	rootCmd.AddCommand(newRunCommand().cmd)
 	rootCmd.AddCommand(newDeployCommand().cmd)

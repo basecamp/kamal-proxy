@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"net/rpc"
-	"path"
 
 	"github.com/spf13/cobra"
 
@@ -19,7 +18,7 @@ func newRemoveCommand() *removeCommand {
 	removeCommand.cmd = &cobra.Command{
 		Use:   "remove",
 		Short: "Remove the service for a host",
-		RunE:  removeCommand.removeService,
+		RunE:  removeCommand.run,
 		Args:  cobra.NoArgs,
 	}
 
@@ -28,17 +27,11 @@ func newRemoveCommand() *removeCommand {
 	return removeCommand
 }
 
-func (c *removeCommand) removeService(cmd *cobra.Command, args []string) error {
-	socketPath := path.Join(configDir, "mproxy.sock") // TODO: move this somewhere shared
-
-	return c.invoke(socketPath, c.host)
-}
-
-func (c *removeCommand) invoke(socketPath string, host string) error {
-	return withRPCClient(socketPath, func(client *rpc.Client) error {
+func (c *removeCommand) run(cmd *cobra.Command, args []string) error {
+	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		var response bool
 		args := server.RemoveArgs{
-			Host: host,
+			Host: c.host,
 		}
 
 		err := client.Call("mproxy.Remove", args, &response)

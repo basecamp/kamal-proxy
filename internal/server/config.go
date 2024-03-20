@@ -15,14 +15,12 @@ const (
 )
 
 type Config struct {
-	ConfigDir          string
-	HttpPort           int
-	HttpsPort          int
-	HttpIdleTimeout    time.Duration
-	HttpReadTimeout    time.Duration
-	HttpWriteTimeout   time.Duration
-	MaxRequestBodySize int64
-	ACMEUseStaging     bool
+	ConfigDir        string
+	HttpPort         int
+	HttpsPort        int
+	HttpIdleTimeout  time.Duration
+	HttpReadTimeout  time.Duration
+	HttpWriteTimeout time.Duration
 }
 
 func (c Config) SocketPath() string {

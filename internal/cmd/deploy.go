@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"net/rpc"
-	"path"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,6 +17,7 @@ type deployCommand struct {
 	targetOptions     server.TargetOptions
 	host              string
 	tls               bool
+	tlsStaging        bool
 }
 
 func newDeployCommand() *deployCommand {
@@ -25,12 +25,13 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd = &cobra.Command{
 		Use:       "deploy <target>",
 		Short:     "Deploy a target host",
-		RunE:      deployCommand.deployTarget,
+		RunE:      deployCommand.deploy,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"target"},
 	}
 
-	deployCommand.cmd.Flags().BoolVar(&deployCommand.targetOptions.RequireTLS, "tls", false, "Configure TLS for this target (requires a non-empty host)")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environmnent for certificate provisioning")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.addTimeout, "timeout", server.DefaultAddTimeout, "Maximum time to wait for a target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
@@ -41,22 +42,28 @@ func newDeployCommand() *deployCommand {
 	return deployCommand
 }
 
-func (c *deployCommand) deployTarget(cmd *cobra.Command, args []string) error {
-	socketPath := path.Join(configDir, "mproxy.sock") // TODO: move this somewhere shared
+func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
+	targetURL := args[0]
+
 	if c.tls && c.host == "" {
 		return fmt.Errorf("host must be set when using TLS")
 	}
 
-	return c.invoke(socketPath, c.host, args[0], c.addTimeout)
-}
+	if c.tls {
+		c.targetOptions.ACMECachePath = globalConfig.CertificatePath()
+		c.targetOptions.TLSHostname = c.host
+	}
 
-func (c *deployCommand) invoke(socketPath string, host string, targetURL string, timeout time.Duration) error {
-	return withRPCClient(socketPath, func(client *rpc.Client) error {
+	if c.tlsStaging {
+		c.targetOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
+	}
+
+	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		var response bool
 		args := server.DeployArgs{
-			Host:              host,
+			Host:              c.host,
 			TargetURL:         targetURL,
-			Timeout:           timeout,
+			Timeout:           c.addTimeout,
 			HealthCheckConfig: c.healthCheckConfig,
 			TargetOptions:     c.targetOptions,
 		}

@@ -13,7 +13,6 @@ import (
 
 type runCommand struct {
 	cmd              *cobra.Command
-	config           server.Config
 	debugLogsEnabled bool
 }
 
@@ -22,28 +21,26 @@ func newRunCommand() *runCommand {
 	runCommand.cmd = &cobra.Command{
 		Use:   "run",
 		Short: "Run the server",
-		RunE:  runCommand.runServer,
+		RunE:  runCommand.run,
 	}
 
 	runCommand.cmd.Flags().BoolVar(&runCommand.debugLogsEnabled, "debug", false, "Include debugging logs")
-	runCommand.cmd.Flags().BoolVar(&runCommand.config.ACMEUseStaging, "tls-staging", false, "Use Let's Encrypt staging environment for TLS certificates")
-	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpPort, "http-port", server.DefaultHttpPort, "Port to serve HTTP traffic on")
-	runCommand.cmd.Flags().IntVar(&runCommand.config.HttpsPort, "https-port", server.DefaultHttpsPort, "Port to serve HTTPS traffic on")
-	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpIdleTimeout, "http-idle-timeout", server.DefaultHttpIdleTimeout, "Timeout before idle connection is closed")
-	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpReadTimeout, "http-read-timeout", server.DefaultHttpReadTimeout, "Tiemout for client to send a request")
-	runCommand.cmd.Flags().DurationVar(&runCommand.config.HttpWriteTimeout, "http-write-timeout", server.DefaultHttpWriteTimeout, "Timeout for client to receive a response")
+	runCommand.cmd.Flags().IntVar(&globalConfig.HttpPort, "http-port", server.DefaultHttpPort, "Port to serve HTTP traffic on")
+	runCommand.cmd.Flags().IntVar(&globalConfig.HttpsPort, "https-port", server.DefaultHttpsPort, "Port to serve HTTPS traffic on")
+	runCommand.cmd.Flags().DurationVar(&globalConfig.HttpIdleTimeout, "http-idle-timeout", server.DefaultHttpIdleTimeout, "Timeout before idle connection is closed")
+	runCommand.cmd.Flags().DurationVar(&globalConfig.HttpReadTimeout, "http-read-timeout", server.DefaultHttpReadTimeout, "Tiemout for client to send a request")
+	runCommand.cmd.Flags().DurationVar(&globalConfig.HttpWriteTimeout, "http-write-timeout", server.DefaultHttpWriteTimeout, "Timeout for client to receive a response")
 
 	return runCommand
 }
 
-func (c *runCommand) runServer(cmd *cobra.Command, args []string) error {
+func (c *runCommand) run(cmd *cobra.Command, args []string) error {
 	c.setLogger()
-	c.config.ConfigDir = configDir
 
-	router := server.NewRouter(c.config.StatePath())
+	router := server.NewRouter(globalConfig.StatePath())
 	router.RestoreLastSavedState()
 
-	s := server.NewServer(&c.config, router)
+	s := server.NewServer(&globalConfig, router)
 	s.Start()
 	defer s.Stop()
 

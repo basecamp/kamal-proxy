@@ -12,6 +12,9 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -38,8 +41,14 @@ type HealthCheckConfig struct {
 }
 
 type TargetOptions struct {
-	RequireTLS         bool  `json:"require_tls"`
-	MaxRequestBodySize int64 `json:"max_request_body_size"`
+	MaxRequestBodySize int64  `json:"max_request_body_size"`
+	TLSHostname        string `json:"tls_hostname"`
+	ACMEDirectory      string `json:"acme_directory"`
+	ACMECachePath      string `json:"acme_cache_path"`
+}
+
+func (to TargetOptions) RequireTLS() bool {
+	return to.TLSHostname != ""
 }
 
 type TargetState int
@@ -69,6 +78,7 @@ type Target struct {
 	healthCheckConfig HealthCheckConfig
 	options           TargetOptions
 	proxyHandler      http.Handler
+	certManager       *autocert.Manager
 
 	state        TargetState
 	inflight     inflightMap
@@ -94,6 +104,7 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options Ta
 	}
 
 	service.proxyHandler = service.createProxyHandler()
+	service.certManager = service.createCertManager()
 
 	return service, nil
 }
@@ -111,7 +122,7 @@ func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer t.endInflightRequest(req)
 
 	wasTLS := req.TLS != nil
-	if t.options.RequireTLS && !wasTLS {
+	if t.options.RequireTLS() && !wasTLS {
 		t.redirectToHTTPS(w, req)
 		return
 	}
@@ -206,6 +217,19 @@ func (t *Target) createProxyHandler() http.Handler {
 	}
 
 	return handler
+}
+
+func (s *Target) createCertManager() *autocert.Manager {
+	if s.options.TLSHostname == "" {
+		return nil
+	}
+
+	return &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		Cache:      autocert.DirCache(s.options.ACMECachePath),
+		HostPolicy: autocert.HostWhitelist(s.options.TLSHostname),
+		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
+	}
 }
 
 func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {

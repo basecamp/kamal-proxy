@@ -15,10 +15,7 @@ var defaultHealthCheckConfig = HealthCheckConfig{
 	Timeout:  DefaultHealthCheckTimeout,
 }
 
-var defaultTargetOptions = TargetOptions{
-	RequireTLS:         false,
-	MaxRequestBodySize: 0,
-}
+var defaultTargetOptions = TargetOptions{}
 
 func testBackend(t *testing.T, body string, statusCode int) (*httptest.Server, *Target) {
 	return testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {

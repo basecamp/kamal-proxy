@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/acme"
-	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -59,7 +59,6 @@ func (s *Server) startHTTPServers() {
 	httpsAddr := fmt.Sprintf(":%d", s.config.HttpsPort)
 
 	handler := s.buildHandler()
-	manager := s.certManager()
 
 	s.httpServer = &http.Server{
 		Addr:         httpAddr,
@@ -75,7 +74,10 @@ func (s *Server) startHTTPServers() {
 		IdleTimeout:  s.config.HttpIdleTimeout,
 		ReadTimeout:  s.config.HttpReadTimeout,
 		WriteTimeout: s.config.HttpWriteTimeout,
-		TLSConfig:    manager.TLSConfig(),
+		TLSConfig: &tls.Config{
+			NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
+			GetCertificate: s.router.GetCertificate,
+		},
 	}
 
 	go s.httpServer.ListenAndServe()
@@ -90,29 +92,4 @@ func (s *Server) startCommandHandler() {
 
 func (s *Server) buildHandler() http.Handler {
 	return NewLoggingMiddleware(slog.Default(), s.router)
-}
-
-func (s *Server) certManager() *autocert.Manager {
-	client := &acme.Client{}
-	if s.config.ACMEUseStaging {
-		client.DirectoryURL = ACMEStagingDirectoryURL
-	}
-
-	slog.Debug("TLS: initializing", "directory", client.DirectoryURL)
-
-	return &autocert.Manager{
-		Cache:      autocert.DirCache(s.config.CertificatePath()),
-		Client:     client,
-		HostPolicy: s.TLSHostPolicy,
-		Prompt:     autocert.AcceptTOS,
-	}
-}
-
-func (s *Server) TLSHostPolicy(ctx context.Context, host string) error {
-	allowed := s.router.ValidateTLSDomain(host)
-	if !allowed {
-		return ErrorHostTLSNotPermitted
-	}
-
-	return nil
 }

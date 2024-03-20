@@ -113,46 +113,32 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
 }
 
-func TestRouter_ValidateTLSDomain(t *testing.T) {
-	router := testRouter(t)
-	_, first := testBackend(t, "first", http.StatusOK)
-	_, second := testBackend(t, "second", http.StatusOK)
-
-	first.options.RequireTLS = true
-
-	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))
-	require.NoError(t, router.SetServiceTarget("", second, DefaultAddTimeout))
-
-	assert.True(t, router.ValidateTLSDomain("s1.example.com"))
-	assert.False(t, router.ValidateTLSDomain("s2.example.com"))
-}
-
 func TestRouter_RestoreLastSavedState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
-	second.options.RequireTLS = true
+	second.options = TargetOptions{TLSHostname: "other.example.com"}
 
 	router := NewRouter(statePath)
-	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultAddTimeout))
-	require.NoError(t, router.SetServiceTarget("", second, DefaultAddTimeout))
+	require.NoError(t, router.SetServiceTarget("", first, DefaultAddTimeout))
+	require.NoError(t, router.SetServiceTarget("other.example.com", second, DefaultAddTimeout))
 
-	statusCode, body := sendRequest(router, "http://s1.example.com/")
+	statusCode, body := sendRequest(router, "http://something.example.com")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	statusCode, _ = sendRequest(router, "http:/other.example.com/")
+	statusCode, _ = sendRequest(router, "http://other.example.com/")
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 
 	router = NewRouter(statePath)
 	router.RestoreLastSavedState()
 
-	statusCode, body = sendRequest(router, "http://s1.example.com/")
+	statusCode, body = sendRequest(router, "http://something.example.com")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	statusCode, _ = sendRequest(router, "http:/other.example.com/")
+	statusCode, _ = sendRequest(router, "http://other.example.com/")
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 }
 

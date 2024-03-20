@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -13,6 +14,8 @@ import (
 var (
 	ErrorServiceNotFound             = errors.New("service not found")
 	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy")
+	ErrorNoServerName                = errors.New("no server name provided")
+	ErrorUnknownServerName           = errors.New("unknown server name")
 )
 
 type Service struct {
@@ -128,16 +131,20 @@ func (r *Router) ListActiveServices() map[string]string {
 	return result
 }
 
-func (r *Router) ValidateTLSDomain(host string) bool {
-	r.serviceLock.RLock()
-	defer r.serviceLock.RUnlock()
-
-	service, ok := r.services[host]
-	if ok && service.active != nil {
-		return service.active.options.RequireTLS
+func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	host := hello.ServerName
+	if host == "" {
+		slog.Debug("ACME: Unable to get certificate (no server name)")
+		return nil, ErrorNoServerName
 	}
 
-	return false
+	target := r.activeTargetForHost(host)
+	if target == nil {
+		slog.Debug("ACME: Unable to get certificate (unknown server name)")
+		return nil, ErrorUnknownServerName
+	}
+
+	return target.certManager.GetCertificate(hello)
 }
 
 // Private
@@ -214,10 +221,14 @@ func (r *Router) snaphostState() savedState {
 }
 
 func (r *Router) activeTargetForRequest(req *http.Request) *Target {
+	return r.activeTargetForHost(req.Host)
+}
+
+func (r *Router) activeTargetForHost(host string) *Target {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	service, ok := r.services[req.Host]
+	service, ok := r.services[host]
 	if !ok {
 		service, ok = r.services[""]
 	}
