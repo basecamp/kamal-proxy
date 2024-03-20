@@ -61,19 +61,13 @@ func (s *Server) startHTTPServers() {
 	handler := s.buildHandler()
 
 	s.httpServer = &http.Server{
-		Addr:         httpAddr,
-		Handler:      handler,
-		IdleTimeout:  s.config.HttpIdleTimeout,
-		ReadTimeout:  s.config.HttpReadTimeout,
-		WriteTimeout: s.config.HttpWriteTimeout,
+		Addr:    httpAddr,
+		Handler: handler,
 	}
 
 	s.httpsServer = &http.Server{
-		Addr:         httpsAddr,
-		Handler:      handler,
-		IdleTimeout:  s.config.HttpIdleTimeout,
-		ReadTimeout:  s.config.HttpReadTimeout,
-		WriteTimeout: s.config.HttpWriteTimeout,
+		Addr:    httpsAddr,
+		Handler: handler,
 		TLSConfig: &tls.Config{
 			NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
 			GetCertificate: s.router.GetCertificate,

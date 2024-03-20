@@ -27,9 +27,6 @@ func newRunCommand() *runCommand {
 	runCommand.cmd.Flags().BoolVar(&runCommand.debugLogsEnabled, "debug", false, "Include debugging logs")
 	runCommand.cmd.Flags().IntVar(&globalConfig.HttpPort, "http-port", server.DefaultHttpPort, "Port to serve HTTP traffic on")
 	runCommand.cmd.Flags().IntVar(&globalConfig.HttpsPort, "https-port", server.DefaultHttpsPort, "Port to serve HTTPS traffic on")
-	runCommand.cmd.Flags().DurationVar(&globalConfig.HttpIdleTimeout, "http-idle-timeout", server.DefaultHttpIdleTimeout, "Timeout before idle connection is closed")
-	runCommand.cmd.Flags().DurationVar(&globalConfig.HttpReadTimeout, "http-read-timeout", server.DefaultHttpReadTimeout, "Tiemout for client to send a request")
-	runCommand.cmd.Flags().DurationVar(&globalConfig.HttpWriteTimeout, "http-write-timeout", server.DefaultHttpWriteTimeout, "Timeout for client to receive a response")
 
 	return runCommand
 }

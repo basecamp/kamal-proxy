@@ -2,25 +2,17 @@ package server
 
 import (
 	"path"
-	"time"
 )
 
 const (
-	DefaultHttpPort           = 80
-	DefaultHttpsPort          = 443
-	DefaultHttpIdleTimeout    = 60 * time.Second
-	DefaultHttpReadTimeout    = 30 * time.Second
-	DefaultHttpWriteTimeout   = 30 * time.Second
-	DefaultMaxRequestBodySize = 0
+	DefaultHttpPort  = 80
+	DefaultHttpsPort = 443
 )
 
 type Config struct {
-	ConfigDir        string
-	HttpPort         int
-	HttpsPort        int
-	HttpIdleTimeout  time.Duration
-	HttpReadTimeout  time.Duration
-	HttpWriteTimeout time.Duration
+	ConfigDir string
+	HttpPort  int
+	HttpsPort int
 }
 
 func (c Config) SocketPath() string {
