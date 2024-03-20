@@ -28,6 +28,7 @@ func Execute() {
 	rootCmd.AddCommand(newListCommand().cmd)
 	rootCmd.Execute()
 }
+
 func defaultConfigLocation() string {
 	home, err := os.UserConfigDir()
 	if err != nil {
