@@ -30,7 +30,7 @@ const (
 
 	MaxIdleConnsPerHost = 100
 
-	DefaultRequestTimeout = time.Second * 10
+	DefaultTargetTimeout = time.Second * 10
 )
 
 var (
@@ -47,7 +47,7 @@ type HealthCheckConfig struct {
 
 type TargetOptions struct {
 	MaxRequestBodySize int64         `json:"max_request_body_size"`
-	RequestTimeout     time.Duration `json:"request_timeout"`
+	TargetTimeout      time.Duration `json:"target_timeout"`
 	TLSHostname        string        `json:"tls_hostname"`
 	ACMEDirectory      string        `json:"acme_directory"`
 	ACMECachePath      string        `json:"acme_cache_path"`
@@ -227,7 +227,7 @@ func (t *Target) createProxyHandler() http.Handler {
 		ErrorHandler: t.handleProxyError,
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost:   MaxIdleConnsPerHost,
-			ResponseHeaderTimeout: t.options.RequestTimeout,
+			ResponseHeaderTimeout: t.options.TargetTimeout,
 		},
 	}
 
