@@ -14,8 +14,9 @@ var globalConfig server.Config
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "mproxy",
-	Short: "HTTP proxy for zero downtime deployments",
+	Use:          "mproxy",
+	Short:        "HTTP proxy for zero downtime deployments",
+	SilenceUsage: true,
 }
 
 func Execute() {
@@ -26,7 +27,11 @@ func Execute() {
 	rootCmd.AddCommand(newDeployCommand().cmd)
 	rootCmd.AddCommand(newRemoveCommand().cmd)
 	rootCmd.AddCommand(newListCommand().cmd)
-	rootCmd.Execute()
+
+	err := rootCmd.Execute()
+	if err != nil {
+		os.Exit(1)
+	}
 }
 
 func defaultConfigLocation() string {
