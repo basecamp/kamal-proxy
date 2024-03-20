@@ -50,8 +50,8 @@ const (
 	TargetStateHealthy
 )
 
-func (s TargetState) String() string {
-	switch s {
+func (ts TargetState) String() string {
+	switch ts {
 	case TargetStateAdding:
 		return "adding"
 	case TargetStateDraining:
@@ -98,41 +98,41 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options Ta
 	return service, nil
 }
 
-func (s *Target) Target() string {
-	return s.targetURL.Host
+func (t *Target) Target() string {
+	return t.targetURL.Host
 }
 
-func (s *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	req = s.beginInflightRequest(req)
+func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	req = t.beginInflightRequest(req)
 	if req == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-	defer s.endInflightRequest(req)
+	defer t.endInflightRequest(req)
 
 	wasTLS := req.TLS != nil
-	if s.options.RequireTLS && !wasTLS {
-		s.redirectToHTTPS(w, req)
+	if t.options.RequireTLS && !wasTLS {
+		t.redirectToHTTPS(w, req)
 		return
 	}
 
-	s.proxyHandler.ServeHTTP(w, req)
+	t.proxyHandler.ServeHTTP(w, req)
 }
 
-func (s *Target) Rewrite(req *httputil.ProxyRequest) {
+func (t *Target) Rewrite(req *httputil.ProxyRequest) {
 	// Preserve & append X-Forwarded-For
 	req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
 	req.SetXForwarded()
 
-	req.SetURL(s.targetURL)
+	req.SetURL(t.targetURL)
 	req.Out.Host = req.In.Host
 }
 
-func (s *Target) Drain(timeout time.Duration) {
-	s.updateState(TargetStateDraining)
+func (t *Target) Drain(timeout time.Duration) {
+	t.updateState(TargetStateDraining)
 
 	deadline := time.After(timeout)
-	toCancel := s.pendingRequestsToCancel()
+	toCancel := t.pendingRequestsToCancel()
 
 WAIT_FOR_REQUESTS_TO_COMPLETE:
 	for req := range toCancel {
@@ -148,130 +148,130 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 	}
 }
 
-func (s *Target) BeginHealthChecks() {
-	s.becameHealthy = make(chan bool)
-	s.healthcheck = NewHealthCheck(s,
-		s.targetURL.JoinPath(s.healthCheckConfig.Path),
-		s.healthCheckConfig.Interval,
-		s.healthCheckConfig.Timeout,
+func (t *Target) BeginHealthChecks() {
+	t.becameHealthy = make(chan bool)
+	t.healthcheck = NewHealthCheck(t,
+		t.targetURL.JoinPath(t.healthCheckConfig.Path),
+		t.healthCheckConfig.Interval,
+		t.healthCheckConfig.Timeout,
 	)
 }
 
-func (s *Target) StopHealthChecks() {
-	if s.healthcheck != nil {
-		s.healthcheck.Close()
-		s.healthcheck = nil
+func (t *Target) StopHealthChecks() {
+	if t.healthcheck != nil {
+		t.healthcheck.Close()
+		t.healthcheck = nil
 	}
 }
 
-func (s *Target) WaitUntilHealthy(timeout time.Duration) bool {
+func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
 	select {
 	case <-time.After(timeout):
 		return false
-	case <-s.becameHealthy:
+	case <-t.becameHealthy:
 		return true
 	}
 }
 
 // HealthCheckConsumer
 
-func (s *Target) HealthCheckCompleted(success bool) {
-	s.inflightLock.Lock()
-	defer s.inflightLock.Unlock()
+func (t *Target) HealthCheckCompleted(success bool) {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
 
-	if success && s.state == TargetStateAdding {
-		s.state = TargetStateHealthy
-		close(s.becameHealthy)
+	if success && t.state == TargetStateAdding {
+		t.state = TargetStateHealthy
+		close(t.becameHealthy)
 	}
 
-	slog.Info("Target health updated", "target", s.targetURL.Host, "success", success, "state", s.state.String())
+	slog.Info("Target health updated", "target", t.targetURL.Host, "success", success, "state", t.state.String())
 }
 
 // Private
 
-func (s *Target) createProxyHandler() http.Handler {
+func (t *Target) createProxyHandler() http.Handler {
 	var handler http.Handler
 
 	handler = &httputil.ReverseProxy{
-		Rewrite:      s.Rewrite,
-		ErrorHandler: s.handleProxyError,
+		Rewrite:      t.Rewrite,
+		ErrorHandler: t.handleProxyError,
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 		},
 	}
 
-	if s.options.MaxRequestBodySize > 0 {
-		handler = http.MaxBytesHandler(handler, s.options.MaxRequestBodySize)
-		slog.Debug("Using max request body limit", "target", s.Target(), "size", s.options.MaxRequestBodySize)
+	if t.options.MaxRequestBodySize > 0 {
+		handler = http.MaxBytesHandler(handler, t.options.MaxRequestBodySize)
+		slog.Debug("Using max request body limit", "target", t.Target(), "size", t.options.MaxRequestBodySize)
 	}
 
 	return handler
 }
 
-func (s *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
+func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
 	if !errors.Is(err, context.Canceled) {
-		slog.Error("Error while proxying", "target", s.Target(), "path", r.URL.Path, "error", err)
+		slog.Error("Error while proxying", "target", t.Target(), "path", r.URL.Path, "error", err)
 	}
 
-	if s.isRequestEntityTooLarge(err) {
+	if t.isRequestEntityTooLarge(err) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 	} else {
 		w.WriteHeader(http.StatusBadGateway)
 	}
 }
 
-func (s *Target) isRequestEntityTooLarge(err error) bool {
+func (t *Target) isRequestEntityTooLarge(err error) bool {
 	var maxBytesError *http.MaxBytesError
 	return errors.As(err, &maxBytesError)
 }
 
-func (s *Target) updateState(state TargetState) {
-	s.inflightLock.Lock()
-	defer s.inflightLock.Unlock()
+func (t *Target) updateState(state TargetState) {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
 
-	s.state = state
+	t.state = state
 }
 
-func (s *Target) beginInflightRequest(req *http.Request) *http.Request {
-	s.inflightLock.Lock()
-	defer s.inflightLock.Unlock()
+func (t *Target) beginInflightRequest(req *http.Request) *http.Request {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
 
-	if s.state == TargetStateDraining {
+	if t.state == TargetStateDraining {
 		return nil
 	}
 
 	ctx, cancel := context.WithCancel(req.Context())
 	req = req.WithContext(ctx)
 
-	s.inflight[req] = cancel
+	t.inflight[req] = cancel
 	return req
 }
 
-func (s *Target) endInflightRequest(req *http.Request) {
-	s.inflightLock.Lock()
-	defer s.inflightLock.Unlock()
+func (t *Target) endInflightRequest(req *http.Request) {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
 
-	cancel := s.inflight[req]
+	cancel := t.inflight[req]
 	cancel() // If Drain is waiting on us, let it know we're done
 
-	delete(s.inflight, req)
+	delete(t.inflight, req)
 }
 
-func (s *Target) pendingRequestsToCancel() inflightMap {
+func (t *Target) pendingRequestsToCancel() inflightMap {
 	// We use a copy of the inflight map to iterate over while draining, so that
 	// we don't need to lock it the whole time, which could interfere with the
 	// locking that happens when requests end.
-	s.inflightLock.Lock()
-	defer s.inflightLock.Unlock()
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
 
 	result := inflightMap{}
-	for k, v := range s.inflight {
+	for k, v := range t.inflight {
 		result[k] = v
 	}
 	return result
 }
 
-func (s *Target) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
+func (t *Target) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "close")
 
 	host, _, err := net.SplitHostPort(r.Host)
