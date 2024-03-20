@@ -29,6 +29,8 @@ const (
 	DefaultHealthCheckTimeout  = time.Second * 5
 
 	MaxIdleConnsPerHost = 100
+
+	DefaultRequestTimeout = time.Second * 10
 )
 
 var (
@@ -44,10 +46,11 @@ type HealthCheckConfig struct {
 }
 
 type TargetOptions struct {
-	MaxRequestBodySize int64  `json:"max_request_body_size"`
-	TLSHostname        string `json:"tls_hostname"`
-	ACMEDirectory      string `json:"acme_directory"`
-	ACMECachePath      string `json:"acme_cache_path"`
+	MaxRequestBodySize int64         `json:"max_request_body_size"`
+	RequestTimeout     time.Duration `json:"request_timeout"`
+	TLSHostname        string        `json:"tls_hostname"`
+	ACMEDirectory      string        `json:"acme_directory"`
+	ACMECachePath      string        `json:"acme_cache_path"`
 }
 
 func (to TargetOptions) RequireTLS() bool {
@@ -223,7 +226,8 @@ func (t *Target) createProxyHandler() http.Handler {
 		Rewrite:      t.Rewrite,
 		ErrorHandler: t.handleProxyError,
 		Transport: &http.Transport{
-			MaxIdleConnsPerHost: MaxIdleConnsPerHost,
+			MaxIdleConnsPerHost:   MaxIdleConnsPerHost,
+			ResponseHeaderTimeout: t.options.RequestTimeout,
 		},
 	}
 
@@ -255,14 +259,26 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 
 	if t.isRequestEntityTooLarge(err) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
-	} else {
-		w.WriteHeader(http.StatusBadGateway)
+		return
 	}
+	if t.isGatewayTimeout(err) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+		return
+	}
+	w.WriteHeader(http.StatusBadGateway)
 }
 
 func (t *Target) isRequestEntityTooLarge(err error) bool {
 	var maxBytesError *http.MaxBytesError
 	return errors.As(err, &maxBytesError)
+}
+
+func (t *Target) isGatewayTimeout(err error) bool {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+	return false
 }
 
 func (t *Target) updateState(state TargetState) {
