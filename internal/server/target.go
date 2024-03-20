@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
 	"regexp"
 	"sync"
 	"time"
@@ -49,6 +52,19 @@ type TargetOptions struct {
 
 func (to TargetOptions) RequireTLS() bool {
 	return to.TLSHostname != ""
+}
+
+func (to TargetOptions) ScopedCachePath() string {
+	// We need to scope our certificate cache according to whatever ACME settings
+	// we want to use, such as the directory.  This is so we can reuse
+	// certificates between deployments when the settings are the same, but
+	// provision new certificates when they change.
+
+	hasher := sha256.New()
+	hasher.Write([]byte(to.ACMEDirectory))
+	hash := hex.EncodeToString(hasher.Sum(nil))
+
+	return path.Join(to.ACMECachePath, hash)
 }
 
 type TargetState int
@@ -226,7 +242,7 @@ func (s *Target) createCertManager() *autocert.Manager {
 
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
-		Cache:      autocert.DirCache(s.options.ACMECachePath),
+		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
 		HostPolicy: autocert.HostWhitelist(s.options.TLSHostname),
 		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
 	}
