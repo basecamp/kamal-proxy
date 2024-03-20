@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	DefaultAddTimeout   = time.Second * 5
-	DefaultDrainTimeout = time.Second * 5
+	DefaultDeployTimeout = time.Second * 5
+	DefaultDrainTimeout  = time.Second * 5
 
 	DefaultHealthCheckPath     = "/up"
 	DefaultHealthCheckInterval = time.Second

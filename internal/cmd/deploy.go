@@ -12,7 +12,7 @@ import (
 
 type deployCommand struct {
 	cmd               *cobra.Command
-	addTimeout        time.Duration
+	deployTimeout     time.Duration
 	healthCheckConfig server.HealthCheckConfig
 	targetOptions     server.TargetOptions
 	host              string
@@ -32,7 +32,7 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environmnent for certificate provisioning")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.addTimeout, "timeout", server.DefaultAddTimeout, "Maximum time to wait for a target to become healthy")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.deployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for a target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.targetOptions.RequestTimeout, "request-timeout", server.DefaultRequestTimeout, "Maximum time to wait for the target server to respond")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.healthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
@@ -64,7 +64,7 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 		args := server.DeployArgs{
 			Host:              c.host,
 			TargetURL:         targetURL,
-			Timeout:           c.addTimeout,
+			Timeout:           c.deployTimeout,
 			HealthCheckConfig: c.healthCheckConfig,
 			TargetOptions:     c.targetOptions,
 		}

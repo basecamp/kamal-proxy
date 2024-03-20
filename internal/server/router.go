@@ -70,13 +70,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Router) SetServiceTarget(host string, target *Target, addTimeout time.Duration) error {
+func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout time.Duration) error {
 	slog.Info("Deploying", "host", host, "target", target.targetURL.Host, "tls", target.options.RequireTLS)
 
 	service := r.setAddingService(host, target)
 
 	target.BeginHealthChecks()
-	becameHealthy := target.WaitUntilHealthy(addTimeout)
+	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	if !becameHealthy {
 		slog.Info("Target failed to become healthy", "host", host, "target", target.targetURL.Host)
 		r.setAddingService(host, nil)
