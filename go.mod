@@ -1,4 +1,4 @@
-module github.com/kevinmcconnell/mproxy
+module github.com/basecamp/mproxy
 
 go 1.22.1
 

@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/kevinmcconnell/mproxy/internal/server"
+	"github.com/basecamp/mproxy/internal/server"
 )
 
 type deployCommand struct {
