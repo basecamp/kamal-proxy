@@ -16,6 +16,12 @@ import (
 func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
 	middleware := NewLoggingMiddleware(out, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Record a value for the `target` context key.
+		target, ok := r.Context().Value(contextKeyTarget).(*string)
+		if ok {
+			*target = "upstream:3000"
+		}
+
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintln(w, "goodbye")
@@ -35,6 +41,7 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 
 	assert.Equal(t, "Request", logline.Message)
 	assert.Equal(t, "INFO", logline.Log.Level)
+	assert.Equal(t, "upstream:3000", logline.Destination.Address)
 
 	assert.Equal(t, "http", logline.URL.Scheme)
 	assert.Equal(t, "example.com", logline.URL.Domain)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,10 @@ import (
 	"strings"
 	"time"
 )
+
+type contextKey string
+
+var contextKeyTarget = contextKey("target")
 
 type LoggingMiddlewareLine struct {
 	Timestamp string `json:"@timestamp"`
@@ -25,6 +30,9 @@ type LoggingMiddlewareLine struct {
 	Event struct {
 		Duration int64 `json:"duration"`
 	} `json:"event"`
+	Destination struct {
+		Address string `json:"address"`
+	} `json:"destination"`
 	HTTP struct {
 		Request struct {
 			Method   string `json:"method"`
@@ -67,6 +75,10 @@ func NewLoggingMiddleware(w io.Writer, next http.Handler) *LoggingMiddleware {
 func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := newResponseWriter(w)
 
+	var target string
+	ctx := context.WithValue(r.Context(), contextKeyTarget, &target)
+	r = r.WithContext(ctx)
+
 	started := time.Now()
 	h.next.ServeHTTP(writer, r)
 	elapsed := time.Since(started)
@@ -90,6 +102,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	line.Log.Level = "INFO"
 	line.Client.IP = clientIP
 	line.Client.Port = clientPort
+	line.Destination.Address = target
 	line.Event.Duration = elapsed.Nanoseconds()
 	line.HTTP.Request.Body.Bytes = r.ContentLength
 	line.HTTP.Request.Method = r.Method

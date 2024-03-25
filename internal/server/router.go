@@ -66,6 +66,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if target == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {
+		// Record the target that served the request, if its context is available.
+		targetIdentifer, ok := req.Context().Value(contextKeyTarget).(*string)
+		if ok {
+			*targetIdentifer = target.Target()
+		}
+
 		target.ServeHTTP(w, req)
 	}
 }
