@@ -2,22 +2,65 @@ package server
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
-	"log/slog"
+	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
-type LoggingMiddleware struct {
-	logger *slog.Logger
-	next   http.Handler
+type LoggingMiddlewareLine struct {
+	Timestamp string `json:"@timestamp"`
+	Message   string `json:"message"`
+	Client    struct {
+		IP   string `json:"ip"`
+		Port int    `json:"port"`
+	} `json:"client"`
+	Log struct {
+		Level string `json:"level"`
+	} `json:"log"`
+	Event struct {
+		Duration int64 `json:"duration"`
+	} `json:"event"`
+	HTTP struct {
+		Request struct {
+			Method   string `json:"method"`
+			MimeType string `json:"mime_type"`
+			Body     struct {
+				Bytes int64 `json:"bytes"`
+			} `json:"body"`
+		} `json:"request"`
+		Response struct {
+			StatusCode int    `json:"status_code"`
+			MimeType   string `json:"mime_type"`
+			Body       struct {
+				Bytes int64 `json:"bytes"`
+			} `json:"body"`
+		} `json:"response"`
+	} `json:"http"`
+	URL struct {
+		Domain string `json:"domain"`
+		Path   string `json:"path"`
+		Query  string `json:"query"`
+		Scheme string `json:"scheme"`
+	} `json:"url"`
+	UserAgent struct {
+		Original string `json:"original"`
+	} `json:"user_agent"`
 }
 
-func NewLoggingMiddleware(logger *slog.Logger, next http.Handler) *LoggingMiddleware {
+type LoggingMiddleware struct {
+	encoder *json.Encoder
+	next    http.Handler
+}
+
+func NewLoggingMiddleware(w io.Writer, next http.Handler) *LoggingMiddleware {
 	return &LoggingMiddleware{
-		logger: logger,
-		next:   next,
+		encoder: json.NewEncoder(w),
+		next:    next,
 	}
 }
 
@@ -31,23 +74,52 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.Header.Get("User-Agent")
 	reqContent := r.Header.Get("Content-Type")
 	respContent := writer.Header().Get("Content-Type")
-	remoteAddr := r.Header.Get("X-Forwarded-For")
-	if remoteAddr == "" {
-		remoteAddr = r.RemoteAddr
+
+	clientIP, clientPort := h.determineClientIPAndPort(r)
+
+	line := LoggingMiddlewareLine{
+		Timestamp: started.Format(time.RFC3339),
+		Message:   "Request",
 	}
 
-	h.logger.Info("Request",
-		"path", r.URL.Path,
-		"status", writer.statusCode,
-		"dur", elapsed.Milliseconds(),
-		"method", r.Method,
-		"req_content_length", r.ContentLength,
-		"req_content_type", reqContent,
-		"resp_content_length", writer.bytesWritten,
-		"resp_content_type", respContent,
-		"remote_addr", remoteAddr,
-		"user_agent", userAgent,
-		"query", r.URL.RawQuery)
+	line.Log.Level = "INFO"
+	line.Client.IP = clientIP
+	line.Client.Port = clientPort
+	line.Event.Duration = elapsed.Nanoseconds()
+	line.HTTP.Request.Body.Bytes = r.ContentLength
+	line.HTTP.Request.Method = r.Method
+	line.HTTP.Request.MimeType = reqContent
+	line.HTTP.Response.Body.Bytes = writer.bytesWritten
+	line.HTTP.Response.MimeType = respContent
+	line.HTTP.Response.StatusCode = writer.statusCode
+	line.URL.Domain = r.Host
+	line.URL.Path = r.URL.Path
+	line.URL.Query = r.URL.RawQuery
+	line.URL.Scheme = r.URL.Scheme
+
+	line.UserAgent.Original = userAgent
+
+	h.encoder.Encode(line)
+}
+
+func (h *LoggingMiddleware) determineClientIPAndPort(r *http.Request) (string, int) {
+	ip, portStr, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		portStr = "0"
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		port = 0
+	}
+
+	forwardedIP := strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]
+
+	if forwardedIP != "" {
+		return forwardedIP, port
+	}
+
+	return ip, port
 }
 
 type responseWriter struct {

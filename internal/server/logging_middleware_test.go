@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,44 +15,41 @@ import (
 
 func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
-	logger := slog.New(slog.NewJSONHandler(out, nil))
-	middleware := NewLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	middleware := NewLoggingMiddleware(out, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintln(w, "goodbye")
 	}))
 
-	req := httptest.NewRequest("POST", "/somepath?q=ok", bytes.NewReader([]byte("hello")))
-	req.Header.Set("X-Forwarded-For", "192.168.1.1")
+	req := httptest.NewRequest("POST", "http://example.com/somepath?q=ok", bytes.NewReader([]byte("hello")))
+	req.Header.Set("X-Forwarded-For", "192.168.1.1, 10.1.1.1")
 	req.Header.Set("User-Agent", "Robot/1")
 	req.Header.Set("Content-Type", "application/json")
 
 	middleware.ServeHTTP(httptest.NewRecorder(), req)
 
-	logline := struct {
-		Path              string `json:"path"`
-		Method            string `json:"method"`
-		Status            int    `json:"status"`
-		RemoteAddr        string `json:"remote_addr"`
-		UserAgent         string `json:"user_agent"`
-		ReqContentLength  int64  `json:"req_content_length"`
-		ReqContentType    string `json:"req_content_type"`
-		RespContentLength int64  `json:"resp_content_length"`
-		RespContentType   string `json:"resp_content_type"`
-		Query             string `json:"query"`
-	}{}
+	var logline LoggingMiddlewareLine
 
 	err := json.NewDecoder(strings.NewReader(out.String())).Decode(&logline)
 	require.NoError(t, err)
 
-	assert.Equal(t, "/somepath", logline.Path)
-	assert.Equal(t, "POST", logline.Method)
-	assert.Equal(t, http.StatusCreated, logline.Status)
-	assert.Equal(t, "192.168.1.1", logline.RemoteAddr)
-	assert.Equal(t, "Robot/1", logline.UserAgent)
-	assert.Equal(t, "application/json", logline.ReqContentType)
-	assert.Equal(t, "text/html", logline.RespContentType)
-	assert.Equal(t, "q=ok", logline.Query)
-	assert.Equal(t, int64(5), logline.ReqContentLength)
-	assert.Equal(t, int64(8), logline.RespContentLength)
+	assert.Equal(t, "Request", logline.Message)
+	assert.Equal(t, "INFO", logline.Log.Level)
+
+	assert.Equal(t, "http", logline.URL.Scheme)
+	assert.Equal(t, "example.com", logline.URL.Domain)
+	assert.Equal(t, "/somepath", logline.URL.Path)
+	assert.Equal(t, "q=ok", logline.URL.Query)
+	assert.Equal(t, "Robot/1", logline.UserAgent.Original)
+
+	assert.Equal(t, "192.168.1.1", logline.Client.IP)
+	assert.Equal(t, 1234, logline.Client.Port)
+
+	assert.Equal(t, "POST", logline.HTTP.Request.Method)
+	assert.Equal(t, "application/json", logline.HTTP.Request.MimeType)
+	assert.Equal(t, int64(5), logline.HTTP.Request.Body.Bytes)
+
+	assert.Equal(t, http.StatusCreated, logline.HTTP.Response.StatusCode)
+	assert.Equal(t, "text/html", logline.HTTP.Response.MimeType)
+	assert.Equal(t, int64(8), logline.HTTP.Response.Body.Bytes)
 }
