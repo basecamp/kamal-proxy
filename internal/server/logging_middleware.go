@@ -95,7 +95,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	line := LoggingMiddlewareLine{
-		Timestamp: started.Format(time.RFC3339),
+		Timestamp: started.Format(time.RFC3339Nano),
 		Message:   "Request",
 	}
 
