@@ -77,6 +77,11 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	clientIP, clientPort := h.determineClientIPAndPort(r)
 
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+
 	line := LoggingMiddlewareLine{
 		Timestamp: started.Format(time.RFC3339),
 		Message:   "Request",
@@ -95,7 +100,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	line.URL.Domain = r.Host
 	line.URL.Path = r.URL.Path
 	line.URL.Query = r.URL.RawQuery
-	line.URL.Scheme = r.URL.Scheme
+	line.URL.Scheme = scheme
 
 	line.UserAgent.Original = userAgent
 
