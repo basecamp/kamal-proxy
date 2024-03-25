@@ -155,6 +155,11 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 		return nil, ErrorUnknownServerName
 	}
 
+	if target.certManager == nil {
+		slog.Debug("ACME: Unable to get certificate (target does not support TLS)")
+		return nil, ErrorUnknownServerName
+	}
+
 	return target.certManager.GetCertificate(hello)
 }
 
