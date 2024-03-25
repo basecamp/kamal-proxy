@@ -173,7 +173,7 @@ func (r *Router) saveState() error {
 		return err
 	}
 
-	slog.Debug("No state to restore", "path", r.statePath)
+	slog.Debug("Saved state", "path", r.statePath)
 	return nil
 }
 
