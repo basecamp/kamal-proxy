@@ -58,6 +58,12 @@ func (c *runCommand) setLogger() {
 		if a.Key == slog.TimeKey {
 			return slog.Attr{Key: "@timestamp", Value: a.Value}
 		}
+		if a.Key == slog.LevelKey {
+			return slog.Attr{Key: "log.level", Value: a.Value}
+		}
+		if a.Key == slog.MessageKey {
+			return slog.Attr{Key: "message", Value: a.Value}
+		}
 		return a
 	}
 
