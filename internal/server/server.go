@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -86,5 +85,5 @@ func (s *Server) startCommandHandler() {
 }
 
 func (s *Server) buildHandler() http.Handler {
-	return NewLoggingMiddleware(os.Stdout, s.router)
+	return NewLoggingMiddleware(slog.Default(), s.router)
 }

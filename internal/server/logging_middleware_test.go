@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,8 +15,31 @@ import (
 )
 
 func TestMiddleware_LoggingMiddleware(t *testing.T) {
+	type LogLine struct {
+		Timestamp              string `json:"@timestamp"`
+		Message                string `json:"message"`
+		ClientIP               string `json:"client.ip"`
+		ClientPort             int    `json:"client.port"`
+		LogLevel               string `json:"log.level"`
+		EventDataset           string `json:"event.dataset"`
+		EventDuration          int64  `json:"event.duration"`
+		DestinationAddress     string `json:"destination.address"`
+		HTTPRequestMethod      string `json:"http.request.method"`
+		HTTPRequestMimeType    string `json:"http.request.mime_type"`
+		HTTPRequestBodyBytes   int64  `json:"http.request.body.bytes"`
+		HTTPResponseStatusCode int    `json:"http.response.status_code"`
+		HTTPResponseMimeType   string `json:"http.response.mime_type"`
+		HTTPResponseBodyBytes  int64  `json:"http.response.body.bytes"`
+		SourceDomain           string `json:"source.domain"`
+		URLPath                string `json:"url.path"`
+		URLQuery               string `json:"url.query"`
+		URLScheme              string `json:"url.scheme"`
+		UserAgentOriginal      string `json:"user_agent.original"`
+	}
+
 	out := &strings.Builder{}
-	middleware := NewLoggingMiddleware(out, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	logger := CreateECSLogger(slog.LevelInfo, out)
+	middleware := NewLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Record a value for the `target` context key.
 		target, ok := r.Context().Value(contextKeyTarget).(*string)
 		if ok {
@@ -34,29 +58,30 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 
 	middleware.ServeHTTP(httptest.NewRecorder(), req)
 
-	var logline LoggingMiddlewareLine
+	var logline LogLine
 
 	err := json.NewDecoder(strings.NewReader(out.String())).Decode(&logline)
 	require.NoError(t, err)
 
 	assert.Equal(t, "Request", logline.Message)
-	assert.Equal(t, "INFO", logline.Log.Level)
-	assert.Equal(t, "upstream:3000", logline.Destination.Address)
+	assert.Equal(t, "INFO", logline.LogLevel)
+	assert.Equal(t, "upstream:3000", logline.DestinationAddress)
+	assert.Equal(t, "proxy.requests", logline.EventDataset)
 
-	assert.Equal(t, "http", logline.URL.Scheme)
-	assert.Equal(t, "example.com", logline.URL.Domain)
-	assert.Equal(t, "/somepath", logline.URL.Path)
-	assert.Equal(t, "q=ok", logline.URL.Query)
-	assert.Equal(t, "Robot/1", logline.UserAgent.Original)
+	assert.Equal(t, "example.com", logline.SourceDomain)
+	assert.Equal(t, "http", logline.URLScheme)
+	assert.Equal(t, "/somepath", logline.URLPath)
+	assert.Equal(t, "q=ok", logline.URLQuery)
+	assert.Equal(t, "Robot/1", logline.UserAgentOriginal)
 
-	assert.Equal(t, "192.168.1.1", logline.Client.IP)
-	assert.Equal(t, 1234, logline.Client.Port)
+	assert.Equal(t, "192.168.1.1", logline.ClientIP)
+	assert.Equal(t, 1234, logline.ClientPort)
 
-	assert.Equal(t, "POST", logline.HTTP.Request.Method)
-	assert.Equal(t, "application/json", logline.HTTP.Request.MimeType)
-	assert.Equal(t, int64(5), logline.HTTP.Request.Body.Bytes)
+	assert.Equal(t, "POST", logline.HTTPRequestMethod)
+	assert.Equal(t, "application/json", logline.HTTPRequestMimeType)
+	assert.Equal(t, int64(5), logline.HTTPRequestBodyBytes)
 
-	assert.Equal(t, http.StatusCreated, logline.HTTP.Response.StatusCode)
-	assert.Equal(t, "text/html", logline.HTTP.Response.MimeType)
-	assert.Equal(t, int64(8), logline.HTTP.Response.Body.Bytes)
+	assert.Equal(t, http.StatusCreated, logline.HTTPResponseStatusCode)
+	assert.Equal(t, "text/html", logline.HTTPResponseMimeType)
+	assert.Equal(t, int64(8), logline.HTTPResponseBodyBytes)
 }

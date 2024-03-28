@@ -54,26 +54,5 @@ func (c *runCommand) setLogger() {
 		level = slog.LevelDebug
 	}
 
-	convertToECSNaming := func(groups []string, a slog.Attr) slog.Attr {
-		if a.Key == slog.TimeKey {
-			return slog.Attr{Key: "@timestamp", Value: a.Value}
-		}
-		if a.Key == slog.LevelKey {
-			return slog.Attr{Key: "log.level", Value: a.Value}
-		}
-		if a.Key == slog.MessageKey {
-			return slog.Attr{Key: "message", Value: a.Value}
-		}
-		return a
-	}
-
-	handler := slog.NewJSONHandler(
-		os.Stdout,
-		&slog.HandlerOptions{
-			Level:       level,
-			ReplaceAttr: convertToECSNaming,
-		},
-	)
-
-	slog.SetDefault(slog.New(handler))
+	slog.SetDefault(server.CreateECSLogger(level, os.Stdout))
 }
