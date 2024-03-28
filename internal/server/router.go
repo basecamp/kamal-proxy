@@ -43,21 +43,21 @@ func (r *Router) RestoreLastSavedState() error {
 	f, err := os.Open(r.statePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			slog.Debug("No state to restore", "path", r.statePath)
+			slog.Debug("No state to restore", "event.dataset", "proxy.state.restore", "file.path", r.statePath)
 			return nil
 		}
-		slog.Error("Failed to restore saved state", "path", r.statePath, "error", err)
+		slog.Error("Failed to restore saved state", "event.dataset", "proxy.state.restore", "file.path", r.statePath, "error.message", err)
 		return err
 	}
 
 	var state savedState
 	err = json.NewDecoder(f).Decode(&state)
 	if err != nil {
-		slog.Error("Failed to decode saved state", "path", r.statePath, "error", err)
+		slog.Error("Failed to decode saved state", "event.dataset", "proxy.state.restore", "file.path", r.statePath, "error.message", err)
 		return err
 	}
 
-	slog.Info("Restoring saved state", "path", r.statePath)
+	slog.Info("Restoring saved state", "event.dataset", "proxy.state.restore", "file.path", r.statePath)
 	return r.restoreSnapshot(state)
 }
 
@@ -77,14 +77,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout time.Duration) error {
-	slog.Info("Deploying", "host", host, "target", target.targetURL.Host, "tls", target.options.RequireTLS())
+	slog.Info("Deploying", "event.dataset", "proxy.deployments", "source.domain", host, "destination.address", target.Target(), "tls.enabled", target.options.RequireTLS())
 
 	service := r.setAddingService(host, target)
 
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	if !becameHealthy {
-		slog.Info("Target failed to become healthy", "host", host, "target", target.targetURL.Host)
+		slog.Info("Target failed to become healthy", "event.dataset", "proxy.deployments", "event.outcome", "failure", "source.domain", host, "destination.address", target.Target())
 		r.setAddingService(host, nil)
 		return ErrorTargetFailedToBecomeHealthy
 	}
@@ -92,7 +92,7 @@ func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout tim
 	r.promoteToActive(service, target)
 	r.saveState()
 
-	slog.Info("Deployed", "host", host, "target", target.targetURL.Host)
+	slog.Info("Deployed", "event.dataset", "proxy.deployments", "event.outcome", "success", "source.domain", host, "destination.address", target.Target(), "tls.enabled", target.options.RequireTLS())
 	return nil
 }
 
@@ -140,18 +140,18 @@ func (r *Router) ListActiveServices() map[string]string {
 func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	host := hello.ServerName
 	if host == "" {
-		slog.Debug("ACME: Unable to get certificate (no server name)")
+		slog.Debug("Unable to get certificate", "event.dataset", "proxy.tls", "event.outcome", "failure", "source.domain", host, "error.message", "no server name")
 		return nil, ErrorNoServerName
 	}
 
 	target := r.activeTargetForHost(host)
 	if target == nil {
-		slog.Debug("ACME: Unable to get certificate (unknown server name)")
+		slog.Debug("Unable to get certificate", "event.dataset", "proxy.tls", "event.outcome", "failure", "source.domain", host, "error.message", "unknown server name")
 		return nil, ErrorUnknownServerName
 	}
 
 	if target.certManager == nil {
-		slog.Debug("ACME: Unable to get certificate (target does not support TLS)")
+		slog.Debug("Unable to get certificate", "event.dataset", "proxy.tls", "event.outcome", "failure", "source.domain", host, "error.message", "target does not support TLS")
 		return nil, ErrorUnknownServerName
 	}
 
@@ -180,11 +180,11 @@ func (r *Router) saveState() error {
 
 	err = json.NewEncoder(f).Encode(state)
 	if err != nil {
-		slog.Error("Unable to save state", "error", err, "path", r.statePath)
+		slog.Error("Failed to save state", "event.dataset", "proxy.state.save", "file.path", r.statePath, "error.message", err)
 		return err
 	}
 
-	slog.Debug("Saved state", "path", r.statePath)
+	slog.Debug("Saved state", "event.dataset", "proxy.state.save", "file.path", r.statePath)
 	return nil
 }
 

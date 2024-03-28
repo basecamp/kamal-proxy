@@ -214,7 +214,12 @@ func (t *Target) HealthCheckCompleted(success bool) {
 		close(t.becameHealthy)
 	}
 
-	slog.Info("Target health updated", "target", t.targetURL.Host, "success", success, "state", t.state.String())
+	outcome := "success"
+	if !success {
+		outcome = "failure"
+	}
+
+	slog.Info("Target health updated", "event.dataset", "target.health.updated", "destination.address", t.Target(), "event.outcome", outcome)
 }
 
 // Private
@@ -233,7 +238,7 @@ func (t *Target) createProxyHandler() http.Handler {
 
 	if t.options.MaxRequestBodySize > 0 {
 		handler = http.MaxBytesHandler(handler, t.options.MaxRequestBodySize)
-		slog.Debug("Using max request body limit", "target", t.Target(), "size", t.options.MaxRequestBodySize)
+		slog.Debug("Using max request body limit", "event.dataset", "target.proxy.settings", "destination.address", t.Target(), "http.request.max_body_size", t.options.MaxRequestBodySize)
 	}
 
 	return handler
@@ -254,7 +259,7 @@ func (s *Target) createCertManager() *autocert.Manager {
 
 func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
 	if !errors.Is(err, context.Canceled) {
-		slog.Error("Error while proxying", "target", t.Target(), "path", r.URL.Path, "error", err)
+		slog.Error("Error while proxying", "event.dataset", "target.proxy.transport", "destination.address", t.Target(), "destination.path", r.URL.Path, "error.message", err)
 	}
 
 	if t.isRequestEntityTooLarge(err) {

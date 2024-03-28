@@ -44,13 +44,13 @@ func (h *CommandHandler) Start(socketPath string) error {
 		err = rpc.RegisterName("mproxy", h)
 	})
 	if err != nil {
-		slog.Error("Failed to register RPC handler", "error", err)
+		slog.Error("Failed to register RPC handler", "event.dataset", "application.rpc", "error.message", err)
 		return err
 	}
 
 	h.rpcListener, err = net.Listen("unix", socketPath)
 	if err != nil {
-		slog.Error("Failed to start RPC listener", "error", err)
+		slog.Error("Failed to start RPC listener", "event.dataset", "application.rpc", "error.message", err)
 		return err
 	}
 
@@ -59,10 +59,10 @@ func (h *CommandHandler) Start(socketPath string) error {
 			conn, err := h.rpcListener.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
-					slog.Debug("Closing RPC listener")
+					slog.Debug("Closing RPC listener", "event.dataset", "application.rpc")
 					return
 				} else {
-					slog.Error("Error accepting RPC connection", "error", err)
+					slog.Error("Error accepting RPC connection", "event.dataset", "application.rpc", "error.message", err)
 					continue
 				}
 			}
