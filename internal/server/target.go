@@ -214,7 +214,7 @@ func (t *Target) HealthCheckCompleted(success bool) {
 		close(t.becameHealthy)
 	}
 
-	slog.Info("Target health updated", "target", t.targetURL.Host, "success", success, "state", t.state.String())
+	slog.Info("Target health updated", "target", t.Target(), "success", success, "state", t.state.String())
 }
 
 // Private

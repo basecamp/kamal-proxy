@@ -77,14 +77,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout time.Duration) error {
-	slog.Info("Deploying", "host", host, "target", target.targetURL.Host, "tls", target.options.RequireTLS())
+	slog.Info("Deploying", "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
 
 	service := r.setAddingService(host, target)
 
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	if !becameHealthy {
-		slog.Info("Target failed to become healthy", "host", host, "target", target.targetURL.Host)
+		slog.Info("Target failed to become healthy", "host", host, "target", target.Target())
 		r.setAddingService(host, nil)
 		return ErrorTargetFailedToBecomeHealthy
 	}
@@ -92,7 +92,7 @@ func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout tim
 	r.promoteToActive(service, target)
 	r.saveState()
 
-	slog.Info("Deployed", "host", host, "target", target.targetURL.Host)
+	slog.Info("Deployed", "host", host, "target", target.Target())
 	return nil
 }
 
@@ -128,7 +128,7 @@ func (r *Router) ListActiveServices() map[string]string {
 				host = "*"
 			}
 			if service.active != nil {
-				result[host] = service.active.targetURL.Host
+				result[host] = service.active.Target()
 			}
 		}
 		return nil
