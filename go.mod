@@ -8,6 +8,8 @@ require (
 	golang.org/x/crypto v0.21.0
 )
 
+require github.com/google/uuid v1.6.0
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

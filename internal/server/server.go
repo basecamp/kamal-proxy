@@ -85,5 +85,11 @@ func (s *Server) startCommandHandler() {
 }
 
 func (s *Server) buildHandler() http.Handler {
-	return NewLoggingMiddleware(slog.Default(), s.router)
+	var handler http.Handler
+
+	handler = s.router
+	handler = WithLoggingMiddleware(slog.Default(), handler)
+	handler = WithRequestIDMiddleware(handler)
+
+	return handler
 }

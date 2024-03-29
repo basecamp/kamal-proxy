@@ -19,7 +19,7 @@ type LoggingMiddleware struct {
 	next   http.Handler
 }
 
-func NewLoggingMiddleware(logger *slog.Logger, next http.Handler) *LoggingMiddleware {
+func WithLoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return &LoggingMiddleware{
 		logger: logger,
 		next:   next,
@@ -41,6 +41,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqContent := r.Header.Get("Content-Type")
 	respContent := writer.Header().Get("Content-Type")
 	remoteAddr := r.Header.Get("X-Forwarded-For")
+	requestID := r.Header.Get("X-Request-ID")
 	if remoteAddr == "" {
 		remoteAddr = r.RemoteAddr
 	}
@@ -48,6 +49,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Request",
 		"host", r.Host,
 		"path", r.URL.Path,
+		"request_id", requestID,
 		"status", writer.statusCode,
 		"target", target,
 		"dur", elapsed.Milliseconds(),

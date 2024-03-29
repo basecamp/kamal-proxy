@@ -17,7 +17,7 @@ import (
 func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
 	logger := slog.New(slog.NewJSONHandler(out, nil))
-	middleware := NewLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	middleware := WithLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Record a value for the `target` context key
 		target, ok := r.Context().Value(contextKeyTarget).(*string)
 		if ok {
@@ -30,6 +30,7 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest("POST", "http://app.example.com/somepath?q=ok", bytes.NewReader([]byte("hello")))
+	req.Header.Set("X-Request-ID", "request-id")
 	req.Header.Set("X-Forwarded-For", "192.168.1.1")
 	req.Header.Set("User-Agent", "Robot/1")
 	req.Header.Set("Content-Type", "application/json")
@@ -39,6 +40,7 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	logline := struct {
 		Message           string `json:"msg"`
 		Level             string `json:"level"`
+		RequestID         string `json:"request_id"`
 		Host              string `json:"host"`
 		Path              string `json:"path"`
 		Method            string `json:"method"`
@@ -58,6 +60,7 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 
 	assert.Equal(t, "Request", logline.Message)
 	assert.Equal(t, "INFO", logline.Level)
+	assert.Equal(t, "request-id", logline.RequestID)
 	assert.Equal(t, "app.example.com", logline.Host)
 	assert.Equal(t, "/somepath", logline.Path)
 	assert.Equal(t, "POST", logline.Method)
