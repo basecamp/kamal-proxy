@@ -52,7 +52,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"request_id", requestID,
 		"status", writer.statusCode,
 		"target", target,
-		"dur", elapsed.Milliseconds(),
+		"duration", elapsed.Nanoseconds(),
 		"method", r.Method,
 		"req_content_length", r.ContentLength,
 		"req_content_type", reqContent,
