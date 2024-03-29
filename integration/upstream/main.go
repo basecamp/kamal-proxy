@@ -2,21 +2,17 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 )
 
 func newHandler(host string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("host: %s request: %s\n", host, r.URL)
+		slog.Info("Request", "host", host, "request_id", r.Header.Get("X-Request-ID"), "method", r.Method, "url", r.URL)
 
 		w.Header().Add("Content-Type", "text/html")
-		fmt.Fprintf(w, `
-<html>
-  <head><title>Hello world</title></head>
-	<body>Hello from %s</body>
-</html>
-		`, host)
+		fmt.Fprintf(w, "<body>Hello from %s</body>\n", host)
 	}
 }
 
