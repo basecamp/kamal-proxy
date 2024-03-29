@@ -1,4 +1,4 @@
-# parachute - A minimal HTTP proxy for zero-downtime deployments
+# parachute - A minimal HTTP proxy for zero-downtime deployments 🪂
 
 ## What it does
 
@@ -96,3 +96,23 @@ proxy commands with `docker compose exec proxy ...`, for example:
     docker compose exec proxy parachute deploy parachute-web-1:3000
 
 And then access the proxy from a browser at http://localhost/.
+
+## Specifying `run` options with environment variables
+
+In some environments, like when running a Docker container, it can be convenient
+to specify `run` options using environment variables. This avoids having to
+update the `CMD` in the Dockerfile to change the options. To support this,
+`parachute run` will read each of its options from environment variables if they
+are set. For example, setting the HTTP port can be done with either:
+
+    parachute run --http-port 8080
+
+or:
+
+    HTTP_PORT=8080 parachute run
+
+If any of the environment variables conflict with something else in your
+environment, you can prefix them with `PARACHUTE_` to disambiguate them. For
+example:
+
+    PARACHUTE_HTTP_PORT=8080 parachute run
