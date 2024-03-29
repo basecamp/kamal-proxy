@@ -54,5 +54,5 @@ func (c *runCommand) setLogger() {
 		level = slog.LevelDebug
 	}
 
-	slog.SetDefault(server.CreateECSLogger(level, os.Stdout))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 }

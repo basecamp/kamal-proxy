@@ -39,7 +39,7 @@ func (s *Server) Start() {
 	s.startHTTPServers()
 	s.startCommandHandler()
 
-	slog.Info("Server started", "event.dataset", "server.start", "network.http.port", s.config.HttpPort, "network.https.port", s.config.HttpsPort)
+	slog.Info("Server started", "http", s.config.HttpPort, "https", s.config.HttpsPort)
 }
 
 func (s *Server) Stop() {
@@ -49,7 +49,7 @@ func (s *Server) Stop() {
 	s.commandHandler.Stop()
 	s.httpServer.Shutdown(ctx)
 
-	slog.Info("Server stopped", "event.dataset", "server.stop")
+	slog.Info("Server stopped")
 }
 
 // Private

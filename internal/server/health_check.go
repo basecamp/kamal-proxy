@@ -64,24 +64,24 @@ func (hc *HealthCheck) check() {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, hc.endpoint.String(), nil)
 	if err != nil {
-		slog.Error("Unable to create healthcheck request", "event.dataset", "healthcheck.failure", "error.message", err)
+		slog.Error("Unable to create healthcheck request", "error", err)
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		slog.Info("Healthcheck failed", "event.dataset", "healthcheck.failure", "error.message", err)
+		slog.Info("Healthcheck failed", "error", err)
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		slog.Info("Healthcheck failed", "event.dataset", "healthcheck.failure", "http.status", resp.StatusCode)
+		slog.Info("Healthcheck failed", "status", resp.StatusCode)
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}
 
-	slog.Info("Healthcheck succeeded", "event.dataset", "healthcheck.success", "http.status", resp.StatusCode)
+	slog.Info("Healthcheck succeeded", "status", resp.StatusCode)
 	hc.consumer.HealthCheckCompleted(true)
 }

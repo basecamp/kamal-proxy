@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -42,53 +40,25 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.Header.Get("User-Agent")
 	reqContent := r.Header.Get("Content-Type")
 	respContent := writer.Header().Get("Content-Type")
-
-	clientIP, clientPort := h.determineClientIPAndPort(r)
-
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
+	remoteAddr := r.Header.Get("X-Forwarded-For")
+	if remoteAddr == "" {
+		remoteAddr = r.RemoteAddr
 	}
 
 	h.logger.Info("Request",
-		"client.ip", clientIP,
-		"client.port", clientPort,
-		"log.level", "INFO",
-		"destination.address", target,
-		"http.request.method", r.Method,
-		"http.request.mime_type", reqContent,
-		"http.request.body.bytes", r.ContentLength,
-		"http.response.status_code", writer.statusCode,
-		"http.response.mime_type", respContent,
-		"http.response.body.bytes", writer.bytesWritten,
-		"source.domain", r.Host,
-		"url.path", r.URL.Path,
-		"url.query", r.URL.RawQuery,
-		"url.scheme", scheme,
-		"user_agent.original", userAgent,
-		"event.dataset", "proxy.requests",
-		"event.duration", elapsed.Nanoseconds(),
-	)
-}
-
-func (h *LoggingMiddleware) determineClientIPAndPort(r *http.Request) (string, int) {
-	ip, portStr, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		portStr = "0"
-	}
-
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		port = 0
-	}
-
-	forwardedIP := strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]
-
-	if forwardedIP != "" {
-		return forwardedIP, port
-	}
-
-	return ip, port
+		"host", r.Host,
+		"path", r.URL.Path,
+		"status", writer.statusCode,
+		"target", target,
+		"dur", elapsed.Milliseconds(),
+		"method", r.Method,
+		"req_content_length", r.ContentLength,
+		"req_content_type", reqContent,
+		"resp_content_length", writer.bytesWritten,
+		"resp_content_type", respContent,
+		"remote_addr", remoteAddr,
+		"user_agent", userAgent,
+		"query", r.URL.RawQuery)
 }
 
 type responseWriter struct {
