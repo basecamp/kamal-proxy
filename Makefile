@@ -10,4 +10,4 @@ bench:
 	go test -bench=. -benchmem -run=^# ./...
 
 docker:
-	docker build -t mproxy .
+	docker build -t parachute .

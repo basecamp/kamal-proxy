@@ -41,7 +41,7 @@ func NewCommandHandler(router *Router) *CommandHandler {
 func (h *CommandHandler) Start(socketPath string) error {
 	var err error
 	registered.Do(func() {
-		err = rpc.RegisterName("mproxy", h)
+		err = rpc.RegisterName("parachute", h)
 	})
 	if err != nil {
 		slog.Error("Failed to register RPC handler", "error", err)

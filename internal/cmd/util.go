@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	ENV_PREFIX = "MPROXY_"
+	ENV_PREFIX = "PARACHUTE_"
 )
 
 func withRPCClient(socketPath string, fn func(client *rpc.Client) error) error {

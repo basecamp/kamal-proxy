@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/mproxy/internal/server"
+	"github.com/basecamp/parachute/internal/server"
 )
 
 type deployCommand struct {
@@ -69,6 +69,6 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 			TargetOptions:     c.targetOptions,
 		}
 
-		return client.Call("mproxy.Deploy", args, &response)
+		return client.Call("parachute.Deploy", args, &response)
 	})
 }

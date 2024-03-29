@@ -16,11 +16,11 @@ type Config struct {
 }
 
 func (c Config) SocketPath() string {
-	return path.Join(c.ConfigDir, "mproxy.sock")
+	return path.Join(c.ConfigDir, "parachute.sock")
 }
 
 func (c Config) StatePath() string {
-	return path.Join(c.ConfigDir, "mproxy.state")
+	return path.Join(c.ConfigDir, "parachute.state")
 }
 
 func (c Config) CertificatePath() string {

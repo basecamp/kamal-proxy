@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/mproxy/internal/server"
+	"github.com/basecamp/parachute/internal/server"
 )
 
 type listCommand struct {
@@ -30,7 +30,7 @@ func (c *listCommand) run(cmd *cobra.Command, args []string) error {
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		var response server.ListResponse
 
-		err := client.Call("mproxy.List", true, &response)
+		err := client.Call("parachute.List", true, &response)
 		if err != nil {
 			return err
 		}

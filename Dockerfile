@@ -5,7 +5,7 @@ RUN make
 
 FROM ubuntu as base
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=build /app/bin/mproxy /usr/local/bin/
+COPY --from=build /app/bin/parachute /usr/local/bin/
 EXPOSE 80 443
 
-CMD [ "mproxy", "run" ]
+CMD [ "parachute", "run" ]

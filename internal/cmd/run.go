@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/mproxy/internal/server"
+	"github.com/basecamp/parachute/internal/server"
 )
 
 type runCommand struct {

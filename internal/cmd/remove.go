@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/mproxy/internal/server"
+	"github.com/basecamp/parachute/internal/server"
 )
 
 type removeCommand struct {
@@ -34,7 +34,7 @@ func (c *removeCommand) run(cmd *cobra.Command, args []string) error {
 			Host: c.host,
 		}
 
-		err := client.Call("mproxy.Remove", args, &response)
+		err := client.Call("parachute.Remove", args, &response)
 
 		return err
 	})

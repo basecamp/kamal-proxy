@@ -1,4 +1,4 @@
-module github.com/basecamp/mproxy
+module github.com/basecamp/parachute
 
 go 1.22.1
 
