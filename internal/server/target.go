@@ -160,13 +160,12 @@ func (t *Target) Rewrite(req *httputil.ProxyRequest) {
 	// Ensure query params are preserved exactly, including those we could not
 	// parse.
 	//
-	// By default, httputil.ReverseProxy will drop unparseable query params
-	// to guard against parameter smuggling attacks
+	// By default, httputil.ReverseProxy will drop unparseable query params to
+	// guard against parameter smuggling attacks
 	// (https://github.com/golang/go/issues/54663).
 	//
-	// However, any changes to the query params could break applications that
-	// depend on them. One example of this is the use of semicolons in query
-	// params. Given a URL like:
+	// One example of this is the use of semicolons in query params. Given a URL
+	// like:
 	//
 	//   /path?p=a;b
 	//
@@ -175,9 +174,12 @@ func (t *Target) Rewrite(req *httputil.ProxyRequest) {
 	// confusion, Go's default behaviour is to drop the parameter entirely,
 	// effectively turning our URL into just `/path`.
 	//
+	// However, any changes to the query params could break applications that
+	// depend on them, so we should avoid doing this, and strive to be as
+	// transparent as possible.
+	//
 	// In our case, we don't make any decisions based on the query params, so it's
-	// safe for us to pass them through verbatim. We should to be as transparent
-	// as possible here.
+	// safe for us to pass them through verbatim.
 	req.Out.URL.RawQuery = req.In.URL.RawQuery
 }
 
