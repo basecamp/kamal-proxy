@@ -156,6 +156,29 @@ func (t *Target) Rewrite(req *httputil.ProxyRequest) {
 
 	req.SetURL(t.targetURL)
 	req.Out.Host = req.In.Host
+
+	// Ensure query params are preserved exactly, including those we could not
+	// parse.
+	//
+	// By default, httputil.ReverseProxy will drop unparseable query params
+	// to guard against parameter smuggling attacks
+	// (https://github.com/golang/go/issues/54663).
+	//
+	// However, any changes to the query params could break applications that
+	// depend on them. One example of this is the use of semicolons in query
+	// params. Given a URL like:
+	//
+	//   /path?p=a;b
+	//
+	// Some platforms interpret these params as equivalent to `p=a` and `b=`,
+	// while others interpret it as a single query param: `p=a;b`. Because of this
+	// confusion, Go's default behaviour is to drop the parameter entirely,
+	// effectively turning our URL into just `/path`.
+	//
+	// In our case, we don't make any decisions based on the query params, so it's
+	// safe for us to pass them through verbatim. We should to be as transparent
+	// as possible here.
+	req.Out.URL.RawQuery = req.In.URL.RawQuery
 }
 
 func (t *Target) Drain(timeout time.Duration) {

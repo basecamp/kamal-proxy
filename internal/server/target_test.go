@@ -104,6 +104,18 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 	require.Equal(t, clientIP, xForwardedFor)
 }
 
+func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "p1=a;b;c&p2=%x&p3=ok", r.URL.RawQuery)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/test?p1=a;b;c&p2=%x&p3=ok", nil)
+	w := httptest.NewRecorder()
+	target.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 	_, target := testBackend(t, "ok", http.StatusOK)
 
