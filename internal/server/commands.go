@@ -25,6 +25,15 @@ type DeployArgs struct {
 	TargetOptions     TargetOptions
 }
 
+type PauseArgs struct {
+	Host    string
+	Timeout time.Duration
+}
+
+type ResumeArgs struct {
+	Host string
+}
+
 type RemoveArgs struct {
 	Host string
 }
@@ -86,6 +95,18 @@ func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
 	}
 
 	err = h.router.SetServiceTarget(args.Host, target, args.DeployTimeout, args.DrainTimeout)
+
+	return err
+}
+
+func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
+	err := h.router.PauseService(args.Host, args.Timeout)
+
+	return err
+}
+
+func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {
+	err := h.router.ResumeService(args.Host)
 
 	return err
 }

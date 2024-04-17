@@ -109,6 +109,8 @@ type Target struct {
 	inflight     inflightMap
 	inflightLock sync.Mutex
 
+	pauseControl *PauseControl
+
 	healthcheck   *HealthCheck
 	becameHealthy chan (bool)
 }
@@ -119,19 +121,23 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options Ta
 		return nil, err
 	}
 
-	service := &Target{
+	target := &Target{
 		targetURL:         uri,
 		healthCheckConfig: healthCheckConfig,
 		options:           options,
 
 		state:    TargetStateAdding,
 		inflight: inflightMap{},
+
+		pauseControl: NewPauseControl(),
 	}
 
-	service.proxyHandler = service.createProxyHandler()
-	service.certManager = service.createCertManager()
+	target.Resume()
 
-	return service, nil
+	target.proxyHandler = target.createProxyHandler()
+	target.certManager = target.createCertManager()
+
+	return target, nil
 }
 
 func (t *Target) Target() string {
@@ -139,18 +145,20 @@ func (t *Target) Target() string {
 }
 
 func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if t.options.RequireTLS() && req.TLS == nil {
+		t.redirectToHTTPS(w, req)
+		return
+	}
+
+	t.pauseControl.Wait()
+
 	req, inflightRequest := t.beginInflightRequest(req)
+
 	if req == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
 	defer t.endInflightRequest(req)
-
-	wasTLS := req.TLS != nil
-	if t.options.RequireTLS() && !wasTLS {
-		t.redirectToHTTPS(w, req)
-		return
-	}
 
 	tw := newTargetResponseWriter(w, inflightRequest)
 	t.proxyHandler.ServeHTTP(tw, req)
@@ -191,7 +199,11 @@ func (t *Target) Rewrite(req *httputil.ProxyRequest) {
 }
 
 func (t *Target) Drain(timeout time.Duration) {
-	t.updateState(TargetStateDraining)
+	originalState := t.updateState(TargetStateDraining)
+	if originalState == TargetStateDraining {
+		return
+	}
+	defer t.updateState(originalState)
 
 	deadline := time.After(timeout)
 	toCancel := t.pendingRequestsToCancel()
@@ -239,6 +251,28 @@ func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
 	case <-t.becameHealthy:
 		return true
 	}
+}
+
+func (t *Target) Pause(timeout time.Duration) error {
+	err := t.pauseControl.Pause()
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Target paused", "target", t.Target())
+	t.Drain(timeout)
+	slog.Info("Target drained", "target", t.Target())
+	return nil
+}
+
+func (t *Target) Resume() error {
+	err := t.pauseControl.Resume()
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Target resumed", "target", t.Target())
+	return nil
 }
 
 // HealthCheckConsumer
@@ -319,11 +353,14 @@ func (t *Target) isGatewayTimeout(err error) bool {
 	return false
 }
 
-func (t *Target) updateState(state TargetState) {
+func (t *Target) updateState(state TargetState) TargetState {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
 
+	originalState := t.state
 	t.state = state
+
+	return originalState
 }
 
 func (t *Target) beginInflightRequest(req *http.Request) (*http.Request, *inflightRequest) {

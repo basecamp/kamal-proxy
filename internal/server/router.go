@@ -119,6 +119,24 @@ func (r *Router) RemoveService(host string) error {
 	return err
 }
 
+func (r *Router) PauseService(host string, timeout time.Duration) error {
+	target := r.activeTargetForHost(host)
+	if target == nil {
+		return ErrorServiceNotFound
+	}
+
+	return target.Pause(timeout)
+}
+
+func (r *Router) ResumeService(host string) error {
+	target := r.activeTargetForHost(host)
+	if target == nil {
+		return ErrorServiceNotFound
+	}
+
+	return target.Resume()
+}
+
 func (r *Router) ListActiveServices() map[string]string {
 	result := map[string]string{}
 
