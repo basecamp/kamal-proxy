@@ -22,7 +22,7 @@ func newRemoveCommand() *removeCommand {
 		Args:  cobra.NoArgs,
 	}
 
-	removeCommand.cmd.Flags().StringVar(&removeCommand.host, "host", "", "Host to remote (empty for wildcard)")
+	removeCommand.cmd.Flags().StringVar(&removeCommand.host, "host", "", "Host to remove (empty for wildcard)")
 
 	return removeCommand
 }
