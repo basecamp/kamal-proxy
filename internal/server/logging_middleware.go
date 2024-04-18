@@ -27,7 +27,7 @@ func WithLoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler 
 }
 
 func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	writer := newResponseWriter(w)
+	writer := newLoggerResponseWriter(w)
 
 	var target string
 	ctx := context.WithValue(r.Context(), contextKeyTarget, &target)
@@ -63,30 +63,30 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"query", r.URL.RawQuery)
 }
 
-type responseWriter struct {
+type loggerResponseWriter struct {
 	http.ResponseWriter
 	statusCode   int
 	bytesWritten int64
 }
 
-func newResponseWriter(w http.ResponseWriter) *responseWriter {
-	return &responseWriter{w, http.StatusOK, 0}
+func newLoggerResponseWriter(w http.ResponseWriter) *loggerResponseWriter {
+	return &loggerResponseWriter{w, http.StatusOK, 0}
 }
 
 // WriteHeader is used to capture the status code
-func (r *responseWriter) WriteHeader(statusCode int) {
+func (r *loggerResponseWriter) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
 	r.ResponseWriter.WriteHeader(statusCode)
 }
 
 // Write is used to capture the amount of data written
-func (r *responseWriter) Write(b []byte) (int, error) {
+func (r *loggerResponseWriter) Write(b []byte) (int, error) {
 	bytesWritten, err := r.ResponseWriter.Write(b)
 	r.bytesWritten += int64(bytesWritten)
 	return bytesWritten, err
 }
 
-func (r *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+func (r *loggerResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := r.ResponseWriter.(http.Hijacker)
 	if !ok {
 		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
