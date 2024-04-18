@@ -76,20 +76,20 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout time.Duration) error {
+func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	slog.Info("Deploying", "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
 
-	service := r.setAddingService(host, target)
+	service := r.setAddingService(host, target, drainTimeout)
 
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	if !becameHealthy {
 		slog.Info("Target failed to become healthy", "host", host, "target", target.Target())
-		r.setAddingService(host, nil)
+		r.setAddingService(host, nil, drainTimeout)
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
-	r.promoteToActive(service, target)
+	r.promoteToActive(service, target, drainTimeout)
 	r.saveState()
 
 	slog.Info("Deployed", "host", host, "target", target.Target())
@@ -251,7 +251,7 @@ func (r *Router) activeTargetForHost(host string) *Target {
 	return service.active
 }
 
-func (r *Router) setAddingService(host string, target *Target) *Service {
+func (r *Router) setAddingService(host string, target *Target, drainTimeout time.Duration) *Service {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
@@ -262,21 +262,21 @@ func (r *Router) setAddingService(host string, target *Target) *Service {
 	}
 
 	if service.adding != nil {
-		r.drainAndDispose(service, service.adding, DefaultDrainTimeout)
+		r.drainAndDispose(service, service.adding, drainTimeout)
 	}
 
 	service.adding = target
 	return service
 }
 
-func (r *Router) promoteToActive(service *Service, target *Target) {
+func (r *Router) promoteToActive(service *Service, target *Target, drainTimeout time.Duration) {
 	target.StopHealthChecks()
 
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
 	if service.active != nil {
-		r.drainAndDispose(service, service.active, DefaultDrainTimeout)
+		r.drainAndDispose(service, service.active, drainTimeout)
 	}
 
 	service.active = target

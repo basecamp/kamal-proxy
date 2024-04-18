@@ -23,7 +23,7 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("dummy.example.com", target, DefaultDeployTimeout))
+	require.NoError(t, router.SetServiceTarget("dummy.example.com", target, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://dummy.example.com/")
 
@@ -35,7 +35,7 @@ func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("", target, DefaultDeployTimeout))
+	require.NoError(t, router.SetServiceTarget("", target, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://dummy.example.com/")
 
@@ -48,14 +48,14 @@ func TestRouter_ReplacingActiveService(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("dummy.example.com", first, DefaultDeployTimeout))
+	require.NoError(t, router.SetServiceTarget("dummy.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://dummy.example.com/")
 
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	require.NoError(t, router.SetServiceTarget("dummy.example.com", second, DefaultDeployTimeout))
+	require.NoError(t, router.SetServiceTarget("dummy.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendRequest(router, "http://dummy.example.com/")
 
@@ -68,8 +68,8 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultDeployTimeout))
-	require.NoError(t, router.SetServiceTarget("s2.example.com", second, DefaultDeployTimeout))
+	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("s2.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://s1.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
@@ -85,8 +85,8 @@ func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultDeployTimeout))
-	require.NoError(t, router.SetServiceTarget("", second, DefaultDeployTimeout))
+	require.NoError(t, router.SetServiceTarget("s1.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("", second, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://s1.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
@@ -105,7 +105,7 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "", http.StatusInternalServerError)
 
-	err := router.SetServiceTarget("example.com", target, time.Millisecond*20)
+	err := router.SetServiceTarget("example.com", target, time.Millisecond*20, DefaultDrainTimeout)
 	assert.Equal(t, ErrorTargetFailedToBecomeHealthy, err)
 
 	statusCode, _ := sendRequest(router, "http://dummy.example.com/")
@@ -121,8 +121,8 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	second.options = TargetOptions{TLSHostname: "other.example.com"}
 
 	router := NewRouter(statePath)
-	require.NoError(t, router.SetServiceTarget("", first, DefaultDeployTimeout))
-	require.NoError(t, router.SetServiceTarget("other.example.com", second, DefaultDeployTimeout))
+	require.NoError(t, router.SetServiceTarget("", first, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("other.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://something.example.com")
 	assert.Equal(t, http.StatusOK, statusCode)

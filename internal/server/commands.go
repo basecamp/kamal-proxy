@@ -19,7 +19,8 @@ type CommandHandler struct {
 type DeployArgs struct {
 	Host              string
 	TargetURL         string
-	Timeout           time.Duration
+	DeployTimeout     time.Duration
+	DrainTimeout      time.Duration
 	HealthCheckConfig HealthCheckConfig
 	TargetOptions     TargetOptions
 }
@@ -84,7 +85,7 @@ func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
 		return err
 	}
 
-	err = h.router.SetServiceTarget(args.Host, target, args.Timeout)
+	err = h.router.SetServiceTarget(args.Host, target, args.DeployTimeout, args.DrainTimeout)
 
 	return err
 }
