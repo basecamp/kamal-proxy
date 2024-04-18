@@ -193,6 +193,30 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	require.Equal(t, 0, served)
 }
 
+func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+		require.NoError(t, err)
+		defer c.CloseNow()
+
+		_, _, err = c.Read(context.Background())
+		require.Error(t, err)
+	})
+
+	server := httptest.NewServer(target)
+	defer server.Close()
+
+	websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
+
+	c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
+	require.NoError(t, err)
+	defer c.CloseNow()
+
+	startedDraining := time.Now()
+	target.Drain(time.Second * 5)
+	assert.Less(t, time.Since(startedDraining).Seconds(), 1.0)
+}
+
 func TestTarget_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(server.Close)

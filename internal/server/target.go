@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -90,7 +91,12 @@ func (ts TargetState) String() string {
 	return ""
 }
 
-type inflightMap map[*http.Request]context.CancelFunc
+type inflightRequest struct {
+	cancel   context.CancelFunc
+	hijacked bool
+}
+
+type inflightMap map[*http.Request]*inflightRequest
 
 type Target struct {
 	targetURL         *url.URL
@@ -133,7 +139,7 @@ func (t *Target) Target() string {
 }
 
 func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	req = t.beginInflightRequest(req)
+	req, inflightRequest := t.beginInflightRequest(req)
 	if req == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
@@ -146,7 +152,8 @@ func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	t.proxyHandler.ServeHTTP(w, req)
+	tw := newTargetResponseWriter(w, inflightRequest)
+	t.proxyHandler.ServeHTTP(tw, req)
 }
 
 func (t *Target) Rewrite(req *httputil.ProxyRequest) {
@@ -189,6 +196,12 @@ func (t *Target) Drain(timeout time.Duration) {
 	deadline := time.After(timeout)
 	toCancel := t.pendingRequestsToCancel()
 
+	for _, inflight := range toCancel {
+		if inflight.hijacked {
+			inflight.cancel()
+		}
+	}
+
 WAIT_FOR_REQUESTS_TO_COMPLETE:
 	for req := range toCancel {
 		select {
@@ -198,8 +211,8 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 		}
 	}
 
-	for _, cancel := range toCancel {
-		cancel()
+	for _, inflight := range toCancel {
+		inflight.cancel()
 	}
 }
 
@@ -313,19 +326,20 @@ func (t *Target) updateState(state TargetState) {
 	t.state = state
 }
 
-func (t *Target) beginInflightRequest(req *http.Request) *http.Request {
+func (t *Target) beginInflightRequest(req *http.Request) (*http.Request, *inflightRequest) {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
 
 	if t.state == TargetStateDraining {
-		return nil
+		return nil, nil
 	}
 
 	ctx, cancel := context.WithCancel(req.Context())
 	req = req.WithContext(ctx)
 
-	t.inflight[req] = cancel
-	return req
+	inflightRequest := &inflightRequest{cancel: cancel}
+	t.inflight[req] = inflightRequest
+	return req, inflightRequest
 }
 
 func (t *Target) endInflightRequest(req *http.Request) {
@@ -366,4 +380,23 @@ func parseTargetURL(targetURL string) (*url.URL, error) {
 
 	uri, _ := url.Parse("http://" + targetURL)
 	return uri, nil
+}
+
+type targetResponseWriter struct {
+	http.ResponseWriter
+	inflightRequest *inflightRequest
+}
+
+func newTargetResponseWriter(w http.ResponseWriter, inflightRequest *inflightRequest) *targetResponseWriter {
+	return &targetResponseWriter{w, inflightRequest}
+}
+
+func (r *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
+	}
+
+	r.inflightRequest.hijacked = true
+	return hijacker.Hijack()
 }
