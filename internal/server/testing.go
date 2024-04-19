@@ -1,11 +1,14 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,4 +38,33 @@ func testBackendWithHandler(t *testing.T, handler http.HandlerFunc) (*httptest.S
 	require.NoError(t, err)
 
 	return server, target
+}
+
+func testServer(t *testing.T) (*Server, string) {
+	config := &Config{
+		Bind:      "127.0.0.1",
+		HttpPort:  0,
+		HttpsPort: 0,
+		ConfigDir: shortTmpDir(t),
+	}
+	router := NewRouter(config.StatePath())
+	server := NewServer(config, router)
+	server.Start()
+
+	t.Cleanup(server.Stop)
+
+	addr := fmt.Sprintf("http://localhost:%d", server.HttpPort())
+
+	return server, addr
+}
+
+func shortTmpDir(t *testing.T) string {
+	path := "/tmp/" + uuid.New().String()
+	os.Mkdir(path, 0755)
+
+	t.Cleanup(func() {
+		os.RemoveAll(path)
+	})
+
+	return path
 }

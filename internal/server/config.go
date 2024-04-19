@@ -10,6 +10,7 @@ const (
 )
 
 type Config struct {
+	Bind      string
 	ConfigDir string
 	HttpPort  int
 	HttpsPort int

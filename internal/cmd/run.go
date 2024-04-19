@@ -38,7 +38,10 @@ func (c *runCommand) run(cmd *cobra.Command, args []string) error {
 	router.RestoreLastSavedState()
 
 	s := server.NewServer(&globalConfig, router)
-	s.Start()
+	err := s.Start()
+	if err != nil {
+		return err
+	}
 	defer s.Stop()
 
 	ch := make(chan os.Signal, 1)

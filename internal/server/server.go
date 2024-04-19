@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -23,6 +24,8 @@ var (
 type Server struct {
 	config         *Config
 	router         *Router
+	httpListener   net.Listener
+	httpsListener  net.Listener
 	httpServer     *http.Server
 	httpsServer    *http.Server
 	commandHandler *CommandHandler
@@ -35,11 +38,15 @@ func NewServer(config *Config, router *Router) *Server {
 	}
 }
 
-func (s *Server) Start() {
-	s.startHTTPServers()
+func (s *Server) Start() error {
+	err := s.startHTTPServers()
+	if err != nil {
+		return err
+	}
 	s.startCommandHandler()
 
-	slog.Info("Server started", "http", s.config.HttpPort, "https", s.config.HttpsPort)
+	slog.Info("Server started", "http", s.HttpPort(), "https", s.HttpsPort())
+	return nil
 }
 
 func (s *Server) Stop() {
@@ -52,19 +59,37 @@ func (s *Server) Stop() {
 	slog.Info("Server stopped")
 }
 
+func (s *Server) HttpPort() int {
+	return s.httpListener.Addr().(*net.TCPAddr).Port
+}
+
+func (s *Server) HttpsPort() int {
+	return s.httpsListener.Addr().(*net.TCPAddr).Port
+}
+
 // Private
 
-func (s *Server) startHTTPServers() {
-	httpAddr := fmt.Sprintf(":%d", s.config.HttpPort)
-	httpsAddr := fmt.Sprintf(":%d", s.config.HttpsPort)
+func (s *Server) startHTTPServers() error {
+	httpAddr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.HttpPort)
+	httpsAddr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.HttpsPort)
 
 	handler := s.buildHandler()
 
+	l, err := net.Listen("tcp", httpAddr)
+	if err != nil {
+		return err
+	}
+	s.httpListener = l
 	s.httpServer = &http.Server{
 		Addr:    httpAddr,
 		Handler: handler,
 	}
 
+	l, err = net.Listen("tcp", httpsAddr)
+	if err != nil {
+		return err
+	}
+	s.httpsListener = l
 	s.httpsServer = &http.Server{
 		Addr:    httpsAddr,
 		Handler: handler,
@@ -74,8 +99,10 @@ func (s *Server) startHTTPServers() {
 		},
 	}
 
-	go s.httpServer.ListenAndServe()
-	go s.httpsServer.ListenAndServeTLS("", "")
+	go s.httpServer.Serve(s.httpListener)
+	go s.httpsServer.ServeTLS(s.httpsListener, "", "")
+
+	return nil
 }
 
 func (s *Server) startCommandHandler() {

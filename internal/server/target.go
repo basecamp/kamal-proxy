@@ -332,9 +332,6 @@ func (t *Target) endInflightRequest(req *http.Request) {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
 
-	cancel := t.inflight[req]
-	cancel() // If Drain is waiting on us, let it know we're done
-
 	delete(t.inflight, req)
 }
 
@@ -345,10 +342,8 @@ func (t *Target) pendingRequestsToCancel() inflightMap {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
 
-	result := inflightMap{}
-	for k, v := range t.inflight {
-		result[k] = v
-	}
+	result := t.inflight
+	t.inflight = inflightMap{}
 	return result
 }
 
