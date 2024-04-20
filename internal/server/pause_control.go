@@ -2,7 +2,7 @@ package server
 
 import (
 	"errors"
-	"sync"
+	"time"
 )
 
 var (
@@ -11,24 +11,38 @@ var (
 )
 
 type PauseControl struct {
-	lock  sync.RWMutex
+	lock  chan bool
+	fail  chan bool
 	guard chan bool
 }
 
 func NewPauseControl() *PauseControl {
-	return &PauseControl{
+	pc := &PauseControl{
+		lock:  make(chan bool),
+		fail:  make(chan bool),
 		guard: make(chan bool, 1),
 	}
+
+	close(pc.lock)
+	close(pc.fail)
+
+	return pc
 }
 
-func (p *PauseControl) Pause() error {
+func (p *PauseControl) Pause(failAfter time.Duration) error {
 	select {
 	case p.guard <- true:
 	default:
 		return ErrorAlreadyPaused
 	}
 
-	p.lock.Lock()
+	p.lock = make(chan bool)
+	p.fail = make(chan bool)
+
+	time.AfterFunc(failAfter, func() {
+		close(p.fail)
+	})
+
 	return nil
 }
 
@@ -39,13 +53,19 @@ func (p *PauseControl) Resume() error {
 		return ErrorNotPaused
 	}
 
-	p.lock.Unlock()
+	close(p.lock)
+	close(p.fail)
+
 	return nil
 }
 
 func (p *PauseControl) Wait() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return true
+	select {
+	case <-p.lock:
+		return true
+	case <-time.After(-time.Second * 3):
+		return false
+		// case <-p.fail:
+		// return false
+	}
 }

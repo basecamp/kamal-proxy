@@ -24,6 +24,7 @@ import (
 const (
 	DefaultDeployTimeout = time.Second * 30
 	DefaultDrainTimeout  = time.Second * 10
+	DefaultPauseTimeout  = time.Second * 30
 
 	DefaultHealthCheckPath     = "/up"
 	DefaultHealthCheckInterval = time.Second
@@ -150,7 +151,12 @@ func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	t.pauseControl.Wait()
+	canSend := t.pauseControl.Wait()
+	if !canSend {
+		slog.Warn("Rejecting request due to expired pause", "target", t.Target(), "path", req.URL.Path)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
 
 	req, inflightRequest := t.beginInflightRequest(req)
 
@@ -253,14 +259,14 @@ func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
 	}
 }
 
-func (t *Target) Pause(timeout time.Duration) error {
-	err := t.pauseControl.Pause()
+func (t *Target) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) error {
+	err := t.pauseControl.Pause(pauseTimeout)
 	if err != nil {
 		return err
 	}
 
 	slog.Info("Target paused", "target", t.Target())
-	t.Drain(timeout)
+	t.Drain(drainTimeout)
 	slog.Info("Target drained", "target", t.Target())
 	return nil
 }
