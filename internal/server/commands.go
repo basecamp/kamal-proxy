@@ -26,8 +26,9 @@ type DeployArgs struct {
 }
 
 type PauseArgs struct {
-	Host    string
-	Timeout time.Duration
+	Host         string
+	DrainTimeout time.Duration
+	PauseTimeout time.Duration
 }
 
 type ResumeArgs struct {
@@ -100,7 +101,7 @@ func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
 }
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
-	err := h.router.PauseService(args.Host, args.Timeout)
+	err := h.router.PauseService(args.Host, args.DrainTimeout, args.PauseTimeout)
 
 	return err
 }

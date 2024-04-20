@@ -119,13 +119,13 @@ func (r *Router) RemoveService(host string) error {
 	return err
 }
 
-func (r *Router) PauseService(host string, timeout time.Duration) error {
+func (r *Router) PauseService(host string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
 	target := r.activeTargetForHost(host)
 	if target == nil {
 		return ErrorServiceNotFound
 	}
 
-	return target.Pause(timeout)
+	return target.Pause(drainTimeout, pauseTimeout)
 }
 
 func (r *Router) ResumeService(host string) error {
