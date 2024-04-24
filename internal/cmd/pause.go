@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"net/rpc"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -10,10 +9,8 @@ import (
 )
 
 type pauseCommand struct {
-	cmd          *cobra.Command
-	host         string
-	drainTimeout time.Duration
-	pauseTimeout time.Duration
+	cmd  *cobra.Command
+	args server.PauseArgs
 }
 
 func newPauseCommand() *pauseCommand {
@@ -25,24 +22,17 @@ func newPauseCommand() *pauseCommand {
 		Args:  cobra.NoArgs,
 	}
 
-	pauseCommand.cmd.Flags().StringVar(&pauseCommand.host, "host", "", "Host to pause (empty for wildcard)")
-	pauseCommand.cmd.Flags().DurationVar(&pauseCommand.drainTimeout, "drain-timeout", server.DefaultDrainTimeout, "How long to allow in-flight requests to complete")
-	pauseCommand.cmd.Flags().DurationVar(&pauseCommand.pauseTimeout, "max-pause", server.DefaultPauseTimeout, "How long to enqueue requests before shedding load")
+	pauseCommand.cmd.Flags().StringVar(&pauseCommand.args.Host, "host", "", "Host to pause (empty for wildcard)")
+	pauseCommand.cmd.Flags().DurationVar(&pauseCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "How long to allow in-flight requests to complete")
+	pauseCommand.cmd.Flags().DurationVar(&pauseCommand.args.PauseTimeout, "max-pause", server.DefaultPauseTimeout, "How long to enqueue requests before shedding load")
 
 	return pauseCommand
 }
 
 func (c *pauseCommand) run(cmd *cobra.Command, args []string) error {
+	var response bool
+
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
-		var response bool
-		args := server.PauseArgs{
-			Host:         c.host,
-			DrainTimeout: c.drainTimeout,
-			PauseTimeout: c.pauseTimeout,
-		}
-
-		err := client.Call("parachute.Pause", args, &response)
-
-		return err
+		return client.Call("parachute.Pause", c.args, &response)
 	})
 }

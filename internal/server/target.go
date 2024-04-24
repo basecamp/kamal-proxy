@@ -133,8 +133,6 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options Ta
 		pauseControl: NewPauseControl(),
 	}
 
-	target.Resume()
-
 	target.proxyHandler = target.createProxyHandler()
 	target.certManager = target.createCertManager()
 

@@ -10,7 +10,7 @@ import (
 
 type resumeCommand struct {
 	cmd  *cobra.Command
-	host string
+	args server.ResumeArgs
 }
 
 func newResumeCommand() *resumeCommand {
@@ -22,20 +22,15 @@ func newResumeCommand() *resumeCommand {
 		Args:  cobra.NoArgs,
 	}
 
-	resumeCommand.cmd.Flags().StringVar(&resumeCommand.host, "host", "", "Host to resume (empty for wildcard)")
+	resumeCommand.cmd.Flags().StringVar(&resumeCommand.args.Host, "host", "", "Host to resume (empty for wildcard)")
 
 	return resumeCommand
 }
 
 func (c *resumeCommand) run(cmd *cobra.Command, args []string) error {
+	var response bool
+
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
-		var response bool
-		args := server.ResumeArgs{
-			Host: c.host,
-		}
-
-		err := client.Call("parachute.Resume", args, &response)
-
-		return err
+		return client.Call("parachute.Resume", c.args, &response)
 	})
 }

@@ -10,7 +10,7 @@ import (
 
 type removeCommand struct {
 	cmd  *cobra.Command
-	host string
+	args server.RemoveArgs
 }
 
 func newRemoveCommand() *removeCommand {
@@ -22,20 +22,15 @@ func newRemoveCommand() *removeCommand {
 		Args:  cobra.NoArgs,
 	}
 
-	removeCommand.cmd.Flags().StringVar(&removeCommand.host, "host", "", "Host to remove (empty for wildcard)")
+	removeCommand.cmd.Flags().StringVar(&removeCommand.args.Host, "host", "", "Host to remove (empty for wildcard)")
 
 	return removeCommand
 }
 
 func (c *removeCommand) run(cmd *cobra.Command, args []string) error {
+	var response bool
+
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
-		var response bool
-		args := server.RemoveArgs{
-			Host: c.host,
-		}
-
-		err := client.Call("parachute.Remove", args, &response)
-
-		return err
+		return client.Call("parachute.Remove", c.args, &response)
 	})
 }
