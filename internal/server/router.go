@@ -20,7 +20,6 @@ var (
 
 type Service struct {
 	active   *Target
-	adding   *Target
 	draining []*Target
 }
 
@@ -79,17 +78,16 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	slog.Info("Deploying", "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
 
-	service := r.setAddingService(host, target, drainTimeout)
-
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
+	target.StopHealthChecks()
+
 	if !becameHealthy {
 		slog.Info("Target failed to become healthy", "host", host, "target", target.Target())
-		r.setAddingService(host, nil, drainTimeout)
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
-	r.promoteToActive(service, target, drainTimeout)
+	r.setActiveTarget(host, target, drainTimeout)
 	r.saveState()
 
 	slog.Info("Deployed", "host", host, "target", target.Target())
@@ -105,9 +103,6 @@ func (r *Router) RemoveService(host string) error {
 
 		if service.active != nil {
 			r.drainAndDispose(service, service.active, DefaultDrainTimeout)
-		}
-		if service.adding != nil {
-			service.adding.StopHealthChecks()
 		}
 
 		delete(r.services, host)
@@ -269,7 +264,7 @@ func (r *Router) activeTargetForHost(host string) *Target {
 	return service.active
 }
 
-func (r *Router) setAddingService(host string, target *Target, drainTimeout time.Duration) *Service {
+func (r *Router) setActiveTarget(host string, target *Target, drainTimeout time.Duration) {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
@@ -279,26 +274,11 @@ func (r *Router) setAddingService(host string, target *Target, drainTimeout time
 		r.services[host] = service
 	}
 
-	if service.adding != nil {
-		r.drainAndDispose(service, service.adding, drainTimeout)
-	}
-
-	service.adding = target
-	return service
-}
-
-func (r *Router) promoteToActive(service *Service, target *Target, drainTimeout time.Duration) {
-	target.StopHealthChecks()
-
-	r.serviceLock.Lock()
-	defer r.serviceLock.Unlock()
-
 	if service.active != nil {
 		r.drainAndDispose(service, service.active, drainTimeout)
 	}
 
 	service.active = target
-	service.adding = nil
 }
 
 func (r *Router) drainAndDispose(service *Service, target *Target, drainTimeout time.Duration) {
