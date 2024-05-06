@@ -18,8 +18,16 @@ var (
 	ErrorUnknownServerName           = errors.New("unknown server name")
 )
 
+type TargetSlot int
+
+const (
+	TargetSlotActive TargetSlot = iota
+	TargetSlotRollout
+)
+
 type Service struct {
 	active   *Target
+	rollout  *Target
 	draining []*Target
 }
 
@@ -61,7 +69,7 @@ func (r *Router) RestoreLastSavedState() error {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	target := r.activeTargetForRequest(req)
+	target := r.targetForRequest(req)
 	if target == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {
@@ -87,7 +95,7 @@ func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout tim
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
-	r.setActiveTarget(host, target, drainTimeout)
+	r.setTarget(host, TargetSlotActive, target, drainTimeout)
 	r.saveState()
 
 	slog.Info("Deployed", "host", host, "target", target.Target())
@@ -115,7 +123,7 @@ func (r *Router) RemoveService(host string) error {
 }
 
 func (r *Router) PauseService(host string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
-	target := r.activeTargetForHost(host)
+	target := r.targetForHost(host, TargetSlotActive)
 	if target == nil {
 		return ErrorServiceNotFound
 	}
@@ -124,7 +132,7 @@ func (r *Router) PauseService(host string, drainTimeout time.Duration, pauseTime
 }
 
 func (r *Router) ResumeService(host string) error {
-	target := r.activeTargetForHost(host)
+	target := r.targetForHost(host, TargetSlotActive)
 	if target == nil {
 		return ErrorServiceNotFound
 	}
@@ -157,7 +165,7 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 		return nil, ErrorNoServerName
 	}
 
-	target := r.activeTargetForHost(host)
+	target := r.targetForHost(host, TargetSlotActive)
 	if target == nil {
 		slog.Debug("ACME: Unable to get certificate (unknown server name)")
 		return nil, ErrorUnknownServerName
@@ -179,8 +187,13 @@ type savedTarget struct {
 	TargetOptions     TargetOptions     `json:"target_options"`
 }
 
+type savedService struct {
+	Active  savedTarget `json:"active"`
+	Rollout savedTarget `json:"rollout"`
+}
+
 type savedState struct {
-	ActiveTargets map[string]savedTarget `json:"active_targets"`
+	Services map[string]savedService `json:"targets"`
 }
 
 func (r *Router) saveState() error {
@@ -206,49 +219,79 @@ func (r *Router) restoreSnapshot(state savedState) error {
 	defer r.serviceLock.Unlock()
 
 	r.services = HostServiceMap{}
-	for host, saved := range state.ActiveTargets {
-		target, err := NewTarget(saved.Target, saved.HealthCheckConfig, saved.TargetOptions)
-		if err != nil {
-			return err
+	for host, savedService := range state.Services {
+		service := &Service{}
+		if savedService.Active.Target != "" {
+			target, err := r.restoreTarget(savedService.Active)
+			if err != nil {
+				return err
+			}
+			service.active = target
 		}
 
-		// Put the target back into the active state, regardless of its health. It
-		// may be rebooting or otherwise need more time to be reachable again.
-		target.state = TargetStateHealthy
-		r.services[host] = &Service{
-			active: target,
+		if savedService.Rollout.Target != "" {
+			target, err := r.restoreTarget(savedService.Rollout)
+			if err != nil {
+				return err
+			}
+			service.rollout = target
 		}
+
+		r.services[host] = service
 	}
 
 	return nil
 }
 
+func (r *Router) restoreTarget(saved savedTarget) (*Target, error) {
+	target, err := NewTarget(saved.Target, saved.HealthCheckConfig, saved.TargetOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	// Put the target back into the active state, regardless of its health. It
+	// may be rebooting or otherwise need more time to be reachable again.
+	target.state = TargetStateHealthy
+	return target, nil
+}
+
 func (r *Router) snaphostState() savedState {
 	state := savedState{
-		ActiveTargets: map[string]savedTarget{},
+		Services: map[string]savedService{},
 	}
 
 	r.withReadLock(func() error {
 		for host, service := range r.services {
+			savedService := savedService{}
 			if service.active != nil {
-				state.ActiveTargets[host] = savedTarget{
+				savedService.Active = savedTarget{
 					Target:            service.active.Target(),
 					HealthCheckConfig: service.active.healthCheckConfig,
 					TargetOptions:     service.active.options,
 				}
 			}
+			if service.rollout != nil {
+				savedService.Rollout = savedTarget{
+					Target:            service.rollout.Target(),
+					HealthCheckConfig: service.rollout.healthCheckConfig,
+					TargetOptions:     service.rollout.options,
+				}
+			}
+			state.Services[host] = savedService
 		}
+
 		return nil
 	})
 
 	return state
 }
 
-func (r *Router) activeTargetForRequest(req *http.Request) *Target {
-	return r.activeTargetForHost(req.Host)
+func (r *Router) targetForRequest(req *http.Request) *Target {
+	slot := TargetSlotActive
+	return r.targetForHost(req.Host, slot)
 }
 
-func (r *Router) activeTargetForHost(host string) *Target {
+func (r *Router) targetForHost(host string, slot TargetSlot) *Target {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
@@ -261,10 +304,17 @@ func (r *Router) activeTargetForHost(host string) *Target {
 		return nil
 	}
 
+	if slot == TargetSlotRollout {
+		if service.rollout != nil {
+			return service.rollout
+		}
+		slog.Warn("Rollout is enabled but no rollout host is available; falling back to active host instead", "host", host)
+	}
+
 	return service.active
 }
 
-func (r *Router) setActiveTarget(host string, target *Target, drainTimeout time.Duration) {
+func (r *Router) setTarget(host string, slot TargetSlot, target *Target, drainTimeout time.Duration) {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
@@ -274,11 +324,17 @@ func (r *Router) setActiveTarget(host string, target *Target, drainTimeout time.
 		r.services[host] = service
 	}
 
-	if service.active != nil {
-		r.drainAndDispose(service, service.active, drainTimeout)
+	if slot == TargetSlotRollout {
+		if service.rollout != nil {
+			r.drainAndDispose(service, service.rollout, drainTimeout)
+		}
+		service.rollout = target
+	} else {
+		if service.active != nil {
+			r.drainAndDispose(service, service.active, drainTimeout)
+		}
+		service.active = target
 	}
-
-	service.active = target
 }
 
 func (r *Router) drainAndDispose(service *Service, target *Target, drainTimeout time.Duration) {
