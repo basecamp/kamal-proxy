@@ -16,13 +16,12 @@ type removeCommand struct {
 func newRemoveCommand() *removeCommand {
 	removeCommand := &removeCommand{}
 	removeCommand.cmd = &cobra.Command{
-		Use:   "remove",
-		Short: "Remove the service for a host",
-		RunE:  removeCommand.run,
-		Args:  cobra.NoArgs,
+		Use:       "remove <name>",
+		Short:     "Remove the service",
+		RunE:      removeCommand.run,
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{"name"},
 	}
-
-	removeCommand.cmd.Flags().StringVar(&removeCommand.args.Host, "host", "", "Host to remove (empty for wildcard)")
 
 	return removeCommand
 }

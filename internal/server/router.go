@@ -14,11 +14,14 @@ import (
 var (
 	ErrorServiceNotFound             = errors.New("service not found")
 	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy")
+	ErrorHostInUse                   = errors.New("host is used by another service")
 	ErrorNoServerName                = errors.New("no server name provided")
 	ErrorUnknownServerName           = errors.New("unknown server name")
 )
 
 type Service struct {
+	name     string
+	host     string
 	active   *Target
 	adding   *Target
 	draining []*Target
@@ -76,23 +79,29 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Router) SetServiceTarget(host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	slog.Info("Deploying", "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
+func (r *Router) SetServiceTarget(name string, host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	slog.Info("Deploying", "name", name, "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
 
-	service := r.setAddingService(host, target, drainTimeout)
+	existingService := r.serviceForHost(host)
+
+	if existingService != nil && existingService.name != name {
+		return ErrorHostInUse
+	}
+
+	service := r.setAddingService(name, host, target, drainTimeout)
 
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	if !becameHealthy {
 		slog.Info("Target failed to become healthy", "host", host, "target", target.Target())
-		r.setAddingService(host, nil, drainTimeout)
+		r.setAddingService(name, host, nil, drainTimeout)
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
 	r.promoteToActive(service, target, drainTimeout)
 	r.saveState()
 
-	slog.Info("Deployed", "host", host, "target", target.Target())
+	slog.Info("Deployed", "name", name, "host", host, "target", target.Target())
 	return nil
 }
 
@@ -137,16 +146,22 @@ func (r *Router) ResumeService(host string) error {
 	return target.Resume()
 }
 
-func (r *Router) ListActiveServices() map[string]string {
-	result := map[string]string{}
+func (r *Router) ListActiveServices() map[string]map[string]string {
+	result := map[string]map[string]string{}
 
 	r.withReadLock(func() error {
-		for host, service := range r.services {
-			if host == "" {
+		for name, service := range r.services {
+			var host string
+			if service.host == "" {
 				host = "*"
+			} else {
+				host = service.host
 			}
 			if service.active != nil {
-				result[host] = service.active.Target()
+				result[name] = map[string]string{
+					"host":   host,
+					"target": service.active.Target(),
+				}
 			}
 		}
 		return nil
@@ -179,6 +194,7 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 // Private
 
 type savedTarget struct {
+	Host              string            `json:"host"`
 	Target            string            `json:"target"`
 	HealthCheckConfig HealthCheckConfig `json:"health_check_config"`
 	TargetOptions     TargetOptions     `json:"target_options"`
@@ -211,7 +227,7 @@ func (r *Router) restoreSnapshot(state savedState) error {
 	defer r.serviceLock.Unlock()
 
 	r.services = HostServiceMap{}
-	for host, saved := range state.ActiveTargets {
+	for name, saved := range state.ActiveTargets {
 		target, err := NewTarget(saved.Target, saved.HealthCheckConfig, saved.TargetOptions)
 		if err != nil {
 			return err
@@ -220,7 +236,9 @@ func (r *Router) restoreSnapshot(state savedState) error {
 		// Put the target back into the active state, regardless of its health. It
 		// may be rebooting or otherwise need more time to be reachable again.
 		target.state = TargetStateHealthy
-		r.services[host] = &Service{
+		r.services[name] = &Service{
+			name:   name,
+			host:   saved.Host,
 			active: target,
 		}
 	}
@@ -234,9 +252,10 @@ func (r *Router) snaphostState() savedState {
 	}
 
 	r.withReadLock(func() error {
-		for host, service := range r.services {
+		for name, service := range r.services {
 			if service.active != nil {
-				state.ActiveTargets[host] = savedTarget{
+				state.ActiveTargets[name] = savedTarget{
+					Host:              service.host,
 					Target:            service.active.Target(),
 					HealthCheckConfig: service.active.healthCheckConfig,
 					TargetOptions:     service.active.options,
@@ -257,26 +276,23 @@ func (r *Router) activeTargetForHost(host string) *Target {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	service, ok := r.services[host]
-	if !ok {
-		service, ok = r.services[""]
-	}
+	service := r.serviceForHostOrDefault(host)
 
-	if !ok {
+	if service == nil {
 		return nil
 	}
 
 	return service.active
 }
 
-func (r *Router) setAddingService(host string, target *Target, drainTimeout time.Duration) *Service {
+func (r *Router) setAddingService(name string, host string, target *Target, drainTimeout time.Duration) *Service {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	service, ok := r.services[host]
-	if !ok {
-		service = &Service{}
-		r.services[host] = service
+	service, ok := r.services[name]
+	if !ok || service.host != host {
+		service = &Service{name: name, host: host}
+		r.services[name] = service
 	}
 
 	if service.adding != nil {
@@ -322,6 +338,39 @@ func removeItem[T comparable](s []T, item T) []T {
 		}
 	}
 	return s
+}
+
+func (r *Router) serviceForHost(host string) *Service {
+	for _, service := range r.services {
+		if host == service.host {
+			return service
+		}
+	}
+
+	return nil
+}
+
+func (r *Router) defaultService() *Service {
+	for _, service := range r.services {
+		if service.host == "" {
+			return service
+		}
+	}
+
+	return nil
+}
+
+func (r *Router) serviceForHostOrDefault(host string) *Service {
+	var service *Service
+	if host != "" {
+		service = r.serviceForHost(host)
+	}
+
+	if service == nil {
+		service = r.defaultService()
+	}
+
+	return service
 }
 
 func (r *Router) withReadLock(fn func() error) error {

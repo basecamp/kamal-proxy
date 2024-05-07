@@ -20,11 +20,11 @@ type deployCommand struct {
 func newDeployCommand() *deployCommand {
 	deployCommand := &deployCommand{}
 	deployCommand.cmd = &cobra.Command{
-		Use:       "deploy <target>",
+		Use:       "deploy <name> <target>",
 		Short:     "Deploy a target host",
 		RunE:      deployCommand.deploy,
-		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{"target"},
+		Args:      cobra.ExactArgs(2),
+		ValidArgs: []string{"name", "target"},
 	}
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
@@ -42,7 +42,8 @@ func newDeployCommand() *deployCommand {
 }
 
 func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
-	c.args.TargetURL = args[0]
+	c.args.Name = args[0]
+	c.args.TargetURL = args[1]
 
 	if c.tls && c.args.Host == "" {
 		return fmt.Errorf("host must be set when using TLS")

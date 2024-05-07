@@ -17,6 +17,7 @@ type CommandHandler struct {
 }
 
 type DeployArgs struct {
+	Name              string
 	Host              string
 	TargetURL         string
 	DeployTimeout     time.Duration
@@ -36,11 +37,11 @@ type ResumeArgs struct {
 }
 
 type RemoveArgs struct {
-	Host string
+	Name string
 }
 
 type ListResponse struct {
-	Targets map[string]string `json:"targets"`
+	Targets map[string]map[string]string `json:"targets"`
 }
 
 func NewCommandHandler(router *Router) *CommandHandler {
@@ -95,7 +96,7 @@ func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
 		return err
 	}
 
-	err = h.router.SetServiceTarget(args.Host, target, args.DeployTimeout, args.DrainTimeout)
+	err = h.router.SetServiceTarget(args.Name, args.Host, target, args.DeployTimeout, args.DrainTimeout)
 
 	return err
 }
@@ -113,7 +114,7 @@ func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {
 }
 
 func (h *CommandHandler) Remove(args DeployArgs, reply *bool) error {
-	err := h.router.RemoveService(args.Host)
+	err := h.router.RemoveService(args.Name)
 
 	return err
 }
