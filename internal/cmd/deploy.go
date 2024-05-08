@@ -20,7 +20,7 @@ type deployCommand struct {
 func newDeployCommand() *deployCommand {
 	deployCommand := &deployCommand{}
 	deployCommand.cmd = &cobra.Command{
-		Use:       "deploy <name> <target>",
+		Use:       "deploy <service> <target>",
 		Short:     "Deploy a target host",
 		RunE:      deployCommand.deploy,
 		Args:      cobra.ExactArgs(2),

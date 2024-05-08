@@ -16,7 +16,7 @@ type removeCommand struct {
 func newRemoveCommand() *removeCommand {
 	removeCommand := &removeCommand{}
 	removeCommand.cmd = &cobra.Command{
-		Use:       "remove <name>",
+		Use:       "remove <service>",
 		Short:     "Remove the service",
 		RunE:      removeCommand.run,
 		Args:      cobra.ExactArgs(1),

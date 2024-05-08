@@ -16,7 +16,7 @@ type pauseCommand struct {
 func newPauseCommand() *pauseCommand {
 	pauseCommand := &pauseCommand{}
 	pauseCommand.cmd = &cobra.Command{
-		Use:   "pause",
+		Use:   "pause <service>",
 		Short: "Pause a service",
 		RunE:  pauseCommand.run,
 		Args:  cobra.NoArgs,
