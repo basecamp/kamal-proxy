@@ -45,7 +45,6 @@ func newDeployCommand() *deployCommand {
 
 func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
-	c.args.TargetURL = args[1]
 
 	if c.tls && c.args.Host == "" {
 		return fmt.Errorf("host must be set when using TLS")
