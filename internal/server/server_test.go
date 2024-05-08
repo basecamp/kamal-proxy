@@ -12,7 +12,7 @@ import (
 )
 
 func TestServer_Deploying(t *testing.T) {
-	_, target := testBackend(t, "first", http.StatusOK)
+	_, target := testBackend(t, "", "first", http.StatusOK)
 	server, addr := testServer(t)
 
 	testDeployTarget(t, target, server)
@@ -23,11 +23,11 @@ func TestServer_Deploying(t *testing.T) {
 }
 
 func TestServer_DeployingGaplessly(t *testing.T) {
-	_, initialTarget := testBackend(t, "first", http.StatusOK)
+	_, initialTarget := testBackend(t, "", "first", http.StatusOK)
 
 	newTargets := []*Target{}
 	for i := 0; i < 5; i++ {
-		_, target := testBackend(t, fmt.Sprintf("replacement %d", i), http.StatusOK)
+		_, target := testBackend(t, "", fmt.Sprintf("replacement %d", i), http.StatusOK)
 		newTargets = append(newTargets, target)
 	}
 

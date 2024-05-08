@@ -17,7 +17,7 @@ import (
 )
 
 func TestTarget_Serve(t *testing.T) {
-	_, target := testBackend(t, "ok", http.StatusOK)
+	_, target := testBackend(t, "", "ok", http.StatusOK)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -28,7 +28,7 @@ func TestTarget_Serve(t *testing.T) {
 }
 
 func TestTarget_ServeWebSocket(t *testing.T) {
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 		require.NoError(t, err)
 		defer c.CloseNow()
@@ -54,7 +54,7 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 func TestTarget_PreserveTargetHeader(t *testing.T) {
 	var requestTarget string
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		requestTarget = r.Host
 	})
 
@@ -74,7 +74,7 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 		customHeader    string
 	)
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		xForwardedFor = r.Header.Get("X-Forwarded-For")
 		xForwardedProto = r.Header.Get("X-Forwarded-Proto")
 		customHeader = r.Header.Get("Custom-Header")
@@ -105,7 +105,7 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 }
 
 func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "p1=a;b;c&p2=%x&p3=ok", r.URL.RawQuery)
 	})
 
@@ -117,7 +117,7 @@ func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
 }
 
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
-	_, target := testBackend(t, "ok", http.StatusOK)
+	_, target := testBackend(t, "", "ok", http.StatusOK)
 
 	target.BeginHealthChecks()
 
@@ -133,7 +133,7 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 }
 
 func TestTarget_DrainWhenEmpty(t *testing.T) {
-	_, target := testBackend(t, "ok", http.StatusOK)
+	_, target := testBackend(t, "", "ok", http.StatusOK)
 
 	target.Drain(time.Second)
 }
@@ -145,7 +145,7 @@ func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
 		time.Sleep(time.Millisecond * 200)
 		served++
@@ -170,7 +170,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
 		for i := 0; i < 500; i++ {
 			time.Sleep(time.Millisecond * 10)
@@ -194,7 +194,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 }
 
 func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	_, target := testBackendWithHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 		require.NoError(t, err)
 		defer c.CloseNow()
@@ -224,7 +224,7 @@ func TestTarget_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, TargetOptions{TLSHostname: "example.com"})
+	target, err := NewTarget("", serverURL.Host, defaultHealthCheckConfig, TargetOptions{TLSHostname: "example.com"})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
@@ -247,7 +247,7 @@ func TestTarget_EnforceMaxRequestBodySize(t *testing.T) {
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, TargetOptions{MaxRequestBodySize: 10})
+	target, err := NewTarget("", serverURL.Host, defaultHealthCheckConfig, TargetOptions{MaxRequestBodySize: 10})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))

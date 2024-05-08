@@ -91,12 +91,12 @@ func (h *CommandHandler) Stop() error {
 }
 
 func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
-	target, err := NewTarget(args.TargetURL, args.HealthCheckConfig, args.TargetOptions)
+	target, err := NewTarget(args.Host, args.TargetURL, args.HealthCheckConfig, args.TargetOptions)
 	if err != nil {
 		return err
 	}
 
-	err = h.router.SetServiceTarget(args.Service, args.Host, target, args.DeployTimeout, args.DrainTimeout)
+	err = h.router.SetServiceTarget(args.Service, target, args.DeployTimeout, args.DrainTimeout)
 
 	return err
 }

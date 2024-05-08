@@ -100,6 +100,7 @@ type inflightRequest struct {
 type inflightMap map[*http.Request]*inflightRequest
 
 type Target struct {
+	host              string
 	targetURL         *url.URL
 	healthCheckConfig HealthCheckConfig
 	options           TargetOptions
@@ -116,13 +117,14 @@ type Target struct {
 	becameHealthy chan (bool)
 }
 
-func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options TargetOptions) (*Target, error) {
+func NewTarget(host string, targetURL string, healthCheckConfig HealthCheckConfig, options TargetOptions) (*Target, error) {
 	uri, err := parseTargetURL(targetURL)
 	if err != nil {
 		return nil, err
 	}
 
 	target := &Target{
+		host:              host,
 		targetURL:         uri,
 		healthCheckConfig: healthCheckConfig,
 		options:           options,

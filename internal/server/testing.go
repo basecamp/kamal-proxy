@@ -20,21 +20,21 @@ var defaultHealthCheckConfig = HealthCheckConfig{
 
 var defaultTargetOptions = TargetOptions{}
 
-func testBackend(t *testing.T, body string, statusCode int) (*httptest.Server, *Target) {
-	return testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+func testBackend(t *testing.T, host string, body string, statusCode int) (*httptest.Server, *Target) {
+	return testBackendWithHandler(t, host, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(statusCode)
 		w.Write([]byte(body))
 	})
 }
 
-func testBackendWithHandler(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Target) {
+func testBackendWithHandler(t *testing.T, host string, handler http.HandlerFunc) (*httptest.Server, *Target) {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultTargetOptions)
+	target, err := NewTarget(host, serverURL.Host, defaultHealthCheckConfig, defaultTargetOptions)
 	require.NoError(t, err)
 
 	return server, target
