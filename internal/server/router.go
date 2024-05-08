@@ -86,29 +86,29 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Router) SetServiceTarget(service string, host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	slog.Info("Deploying", "service", service, "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
+func (r *Router) SetServiceTarget(name string, host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	slog.Info("Deploying", "service", name, "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
 
-	existingService := r.serviceForHost(host)
+	service := r.serviceForHost(host)
 
-	if existingService != nil && existingService.name != service {
+	if service != nil && service.name != name {
 		return ErrorHostInUse
 	}
 
-	addingService := r.setAddingService(service, host, target, drainTimeout)
+	addingService := r.setAddingService(name, host, target, drainTimeout)
 
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	if !becameHealthy {
 		slog.Info("Target failed to become healthy", "host", host, "target", target.Target())
-		r.setAddingService(service, host, nil, drainTimeout)
+		r.setAddingService(name, host, nil, drainTimeout)
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
 	r.promoteToActive(addingService, target, drainTimeout)
 	r.saveState()
 
-	slog.Info("Deployed", "service", service, "host", host, "target", target.Target())
+	slog.Info("Deployed", "service", name, "host", host, "target", target.Target())
 	return nil
 }
 
@@ -135,22 +135,22 @@ func (r *Router) RemoveService(host string) error {
 	return err
 }
 
-func (r *Router) PauseService(service string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
-	pausingService := r.services[service]
-	if pausingService == nil {
+func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
+	service := r.services[name]
+	if service == nil {
 		return ErrorServiceNotFound
 	}
 
-	return pausingService.active.Pause(drainTimeout, pauseTimeout)
+	return service.active.Pause(drainTimeout, pauseTimeout)
 }
 
-func (r *Router) ResumeService(service string) error {
-	resumingService := r.services[service]
-	if resumingService == nil {
+func (r *Router) ResumeService(name string) error {
+	service := r.services[name]
+	if service == nil {
 		return ErrorServiceNotFound
 	}
 
-	return resumingService.active.Resume()
+	return service.active.Resume()
 }
 
 func (r *Router) ListActiveServices() ServiceDescriptionMap {
@@ -292,22 +292,22 @@ func (r *Router) activeTargetForHost(host string) *Target {
 	return service.active
 }
 
-func (r *Router) setAddingService(service string, host string, target *Target, drainTimeout time.Duration) *Service {
+func (r *Router) setAddingService(name string, host string, target *Target, drainTimeout time.Duration) *Service {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	addingService, ok := r.services[service]
-	if !ok || addingService.host != host {
-		addingService = &Service{name: service, host: host}
-		r.services[service] = addingService
+	service, ok := r.services[name]
+	if !ok || service.host != host {
+		service = &Service{name: name, host: host}
+		r.services[name] = service
 	}
 
-	if addingService.adding != nil {
-		r.drainAndDispose(addingService, addingService.adding, drainTimeout)
+	if service.adding != nil {
+		r.drainAndDispose(service, service.adding, drainTimeout)
 	}
 
-	addingService.adding = target
-	return addingService
+	service.adding = target
+	return service
 }
 
 func (r *Router) promoteToActive(service *Service, target *Target, drainTimeout time.Duration) {
