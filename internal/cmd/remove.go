@@ -20,7 +20,7 @@ func newRemoveCommand() *removeCommand {
 		Short:     "Remove the service",
 		RunE:      removeCommand.run,
 		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{"name"},
+		ValidArgs: []string{"service"},
 	}
 
 	return removeCommand

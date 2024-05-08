@@ -16,13 +16,12 @@ type resumeCommand struct {
 func newResumeCommand() *resumeCommand {
 	resumeCommand := &resumeCommand{}
 	resumeCommand.cmd = &cobra.Command{
-		Use:   "resume",
-		Short: "Resume a service",
-		RunE:  resumeCommand.run,
-		Args:  cobra.NoArgs,
+		Use:       "resume <service>",
+		Short:     "Resume a service",
+		RunE:      resumeCommand.run,
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{"service"},
 	}
-
-	resumeCommand.cmd.Flags().StringVar(&resumeCommand.args.Host, "host", "", "Host to resume (empty for wildcard)")
 
 	return resumeCommand
 }

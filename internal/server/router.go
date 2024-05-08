@@ -128,22 +128,22 @@ func (r *Router) RemoveService(host string) error {
 	return err
 }
 
-func (r *Router) PauseService(host string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
-	target := r.activeTargetForHost(host)
-	if target == nil {
+func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
+	service := r.services[name]
+	if service == nil {
 		return ErrorServiceNotFound
 	}
 
-	return target.Pause(drainTimeout, pauseTimeout)
+	return service.active.Pause(drainTimeout, pauseTimeout)
 }
 
-func (r *Router) ResumeService(host string) error {
-	target := r.activeTargetForHost(host)
-	if target == nil {
+func (r *Router) ResumeService(name string) error {
+	service := r.services[name]
+	if service == nil {
 		return ErrorServiceNotFound
 	}
 
-	return target.Resume()
+	return service.active.Resume()
 }
 
 func (r *Router) ListActiveServices() map[string]map[string]string {

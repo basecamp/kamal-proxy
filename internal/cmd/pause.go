@@ -16,13 +16,13 @@ type pauseCommand struct {
 func newPauseCommand() *pauseCommand {
 	pauseCommand := &pauseCommand{}
 	pauseCommand.cmd = &cobra.Command{
-		Use:   "pause <service>",
-		Short: "Pause a service",
-		RunE:  pauseCommand.run,
-		Args:  cobra.NoArgs,
+		Use:       "pause <service>",
+		Short:     "Pause a service",
+		RunE:      pauseCommand.run,
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{"service"},
 	}
 
-	pauseCommand.cmd.Flags().StringVar(&pauseCommand.args.Host, "host", "", "Host to pause (empty for wildcard)")
 	pauseCommand.cmd.Flags().DurationVar(&pauseCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "How long to allow in-flight requests to complete")
 	pauseCommand.cmd.Flags().DurationVar(&pauseCommand.args.PauseTimeout, "max-pause", server.DefaultPauseTimeout, "How long to enqueue requests before shedding load")
 

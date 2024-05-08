@@ -24,7 +24,7 @@ func newDeployCommand() *deployCommand {
 		Short:     "Deploy a target host",
 		RunE:      deployCommand.deploy,
 		Args:      cobra.ExactArgs(2),
-		ValidArgs: []string{"name", "target"},
+		ValidArgs: []string{"service", "target"},
 	}
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
@@ -42,7 +42,7 @@ func newDeployCommand() *deployCommand {
 }
 
 func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
-	c.args.Name = args[0]
+	c.args.Service = args[0]
 	c.args.TargetURL = args[1]
 
 	if c.tls && c.args.Host == "" {
