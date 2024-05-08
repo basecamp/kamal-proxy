@@ -35,6 +35,13 @@ type Router struct {
 	serviceLock sync.RWMutex
 }
 
+type ServiceDescription struct {
+	Host   string `json:"host"`
+	Target string `json:"target"`
+}
+
+type ServiceDescriptionMap map[string]ServiceDescription
+
 func NewRouter(statePath string) *Router {
 	return &Router{
 		statePath: statePath,
@@ -146,8 +153,8 @@ func (r *Router) ResumeService(service string) error {
 	return resumingService.active.Resume()
 }
 
-func (r *Router) ListActiveServices() map[string]map[string]string {
-	result := map[string]map[string]string{}
+func (r *Router) ListActiveServices() ServiceDescriptionMap {
+	result := ServiceDescriptionMap{}
 
 	r.withReadLock(func() error {
 		for name, service := range r.services {
@@ -158,9 +165,9 @@ func (r *Router) ListActiveServices() map[string]map[string]string {
 				host = service.host
 			}
 			if service.active != nil {
-				result[name] = map[string]string{
-					"host":   host,
-					"target": service.active.Target(),
+				result[name] = ServiceDescription{
+					Host:   host,
+					Target: service.active.Target(),
 				}
 			}
 		}

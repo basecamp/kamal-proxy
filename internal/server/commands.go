@@ -41,7 +41,7 @@ type RemoveArgs struct {
 }
 
 type ListResponse struct {
-	Targets map[string]map[string]string `json:"targets"`
+	Targets ServiceDescriptionMap `json:"targets"`
 }
 
 func NewCommandHandler(router *Router) *CommandHandler {
