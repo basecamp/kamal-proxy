@@ -23,7 +23,7 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("my_service", "dummy.example.com", target, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://dummy.example.com/")
 
@@ -35,7 +35,7 @@ func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("my_service", "", target, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "", target, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://dummy.example.com/")
 
@@ -48,14 +48,14 @@ func TestRouter_ReplacingActiveService(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("my_service", "dummy.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://dummy.example.com/")
 
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	require.NoError(t, router.SetServiceTarget("my_service", "dummy.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendRequest(router, "http://dummy.example.com/")
 
@@ -68,14 +68,14 @@ func TestRouter_ChangingHostForService(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("my_service", "dummy.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, "http://dummy.example.com/")
 
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	require.NoError(t, router.SetServiceTarget("my_service", "dummy2.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy2.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendRequest(router, "http://dummy2.example.com/")
 
@@ -91,8 +91,8 @@ func TestRouter_ReusingHost(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("my_service", "dummy.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
-	err := router.SetServiceTarget("my_service2", "dummy.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout)
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, DefaultDeployTimeout, DefaultDrainTimeout))
+	err := router.SetServiceTarget("service12", "dummy.example.com", second, DefaultDeployTimeout, DefaultDrainTimeout)
 
 	require.EqualError(t, err, "host is used by another service", "Error message does not match expected one")
 
