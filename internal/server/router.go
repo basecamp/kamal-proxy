@@ -95,17 +95,16 @@ func (r *Router) SetServiceTarget(name string, host string, target *Target, depl
 		return ErrorHostInUse
 	}
 
-	addingService := r.setAddingService(name, host, target, drainTimeout)
-
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
+	target.StopHealthChecks()
+
 	if !becameHealthy {
 		slog.Info("Target failed to become healthy", "host", host, "target", target.Target())
-		r.setAddingService(name, host, nil, drainTimeout)
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
-	r.promoteToActive(addingService, target, drainTimeout)
+	r.setActiveTarget(addingService, target, drainTimeout)
 	r.saveState()
 
 	slog.Info("Deployed", "service", name, "host", host, "target", target.Target())
@@ -292,36 +291,23 @@ func (r *Router) activeTargetForHost(host string) *Target {
 	return service.active
 }
 
-func (r *Router) setAddingService(name string, host string, target *Target, drainTimeout time.Duration) *Service {
-	r.serviceLock.Lock()
-	defer r.serviceLock.Unlock()
-
-	service, ok := r.services[name]
-	if !ok || service.host != host {
-		service = &Service{name: name, host: host}
-		r.services[name] = service
-	}
-
-	if service.adding != nil {
-		r.drainAndDispose(service, service.adding, drainTimeout)
-	}
-
-	service.adding = target
-	return service
-}
-
-func (r *Router) promoteToActive(service *Service, target *Target, drainTimeout time.Duration) {
+func (r *Router) setActiveTarget(service *Service, target *Target, drainTimeout time.Duration) {
 	target.StopHealthChecks()
 
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
+
+	service, ok := r.services[host]
+	if !ok {
+		service = &Service{}
+		r.services[host] = service
+	}
 
 	if service.active != nil {
 		r.drainAndDispose(service, service.active, drainTimeout)
 	}
 
 	service.active = target
-	service.adding = nil
 }
 
 func (r *Router) drainAndDispose(service *Service, target *Target, drainTimeout time.Duration) {
