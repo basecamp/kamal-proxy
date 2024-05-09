@@ -29,6 +29,8 @@ func newResumeCommand() *resumeCommand {
 func (c *resumeCommand) run(cmd *cobra.Command, args []string) error {
 	var response bool
 
+	c.args.Service = args[0]
+
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		return client.Call("parachute.Resume", c.args, &response)
 	})
