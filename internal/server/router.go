@@ -27,11 +27,11 @@ type Service struct {
 	draining []*Target
 }
 
-type ServiceMap map[string]*Service
+type HostServiceMap map[string]*Service
 
 type Router struct {
 	statePath   string
-	services    ServiceMap
+	services    HostServiceMap
 	serviceLock sync.RWMutex
 }
 
@@ -45,7 +45,7 @@ type ServiceDescriptionMap map[string]ServiceDescription
 func NewRouter(statePath string) *Router {
 	return &Router{
 		statePath: statePath,
-		services:  ServiceMap{},
+		services:  HostServiceMap{},
 	}
 }
 
@@ -229,7 +229,7 @@ func (r *Router) restoreSnapshot(state savedState) error {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	r.services = ServiceMap{}
+	r.services = HostServiceMap{}
 	for name, saved := range state.ActiveTargets {
 		target, err := NewTarget(saved.Target, saved.HealthCheckConfig, saved.TargetOptions)
 		if err != nil {
