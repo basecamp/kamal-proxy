@@ -23,7 +23,6 @@ type Service struct {
 	name     string
 	host     string
 	active   *Target
-	adding   *Target
 	draining []*Target
 }
 
@@ -117,9 +116,6 @@ func (r *Router) RemoveService(name string) error {
 
 		if service.active != nil {
 			r.drainAndDispose(service, service.active, DefaultDrainTimeout)
-		}
-		if service.adding != nil {
-			service.adding.StopHealthChecks()
 		}
 
 		delete(r.services, service.host)
