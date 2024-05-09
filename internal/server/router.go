@@ -109,7 +109,7 @@ func (r *Router) SetServiceTarget(name string, host string, target *Target, depl
 
 func (r *Router) RemoveService(name string) error {
 	err := r.withWriteLock(func() error {
-		service := r.serviceForName(name)
+		service := r.serviceForName(name, false)
 		if service == nil {
 			return ErrorServiceNotFound
 		}
@@ -128,7 +128,7 @@ func (r *Router) RemoveService(name string) error {
 }
 
 func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
-	service := r.serviceForName(name)
+	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -137,7 +137,7 @@ func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTime
 }
 
 func (r *Router) ResumeService(name string) error {
-	service := r.serviceForName(name)
+	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -290,7 +290,7 @@ func (r *Router) setActiveTarget(name string, host string, target *Target, drain
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	service := r.serviceForName(name)
+	service := r.serviceForName(name, false)
 	if service == nil {
 		service = &Service{name: name, host: host}
 	}
@@ -340,7 +340,12 @@ func removeItem[T comparable](s []T, item T) []T {
 	return s
 }
 
-func (r *Router) serviceForName(name string) *Service {
+func (r *Router) serviceForName(name string, readLock bool) *Service {
+	if readLock {
+		r.serviceLock.RLock()
+		defer r.serviceLock.RUnlock()
+	}
+
 	for _, service := range r.services {
 		if name == service.name {
 			return service
