@@ -153,15 +153,12 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 	result := ServiceDescriptionMap{}
 
 	r.withReadLock(func() error {
-		for name, service := range r.services {
-			var host string
-			if service.host == "" {
+		for host, service := range r.services {
+			if host == "" {
 				host = "*"
-			} else {
-				host = service.host
 			}
 			if service.active != nil {
-				result[name] = ServiceDescription{
+				result[service.name] = ServiceDescription{
 					Host:   host,
 					Target: service.active.Target(),
 				}
