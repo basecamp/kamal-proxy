@@ -89,12 +89,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Router) SetServiceTarget(name string, host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	slog.Info("Deploying", "service", name, "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
 
-	service := r.serviceForHost(host)
-
-	if service != nil && service.name != name {
-		return ErrorHostInUse
-	}
-
 	target.BeginHealthChecks()
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	target.StopHealthChecks()
@@ -104,17 +98,20 @@ func (r *Router) SetServiceTarget(name string, host string, target *Target, depl
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
-	r.setActiveTarget(addingService, target, drainTimeout)
+	err := r.setActiveTarget(name, host, target, drainTimeout)
+	if err != nil {
+		return err
+	}
 	r.saveState()
 
 	slog.Info("Deployed", "service", name, "host", host, "target", target.Target())
 	return nil
 }
 
-func (r *Router) RemoveService(host string) error {
+func (r *Router) RemoveService(name string) error {
 	err := r.withWriteLock(func() error {
-		service, ok := r.services[host]
-		if !ok {
+		service := r.serviceForName(name)
+		if service == nil {
 			return ErrorServiceNotFound
 		}
 
@@ -125,7 +122,7 @@ func (r *Router) RemoveService(host string) error {
 			service.adding.StopHealthChecks()
 		}
 
-		delete(r.services, host)
+		delete(r.services, service.host)
 		return nil
 	})
 
@@ -135,7 +132,7 @@ func (r *Router) RemoveService(host string) error {
 }
 
 func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
-	service := r.services[name]
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -144,7 +141,7 @@ func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTime
 }
 
 func (r *Router) ResumeService(name string) error {
-	service := r.services[name]
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -242,7 +239,7 @@ func (r *Router) restoreSnapshot(state savedState) error {
 		// Put the target back into the active state, regardless of its health. It
 		// may be rebooting or otherwise need more time to be reachable again.
 		target.state = TargetStateHealthy
-		r.services[name] = &Service{
+		r.services[saved.Host] = &Service{
 			name:   name,
 			host:   saved.Host,
 			active: target,
@@ -258,9 +255,9 @@ func (r *Router) snaphostState() savedState {
 	}
 
 	r.withReadLock(func() error {
-		for name, service := range r.services {
+		for _, service := range r.services {
 			if service.active != nil {
-				state.ActiveTargets[name] = savedTarget{
+				state.ActiveTargets[service.name] = savedTarget{
 					Host:              service.host,
 					Target:            service.active.Target(),
 					HealthCheckConfig: service.active.healthCheckConfig,
@@ -282,25 +279,40 @@ func (r *Router) activeTargetForHost(host string) *Target {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	service := r.serviceForHostOrDefault(host)
+	service, ok := r.services[host]
+	if !ok {
+		service, ok = r.services[""]
+	}
 
-	if service == nil {
+	if !ok {
 		return nil
 	}
 
 	return service.active
 }
 
-func (r *Router) setActiveTarget(service *Service, target *Target, drainTimeout time.Duration) {
+func (r *Router) setActiveTarget(name string, host string, target *Target, drainTimeout time.Duration) error {
 	target.StopHealthChecks()
 
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	service, ok := r.services[host]
+	service := r.serviceForName(name)
+	if service == nil {
+		service = &Service{name: name, host: host}
+	}
+
+	hostService, ok := r.services[host]
 	if !ok {
-		service = &Service{}
+		if host != service.host {
+			delete(r.services, service.host)
+			service.host = host
+		}
+
 		r.services[host] = service
+	} else if hostService != service {
+		slog.Error("Host in use by another service", "service", hostService.name, "host", host)
+		return ErrorHostInUse
 	}
 
 	if service.active != nil {
@@ -308,6 +320,8 @@ func (r *Router) setActiveTarget(service *Service, target *Target, drainTimeout 
 	}
 
 	service.active = target
+
+	return nil
 }
 
 func (r *Router) drainAndDispose(service *Service, target *Target, drainTimeout time.Duration) {
@@ -333,37 +347,14 @@ func removeItem[T comparable](s []T, item T) []T {
 	return s
 }
 
-func (r *Router) serviceForHost(host string) *Service {
+func (r *Router) serviceForName(name string) *Service {
 	for _, service := range r.services {
-		if host == service.host {
+		if name == service.name {
 			return service
 		}
 	}
 
 	return nil
-}
-
-func (r *Router) defaultService() *Service {
-	for _, service := range r.services {
-		if service.host == "" {
-			return service
-		}
-	}
-
-	return nil
-}
-
-func (r *Router) serviceForHostOrDefault(host string) *Service {
-	var service *Service
-	if host != "" {
-		service = r.serviceForHost(host)
-	}
-
-	if service == nil {
-		service = r.defaultService()
-	}
-
-	return service
 }
 
 func (r *Router) withReadLock(fn func() error) error {
