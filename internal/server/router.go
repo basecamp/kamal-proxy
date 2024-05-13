@@ -19,13 +19,6 @@ var (
 	ErrorUnknownServerName           = errors.New("unknown server name")
 )
 
-type Service struct {
-	name     string
-	host     string
-	active   *Target
-	draining []*Target
-}
-
 type HostServiceMap map[string]*Service
 
 type Router struct {
@@ -71,17 +64,17 @@ func (r *Router) RestoreLastSavedState() error {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	target := r.activeTargetForRequest(req)
-	if target == nil {
+	service := r.serviceForRequest(req)
+	if service == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {
-		// Record the target that served the request, if its context is available.
-		targetIdentifer, ok := req.Context().Value(contextKeyTarget).(*string)
+		// Record the service that served the request, if its context is available.
+		serviceIdentifer, ok := req.Context().Value(contextKeyService).(*string)
 		if ok {
-			*targetIdentifer = target.Target()
+			*serviceIdentifer = service.name
 		}
 
-		target.ServeHTTP(w, req)
+		service.ServeHTTP(w, req)
 	}
 }
 
@@ -133,7 +126,7 @@ func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTime
 		return ErrorServiceNotFound
 	}
 
-	return service.active.Pause(drainTimeout, pauseTimeout)
+	return service.Pause(drainTimeout, pauseTimeout)
 }
 
 func (r *Router) ResumeService(name string) error {
@@ -142,7 +135,7 @@ func (r *Router) ResumeService(name string) error {
 		return ErrorServiceNotFound
 	}
 
-	return service.active.Resume()
+	return service.Resume()
 }
 
 func (r *Router) ListActiveServices() ServiceDescriptionMap {
@@ -232,11 +225,8 @@ func (r *Router) restoreSnapshot(state savedState) error {
 		// Put the target back into the active state, regardless of its health. It
 		// may be rebooting or otherwise need more time to be reachable again.
 		target.state = TargetStateHealthy
-		r.services[saved.Host] = &Service{
-			name:   name,
-			host:   saved.Host,
-			active: target,
-		}
+		r.services[saved.Host] = NewService(name, saved.Host)
+		r.services[saved.Host].active = target
 	}
 
 	return nil
@@ -264,8 +254,16 @@ func (r *Router) snaphostState() savedState {
 	return state
 }
 
-func (r *Router) activeTargetForRequest(req *http.Request) *Target {
-	return r.activeTargetForHost(req.Host)
+func (r *Router) serviceForRequest(req *http.Request) *Service {
+	r.serviceLock.RLock()
+	defer r.serviceLock.RUnlock()
+
+	service, ok := r.services[req.Host]
+	if !ok {
+		service = r.services[""]
+	}
+
+	return service
 }
 
 func (r *Router) activeTargetForHost(host string) *Target {
@@ -292,7 +290,7 @@ func (r *Router) setActiveTarget(name string, host string, target *Target, drain
 
 	service := r.serviceForName(name, false)
 	if service == nil {
-		service = &Service{name: name, host: host}
+		service = NewService(name, host)
 	}
 
 	hostService, ok := r.services[host]

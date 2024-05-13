@@ -18,7 +18,11 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
 	logger := slog.New(slog.NewJSONHandler(out, nil))
 	middleware := WithLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Record a value for the `target` context key
+		// Record a value for the `service` and `target` context keys
+		service, ok := r.Context().Value(contextKeyService).(*string)
+		if ok {
+			*service = "myapp"
+		}
 		target, ok := r.Context().Value(contextKeyTarget).(*string)
 		if ok {
 			*target = "upstream:3000"
@@ -52,6 +56,7 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 		RespContentLength int64  `json:"resp_content_length"`
 		RespContentType   string `json:"resp_content_type"`
 		Query             string `json:"query"`
+		Service           string `json:"service"`
 		Target            string `json:"target"`
 	}{}
 
@@ -73,4 +78,5 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	assert.Equal(t, int64(5), logline.ReqContentLength)
 	assert.Equal(t, int64(8), logline.RespContentLength)
 	assert.Equal(t, "upstream:3000", logline.Target)
+	assert.Equal(t, "myapp", logline.Service)
 }

@@ -21,20 +21,6 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-const (
-	DefaultDeployTimeout = time.Second * 30
-	DefaultDrainTimeout  = time.Second * 10
-	DefaultPauseTimeout  = time.Second * 30
-
-	DefaultHealthCheckPath     = "/up"
-	DefaultHealthCheckInterval = time.Second
-	DefaultHealthCheckTimeout  = time.Second * 5
-
-	MaxIdleConnsPerHost = 100
-
-	DefaultTargetTimeout = time.Second * 10
-)
-
 var (
 	ErrorInvalidHostPattern = errors.New("invalid host pattern")
 
@@ -110,8 +96,6 @@ type Target struct {
 	inflight     inflightMap
 	inflightLock sync.Mutex
 
-	pauseControl *PauseControl
-
 	healthcheck   *HealthCheck
 	becameHealthy chan (bool)
 }
@@ -129,8 +113,6 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options Ta
 
 		state:    TargetStateAdding,
 		inflight: inflightMap{},
-
-		pauseControl: NewPauseControl(),
 	}
 
 	target.proxyHandler = target.createProxyHandler()
@@ -149,13 +131,6 @@ func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	proceed := t.pauseControl.Wait()
-	if !proceed {
-		slog.Warn("Rejecting request due to expired pause", "target", t.Target(), "path", req.URL.Path)
-		w.WriteHeader(http.StatusGatewayTimeout)
-		return
-	}
-
 	req, inflightRequest := t.beginInflightRequest(req)
 
 	if req == nil {
@@ -163,6 +138,11 @@ func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	defer t.endInflightRequest(req)
+
+	targetIdentifer, ok := req.Context().Value(contextKeyTarget).(*string)
+	if ok {
+		*targetIdentifer = t.Target()
+	}
 
 	tw := newTargetResponseWriter(w, inflightRequest)
 	t.proxyHandler.ServeHTTP(tw, req)
@@ -255,28 +235,6 @@ func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
 	case <-t.becameHealthy:
 		return true
 	}
-}
-
-func (t *Target) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) error {
-	err := t.pauseControl.Pause(pauseTimeout)
-	if err != nil {
-		return err
-	}
-
-	slog.Info("Target paused", "target", t.Target())
-	t.Drain(drainTimeout)
-	slog.Info("Target drained", "target", t.Target())
-	return nil
-}
-
-func (t *Target) Resume() error {
-	err := t.pauseControl.Resume()
-	if err != nil {
-		return err
-	}
-
-	slog.Info("Target resumed", "target", t.Target())
-	return nil
 }
 
 // HealthCheckConsumer

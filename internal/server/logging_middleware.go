@@ -12,7 +12,10 @@ import (
 
 type contextKey string
 
-var contextKeyTarget = contextKey("target")
+var (
+	contextKeyService = contextKey("service")
+	contextKeyTarget  = contextKey("target")
+)
 
 type LoggingMiddleware struct {
 	logger *slog.Logger
@@ -29,8 +32,10 @@ func WithLoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler 
 func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := newLoggerResponseWriter(w)
 
+	var service string
 	var target string
-	ctx := context.WithValue(r.Context(), contextKeyTarget, &target)
+	ctx := context.WithValue(r.Context(), contextKeyService, &service)
+	ctx = context.WithValue(ctx, contextKeyTarget, &target)
 	r = r.WithContext(ctx)
 
 	started := time.Now()
@@ -51,6 +56,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"path", r.URL.Path,
 		"request_id", requestID,
 		"status", writer.statusCode,
+		"service", service,
 		"target", target,
 		"duration", elapsed.Nanoseconds(),
 		"method", r.Method,
