@@ -1,9 +1,17 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"path"
 	"time"
+
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -20,28 +28,79 @@ const (
 	DefaultTargetTimeout = time.Second * 10
 )
 
+type HealthCheckConfig struct {
+	Path     string        `json:"path"`
+	Interval time.Duration `json:"interval"`
+	Timeout  time.Duration `json:"timeout"`
+}
+
+type ServiceOptions struct {
+	HealthCheckConfig  HealthCheckConfig `json:"health_check"`
+	MaxRequestBodySize int64             `json:"max_request_body_size"`
+	TargetTimeout      time.Duration     `json:"target_timeout"`
+	TLSHostname        string            `json:"tls_hostname"`
+	ACMEDirectory      string            `json:"acme_directory"`
+	ACMECachePath      string            `json:"acme_cache_path"`
+}
+
+func (to ServiceOptions) RequireTLS() bool {
+	return to.TLSHostname != ""
+}
+
+func (to ServiceOptions) ScopedCachePath() string {
+	// We need to scope our certificate cache according to whatever ACME settings
+	// we want to use, such as the directory.  This is so we can reuse
+	// certificates between deployments when the settings are the same, but
+	// provision new certificates when they change.
+
+	hasher := sha256.New()
+	hasher.Write([]byte(to.ACMEDirectory))
+	hash := hex.EncodeToString(hasher.Sum(nil))
+
+	return path.Join(to.ACMECachePath, hash)
+}
+
 type Service struct {
-	name     string
-	host     string
+	name    string
+	host    string
+	options ServiceOptions
+
 	active   *Target
 	draining []*Target
 
 	pauseControl *PauseControl
+	certManager  *autocert.Manager
 }
 
-func NewService(name, host string) *Service {
-	return &Service{
-		name:         name,
-		host:         host,
-		pauseControl: NewPauseControl(),
+func NewService(name, host string, options ServiceOptions) *Service {
+	service := &Service{
+		name:    name,
+		host:    host,
+		options: options,
 	}
+
+	service.initialize()
+
+	return service
+}
+
+func (s *Service) UpdateOptions(options ServiceOptions) {
+	s.options = options
+	s.certManager = s.createCertManager()
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.recordServiceNameForRequest(r)
+
+	if s.options.RequireTLS() && r.TLS == nil {
+		s.redirectToHTTPS(w, r)
+		return
+	}
+
 	proceed := s.pauseControl.Wait()
 	if !proceed {
 		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(http.StatusGatewayTimeout)
 		return
 	}
 
@@ -50,7 +109,49 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.active.ServeHTTP(w, r)
+	s.active.ServeHTTP(w, s.limitRequestBody(w, r))
+}
+
+type marshalledService struct {
+	Name         string         `json:"name"`
+	Host         string         `json:"host"`
+	Options      ServiceOptions `json:"options"`
+	ActiveTarget string         `json:"active_target"`
+}
+
+func (s *Service) MarshalJSON() ([]byte, error) {
+	return json.Marshal(marshalledService{
+		Name:         s.name,
+		Host:         s.host,
+		Options:      s.options,
+		ActiveTarget: s.active.Target(),
+	})
+}
+
+func (s *Service) UnmarshalJSON(data []byte) error {
+	var ms marshalledService
+	err := json.Unmarshal(data, &ms)
+	if err != nil {
+		return err
+	}
+
+	active, err := NewTarget(ms.ActiveTarget, s.options.HealthCheckConfig, s.options.TargetTimeout)
+	if err != nil {
+		return err
+	}
+
+	// Restored targets are always considered healthy, because they would have
+	// been that way when they were saved.
+	active.state = TargetStateHealthy
+
+	s.name = ms.Name
+	s.host = ms.Host
+	s.options = ms.Options
+	s.active = active
+
+	s.initialize()
+
+	return nil
 }
 
 func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) error {
@@ -73,4 +174,53 @@ func (s *Service) Resume() error {
 
 	slog.Info("Service resumed", "service", s.name)
 	return nil
+}
+
+// Private
+
+func (s *Service) initialize() {
+	s.pauseControl = NewPauseControl()
+	s.certManager = s.createCertManager()
+}
+
+func (s *Service) recordServiceNameForRequest(req *http.Request) {
+	serviceIdentifer, ok := req.Context().Value(contextKeyService).(*string)
+	if ok {
+		*serviceIdentifer = s.name
+	}
+}
+
+func (s *Service) createCertManager() *autocert.Manager {
+	if s.options.TLSHostname == "" {
+		return nil
+	}
+
+	return &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
+		HostPolicy: autocert.HostWhitelist(s.options.TLSHostname),
+		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
+	}
+}
+
+func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Connection", "close")
+
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+	}
+
+	url := "https://" + host + r.URL.RequestURI()
+	http.Redirect(w, r, url, http.StatusMovedPermanently)
+}
+
+func (s *Service) limitRequestBody(w http.ResponseWriter, r *http.Request) *http.Request {
+	if s.options.MaxRequestBodySize > 0 {
+		r2 := *r // Copy so we aren't modifying the original request
+		r2.Body = http.MaxBytesReader(w, r.Body, s.options.MaxRequestBodySize)
+		r = &r2
+	}
+
+	return r
 }

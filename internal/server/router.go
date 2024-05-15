@@ -52,52 +52,57 @@ func (r *Router) RestoreLastSavedState() error {
 		return err
 	}
 
-	var state savedState
-	err = json.NewDecoder(f).Decode(&state)
+	var services []*Service
+	err = json.NewDecoder(f).Decode(&services)
 	if err != nil {
 		slog.Error("Failed to decode saved state", "path", r.statePath, "error", err)
 		return err
 	}
 
-	slog.Info("Restoring saved state", "path", r.statePath)
-	return r.restoreSnapshot(state)
+	r.withWriteLock(func() error {
+		r.services = HostServiceMap{}
+		for _, service := range services {
+			r.services[service.host] = service
+		}
+		return nil
+	})
+
+	slog.Info("Restored saved state", "path", r.statePath)
+	return nil
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service := r.serviceForRequest(req)
 	if service == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-	} else {
-		// Record the service that served the request, if its context is available.
-		serviceIdentifer, ok := req.Context().Value(contextKeyService).(*string)
-		if ok {
-			*serviceIdentifer = service.name
-		}
-
-		service.ServeHTTP(w, req)
+		return
 	}
+
+	service.ServeHTTP(w, req)
 }
 
-func (r *Router) SetServiceTarget(name string, host string, target *Target, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	slog.Info("Deploying", "service", name, "host", host, "target", target.Target(), "tls", target.options.RequireTLS())
+func (r *Router) SetServiceTarget(name string, host string, targetURL string, options ServiceOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	slog.Info("Deploying", "service", name, "host", host, "target", targetURL, "tls", options.RequireTLS())
 
-	target.BeginHealthChecks()
-	becameHealthy := target.WaitUntilHealthy(deployTimeout)
-	target.StopHealthChecks()
-
-	if !becameHealthy {
-		slog.Info("Target failed to become healthy", "host", host, "target", target.Target())
-		return ErrorTargetFailedToBecomeHealthy
-	}
-
-	err := r.setActiveTarget(name, host, target, drainTimeout)
+	target, err := NewTarget(targetURL, options.HealthCheckConfig, options.TargetTimeout)
 	if err != nil {
 		return err
 	}
-	r.saveState()
 
-	slog.Info("Deployed", "service", name, "host", host, "target", target.Target())
-	return nil
+	becameHealthy := target.WaitUntilHealthy(deployTimeout)
+	if !becameHealthy {
+		slog.Info("Target failed to become healthy", "host", host, "target", targetURL)
+		return ErrorTargetFailedToBecomeHealthy
+	}
+
+	err = r.setActiveTarget(name, host, target, options, drainTimeout)
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Deployed", "service", name, "host", host, "target", targetURL)
+
+	return r.saveStateSnapshot()
 }
 
 func (r *Router) RemoveService(name string) error {
@@ -114,10 +119,11 @@ func (r *Router) RemoveService(name string) error {
 		delete(r.services, service.host)
 		return nil
 	})
+	if err != nil {
+		return err
+	}
 
-	r.saveState()
-
-	return err
+	return r.saveStateSnapshot()
 }
 
 func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
@@ -166,42 +172,37 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 		return nil, ErrorNoServerName
 	}
 
-	target := r.activeTargetForHost(host)
-	if target == nil {
+	service := r.serviceForHost(host)
+	if service == nil {
 		slog.Debug("ACME: Unable to get certificate (unknown server name)")
 		return nil, ErrorUnknownServerName
 	}
 
-	if target.certManager == nil {
-		slog.Debug("ACME: Unable to get certificate (target does not support TLS)")
+	if service.certManager == nil {
+		slog.Debug("ACME: Unable to get certificate (service does not support TLS)")
 		return nil, ErrorUnknownServerName
 	}
 
-	return target.certManager.GetCertificate(hello)
+	return service.certManager.GetCertificate(hello)
 }
 
 // Private
 
-type savedTarget struct {
-	Host              string            `json:"host"`
-	Target            string            `json:"target"`
-	HealthCheckConfig HealthCheckConfig `json:"health_check_config"`
-	TargetOptions     TargetOptions     `json:"target_options"`
-}
-
-type savedState struct {
-	ActiveTargets map[string]savedTarget `json:"active_targets"`
-}
-
-func (r *Router) saveState() error {
-	state := r.snaphostState()
+func (r *Router) saveStateSnapshot() error {
+	services := []*Service{}
+	r.withReadLock(func() error {
+		for _, service := range r.services {
+			services = append(services, service)
+		}
+		return nil
+	})
 
 	f, err := os.Create(r.statePath)
 	if err != nil {
 		return err
 	}
 
-	err = json.NewEncoder(f).Encode(state)
+	err = json.NewEncoder(f).Encode(services)
 	if err != nil {
 		slog.Error("Unable to save state", "error", err, "path", r.statePath)
 		return err
@@ -211,54 +212,15 @@ func (r *Router) saveState() error {
 	return nil
 }
 
-func (r *Router) restoreSnapshot(state savedState) error {
-	r.serviceLock.Lock()
-	defer r.serviceLock.Unlock()
-
-	r.services = HostServiceMap{}
-	for name, saved := range state.ActiveTargets {
-		target, err := NewTarget(saved.Target, saved.HealthCheckConfig, saved.TargetOptions)
-		if err != nil {
-			return err
-		}
-
-		// Put the target back into the active state, regardless of its health. It
-		// may be rebooting or otherwise need more time to be reachable again.
-		target.state = TargetStateHealthy
-		r.services[saved.Host] = NewService(name, saved.Host)
-		r.services[saved.Host].active = target
-	}
-
-	return nil
-}
-
-func (r *Router) snaphostState() savedState {
-	state := savedState{
-		ActiveTargets: map[string]savedTarget{},
-	}
-
-	r.withReadLock(func() error {
-		for _, service := range r.services {
-			if service.active != nil {
-				state.ActiveTargets[service.name] = savedTarget{
-					Host:              service.host,
-					Target:            service.active.Target(),
-					HealthCheckConfig: service.active.healthCheckConfig,
-					TargetOptions:     service.active.options,
-				}
-			}
-		}
-		return nil
-	})
-
-	return state
-}
-
 func (r *Router) serviceForRequest(req *http.Request) *Service {
+	return r.serviceForHost(req.Host)
+}
+
+func (r *Router) serviceForHost(host string) *Service {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	service, ok := r.services[req.Host]
+	service, ok := r.services[host]
 	if !ok {
 		service = r.services[""]
 	}
@@ -266,31 +228,15 @@ func (r *Router) serviceForRequest(req *http.Request) *Service {
 	return service
 }
 
-func (r *Router) activeTargetForHost(host string) *Target {
-	r.serviceLock.RLock()
-	defer r.serviceLock.RUnlock()
-
-	service, ok := r.services[host]
-	if !ok {
-		service, ok = r.services[""]
-	}
-
-	if !ok {
-		return nil
-	}
-
-	return service.active
-}
-
-func (r *Router) setActiveTarget(name string, host string, target *Target, drainTimeout time.Duration) error {
-	target.StopHealthChecks()
-
+func (r *Router) setActiveTarget(name string, host string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
 	service := r.serviceForName(name, false)
 	if service == nil {
-		service = NewService(name, host)
+		service = NewService(name, host, options)
+	} else {
+		service.UpdateOptions(options)
 	}
 
 	hostService, ok := r.services[host]

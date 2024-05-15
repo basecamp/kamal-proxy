@@ -3,8 +3,6 @@ package server
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,13 +10,9 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"path"
 	"regexp"
 	"sync"
 	"time"
-
-	"golang.org/x/crypto/acme"
-	"golang.org/x/crypto/acme/autocert"
 )
 
 var (
@@ -26,37 +20,6 @@ var (
 
 	hostRegex = regexp.MustCompile(`^(\w[-_.\w+]+)(:\d+)?$`)
 )
-
-type HealthCheckConfig struct {
-	Path     string        `json:"path"`
-	Interval time.Duration `json:"interval"`
-	Timeout  time.Duration `json:"timeout"`
-}
-
-type TargetOptions struct {
-	MaxRequestBodySize int64         `json:"max_request_body_size"`
-	TargetTimeout      time.Duration `json:"target_timeout"`
-	TLSHostname        string        `json:"tls_hostname"`
-	ACMEDirectory      string        `json:"acme_directory"`
-	ACMECachePath      string        `json:"acme_cache_path"`
-}
-
-func (to TargetOptions) RequireTLS() bool {
-	return to.TLSHostname != ""
-}
-
-func (to TargetOptions) ScopedCachePath() string {
-	// We need to scope our certificate cache according to whatever ACME settings
-	// we want to use, such as the directory.  This is so we can reuse
-	// certificates between deployments when the settings are the same, but
-	// provision new certificates when they change.
-
-	hasher := sha256.New()
-	hasher.Write([]byte(to.ACMEDirectory))
-	hash := hex.EncodeToString(hasher.Sum(nil))
-
-	return path.Join(to.ACMECachePath, hash)
-}
 
 type TargetState int
 
@@ -88,9 +51,8 @@ type inflightMap map[*http.Request]*inflightRequest
 type Target struct {
 	targetURL         *url.URL
 	healthCheckConfig HealthCheckConfig
-	options           TargetOptions
+	responseTimeout   time.Duration
 	proxyHandler      http.Handler
-	certManager       *autocert.Manager
 
 	state        TargetState
 	inflight     inflightMap
@@ -100,7 +62,7 @@ type Target struct {
 	becameHealthy chan (bool)
 }
 
-func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options TargetOptions) (*Target, error) {
+func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, responseTimeout time.Duration) (*Target, error) {
 	uri, err := parseTargetURL(targetURL)
 	if err != nil {
 		return nil, err
@@ -109,14 +71,13 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, options Ta
 	target := &Target{
 		targetURL:         uri,
 		healthCheckConfig: healthCheckConfig,
-		options:           options,
+		responseTimeout:   responseTimeout,
 
 		state:    TargetStateAdding,
 		inflight: inflightMap{},
 	}
 
 	target.proxyHandler = target.createProxyHandler()
-	target.certManager = target.createCertManager()
 
 	return target, nil
 }
@@ -126,23 +87,15 @@ func (t *Target) Target() string {
 }
 
 func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if t.options.RequireTLS() && req.TLS == nil {
-		t.redirectToHTTPS(w, req)
-		return
-	}
-
 	req, inflightRequest := t.beginInflightRequest(req)
-
 	if req == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
+
 	defer t.endInflightRequest(req)
 
-	targetIdentifer, ok := req.Context().Value(contextKeyTarget).(*string)
-	if ok {
-		*targetIdentifer = t.Target()
-	}
+	t.recordTargetNameForRequest(req)
 
 	tw := newTargetResponseWriter(w, inflightRequest)
 	t.proxyHandler.ServeHTTP(tw, req)
@@ -192,6 +145,7 @@ func (t *Target) Drain(timeout time.Duration) {
 	deadline := time.After(timeout)
 	toCancel := t.pendingRequestsToCancel()
 
+	// Cancel any hijacked requests immediately, as they may be long-running.
 	for _, inflight := range toCancel {
 		if inflight.hijacked {
 			inflight.cancel()
@@ -207,6 +161,7 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 		}
 	}
 
+	// Cancel any remaining requests.
 	for _, inflight := range toCancel {
 		inflight.cancel()
 	}
@@ -229,6 +184,9 @@ func (t *Target) StopHealthChecks() {
 }
 
 func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
+	t.BeginHealthChecks()
+	defer t.StopHealthChecks()
+
 	select {
 	case <-time.After(timeout):
 		return false
@@ -253,36 +211,21 @@ func (t *Target) HealthCheckCompleted(success bool) {
 
 // Private
 
-func (t *Target) createProxyHandler() http.Handler {
-	var handler http.Handler
+func (t *Target) recordTargetNameForRequest(req *http.Request) {
+	targetIdentifer, ok := req.Context().Value(contextKeyTarget).(*string)
+	if ok {
+		*targetIdentifer = t.Target()
+	}
+}
 
-	handler = &httputil.ReverseProxy{
+func (t *Target) createProxyHandler() http.Handler {
+	return &httputil.ReverseProxy{
 		Rewrite:      t.Rewrite,
 		ErrorHandler: t.handleProxyError,
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost:   MaxIdleConnsPerHost,
-			ResponseHeaderTimeout: t.options.TargetTimeout,
+			ResponseHeaderTimeout: t.responseTimeout,
 		},
-	}
-
-	if t.options.MaxRequestBodySize > 0 {
-		handler = http.MaxBytesHandler(handler, t.options.MaxRequestBodySize)
-		slog.Debug("Using max request body limit", "target", t.Target(), "size", t.options.MaxRequestBodySize)
-	}
-
-	return handler
-}
-
-func (s *Target) createCertManager() *autocert.Manager {
-	if s.options.TLSHostname == "" {
-		return nil
-	}
-
-	return &autocert.Manager{
-		Prompt:     autocert.AcceptTOS,
-		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(s.options.TLSHostname),
-		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
 	}
 }
 
@@ -345,7 +288,11 @@ func (t *Target) endInflightRequest(req *http.Request) {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
 
-	delete(t.inflight, req)
+	inflightRequest, ok := t.inflight[req]
+	if ok {
+		inflightRequest.cancel()
+		delete(t.inflight, req)
+	}
 }
 
 func (t *Target) pendingRequestsToCancel() inflightMap {
@@ -355,21 +302,12 @@ func (t *Target) pendingRequestsToCancel() inflightMap {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
 
-	result := t.inflight
-	t.inflight = inflightMap{}
-	return result
-}
-
-func (t *Target) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Connection", "close")
-
-	host, _, err := net.SplitHostPort(r.Host)
-	if err != nil {
-		host = r.Host
+	result := inflightMap{}
+	for k, v := range t.inflight {
+		result[k] = v
 	}
 
-	url := "https://" + host + r.URL.RequestURI()
-	http.Redirect(w, r, url, http.StatusMovedPermanently)
+	return result
 }
 
 func parseTargetURL(targetURL string) (*url.URL, error) {

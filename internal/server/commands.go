@@ -17,13 +17,12 @@ type CommandHandler struct {
 }
 
 type DeployArgs struct {
-	Service           string
-	Host              string
-	TargetURL         string
-	DeployTimeout     time.Duration
-	DrainTimeout      time.Duration
-	HealthCheckConfig HealthCheckConfig
-	TargetOptions     TargetOptions
+	Service        string
+	Host           string
+	TargetURL      string
+	DeployTimeout  time.Duration
+	DrainTimeout   time.Duration
+	ServiceOptions ServiceOptions
 }
 
 type PauseArgs struct {
@@ -91,32 +90,19 @@ func (h *CommandHandler) Stop() error {
 }
 
 func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
-	target, err := NewTarget(args.TargetURL, args.HealthCheckConfig, args.TargetOptions)
-	if err != nil {
-		return err
-	}
-
-	err = h.router.SetServiceTarget(args.Service, args.Host, target, args.DeployTimeout, args.DrainTimeout)
-
-	return err
+	return h.router.SetServiceTarget(args.Service, args.Host, args.TargetURL, args.ServiceOptions, args.DeployTimeout, args.DrainTimeout)
 }
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
-	err := h.router.PauseService(args.Service, args.DrainTimeout, args.PauseTimeout)
-
-	return err
+	return h.router.PauseService(args.Service, args.DrainTimeout, args.PauseTimeout)
 }
 
 func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {
-	err := h.router.ResumeService(args.Service)
-
-	return err
+	return h.router.ResumeService(args.Service)
 }
 
 func (h *CommandHandler) Remove(args DeployArgs, reply *bool) error {
-	err := h.router.RemoveService(args.Service)
-
-	return err
+	return h.router.RemoveService(args.Service)
 }
 
 func (h *CommandHandler) List(args bool, reply *ListResponse) error {

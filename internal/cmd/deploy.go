@@ -32,11 +32,11 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environmnent for certificate provisioning")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.TargetTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
-	deployCommand.cmd.Flags().StringVar(&deployCommand.args.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
-	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.TargetTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.ServiceOptions.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.Host, "host", "", "Host to serve this target on (empty for wildcard)")
 
 	deployCommand.cmd.MarkFlagRequired("target")
@@ -52,12 +52,12 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 	}
 
 	if c.tls {
-		c.args.TargetOptions.ACMECachePath = globalConfig.CertificatePath()
-		c.args.TargetOptions.TLSHostname = c.args.Host
+		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
+		c.args.ServiceOptions.TLSHostname = c.args.Host
 	}
 
 	if c.tlsStaging {
-		c.args.TargetOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
+		c.args.ServiceOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
 	}
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {

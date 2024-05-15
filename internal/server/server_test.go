@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -12,7 +11,7 @@ import (
 )
 
 func TestServer_Deploying(t *testing.T) {
-	_, target := testBackend(t, "first", http.StatusOK)
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 	server, addr := testServer(t)
 
 	testDeployTarget(t, target, server)
@@ -23,12 +22,11 @@ func TestServer_Deploying(t *testing.T) {
 }
 
 func TestServer_DeployingGaplessly(t *testing.T) {
-	_, initialTarget := testBackend(t, "first", http.StatusOK)
+	initialTarget := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	newTargets := []*Target{}
 	for i := 0; i < 5; i++ {
-		_, target := testBackend(t, fmt.Sprintf("replacement %d", i), http.StatusOK)
-		newTargets = append(newTargets, target)
+		newTargets = append(newTargets, testTarget(t, func(w http.ResponseWriter, r *http.Request) {}))
 	}
 
 	server, addr := testServer(t)
@@ -56,10 +54,10 @@ func TestServer_DeployingGaplessly(t *testing.T) {
 func testDeployTarget(t *testing.T, target *Target, server *Server) {
 	var result bool
 	err := server.commandHandler.Deploy(DeployArgs{
-		HealthCheckConfig: defaultHealthCheckConfig,
-		TargetURL:         target.Target(),
-		DeployTimeout:     DefaultDeployTimeout,
-		DrainTimeout:      DefaultDrainTimeout,
+		ServiceOptions: defaultServiceOptions,
+		TargetURL:      target.Target(),
+		DeployTimeout:  DefaultDeployTimeout,
+		DrainTimeout:   DefaultDrainTimeout,
 	}, &result)
 
 	require.NoError(t, err)
@@ -102,10 +100,11 @@ func (cc *clientConsumer) Stop() {
 }
 
 func (cc *clientConsumer) worker() {
+	defer cc.wg.Done()
+
 	for {
 		select {
 		case <-cc.done:
-			cc.wg.Done()
 			return
 		default:
 			cc.sendRequest()

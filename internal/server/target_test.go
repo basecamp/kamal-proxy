@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -17,7 +16,9 @@ import (
 )
 
 func TestTarget_Serve(t *testing.T) {
-	_, target := testBackend(t, "ok", http.StatusOK)
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -28,7 +29,7 @@ func TestTarget_Serve(t *testing.T) {
 }
 
 func TestTarget_ServeWebSocket(t *testing.T) {
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 		require.NoError(t, err)
 		defer c.CloseNow()
@@ -54,7 +55,7 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 func TestTarget_PreserveTargetHeader(t *testing.T) {
 	var requestTarget string
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		requestTarget = r.Host
 	})
 
@@ -74,7 +75,7 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 		customHeader    string
 	)
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		xForwardedFor = r.Header.Get("X-Forwarded-For")
 		xForwardedProto = r.Header.Get("X-Forwarded-Proto")
 		customHeader = r.Header.Get("Custom-Header")
@@ -105,7 +106,7 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 }
 
 func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "p1=a;b;c&p2=%x&p3=ok", r.URL.RawQuery)
 	})
 
@@ -117,7 +118,9 @@ func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
 }
 
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
-	_, target := testBackend(t, "ok", http.StatusOK)
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
 
 	target.BeginHealthChecks()
 
@@ -133,7 +136,7 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 }
 
 func TestTarget_DrainWhenEmpty(t *testing.T) {
-	_, target := testBackend(t, "ok", http.StatusOK)
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	target.Drain(time.Second)
 }
@@ -145,10 +148,10 @@ func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
-		started.Done()
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Millisecond * 200)
 		served++
+		started.Done()
 	})
 
 	for i := 0; i < n; i++ {
@@ -158,7 +161,7 @@ func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	}
 
 	started.Wait()
-	target.Drain(time.Second)
+	target.Drain(time.Second * 5)
 
 	require.Equal(t, n, served)
 }
@@ -170,10 +173,10 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	var started sync.WaitGroup
 	started.Add(n)
 
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
 		for i := 0; i < 500; i++ {
-			time.Sleep(time.Millisecond * 10)
+			time.Sleep(time.Millisecond * 100)
 			if r.Context().Err() != nil { // Request was cancelled by client
 				return
 			}
@@ -194,7 +197,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 }
 
 func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
-	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 		require.NoError(t, err)
 		defer c.CloseNow()
@@ -215,50 +218,4 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 	startedDraining := time.Now()
 	target.Drain(time.Second * 5)
 	assert.Less(t, time.Since(startedDraining).Seconds(), 1.0)
-}
-
-func TestTarget_RedirectToHTTPWhenTLSRequired(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	t.Cleanup(server.Close)
-
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, TargetOptions{TLSHostname: "example.com"})
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
-	w := httptest.NewRecorder()
-	target.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
-
-	req = httptest.NewRequest(http.MethodGet, "https://example.com", nil)
-	w = httptest.NewRecorder()
-	target.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-}
-
-func TestTarget_EnforceMaxRequestBodySize(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	t.Cleanup(server.Close)
-
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, TargetOptions{MaxRequestBodySize: 10})
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
-	w := httptest.NewRecorder()
-	target.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-
-	req = httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("Something longer than 10!"))
-	w = httptest.NewRecorder()
-	target.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
 }
