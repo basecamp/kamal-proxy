@@ -82,7 +82,7 @@ func TestRouter_ChangingHostForService(t *testing.T) {
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "second", body)
 
-	statusCode, body = sendRequest(router, "http://dummy.example.com/")
+	statusCode, _ = sendRequest(router, "http://dummy.example.com/")
 	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
 }
 
