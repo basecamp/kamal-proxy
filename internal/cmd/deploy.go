@@ -20,13 +20,14 @@ type deployCommand struct {
 func newDeployCommand() *deployCommand {
 	deployCommand := &deployCommand{}
 	deployCommand.cmd = &cobra.Command{
-		Use:       "deploy <target>",
+		Use:       "deploy <service>",
 		Short:     "Deploy a target host",
 		RunE:      deployCommand.deploy,
 		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{"target"},
+		ValidArgs: []string{"service"},
 	}
 
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetURL, "target", "", "Target host to deploy")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environmnent for certificate provisioning")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
@@ -38,11 +39,13 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.Host, "host", "", "Host to serve this target on (empty for wildcard)")
 
+	deployCommand.cmd.MarkFlagRequired("target")
+
 	return deployCommand
 }
 
 func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
-	c.args.TargetURL = args[0]
+	c.args.Service = args[0]
 
 	if c.tls && c.args.Host == "" {
 		return fmt.Errorf("host must be set when using TLS")

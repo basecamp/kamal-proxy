@@ -16,19 +16,20 @@ type removeCommand struct {
 func newRemoveCommand() *removeCommand {
 	removeCommand := &removeCommand{}
 	removeCommand.cmd = &cobra.Command{
-		Use:   "remove",
-		Short: "Remove the service for a host",
-		RunE:  removeCommand.run,
-		Args:  cobra.NoArgs,
+		Use:       "remove <service>",
+		Short:     "Remove the service",
+		RunE:      removeCommand.run,
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{"service"},
 	}
-
-	removeCommand.cmd.Flags().StringVar(&removeCommand.args.Host, "host", "", "Host to remove (empty for wildcard)")
 
 	return removeCommand
 }
 
 func (c *removeCommand) run(cmd *cobra.Command, args []string) error {
 	var response bool
+
+	c.args.Service = args[0]
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		return client.Call("parachute.Remove", c.args, &response)

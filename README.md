@@ -28,12 +28,12 @@ Use the format `hostname:port` when specifying the instance to deploy.
 
 For example:
 
-    parachute deploy web-1:3000
+    parachute deploy service1 --target web-1:3000
 
-This will instruct the proxy to register `web-1:3000` to receive traffic. It
-will immediately begin running HTTP health checks to ensure it's reachable and
-working and, as soon as those health checks succeed, will start routing traffic
-to it.
+This will instruct the proxy to register `web-1:3000` to receive traffic under
+the service name `service1. It will immediately begin running HTTP health checks
+to ensure it's reachable and working and, as soon as those health checks succeed,
+will start routing traffic to it.
 
 If the instance fails to become healthy within a reasonable time, the `deploy`
 command will stop the deployment and return a non-zero exit code, so that
@@ -59,18 +59,26 @@ using a single instance of `parachute` to route traffic to all of them.
 When deploying an instance, you can specify a host that it should serve traffic
 for:
 
-    parachute deploy web-1:3000 --host app1.example.com
+    parachute deploy service1 --target web-1:3000 --host app1.example.com
 
 When deployed in this way, the instance will only receive traffic for the
 specified host. By deploying multiple instances, each with their own host, you
 can run multiple applications on the same server without port conflicts.
+
+Only one service at a time can route a specific host:
+
+    parachute deploy service1 --target web-1:3000 --host app1.example.com
+    parachute deploy service2 --target web-2:3000 --host app1.example.com # returns "Error: host is used by another service"
+    parachute remove service1
+    parachute deploy service2 --target web-2:3000 --host app1.example.com # suceeds
+
 
 ### Automatic TLS
 
 `parachute` can automatically obtain and renew TLS certificates for your
 applications. To enable this, add the `--tls` flag when deploying an instance:
 
-    parachute deploy web-1:3000 --host app1.example.com --tls
+    parachute deploy service1 --target web-1:3000 --host app1.example.com --tls
 
 
 ## Building
@@ -93,7 +101,7 @@ You can start up a sample environment to try it out using Docker Compose:
 This will start the proxy, and 4 instances of a simple web server. You can run
 proxy commands with `docker compose exec proxy ...`, for example:
 
-    docker compose exec proxy parachute deploy parachute-web-1:3000
+    docker compose exec proxy parachute deploy service1 --target parachute-web-1:3000
 
 And then access the proxy from a browser at http://localhost/.
 

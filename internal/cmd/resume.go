@@ -16,19 +16,20 @@ type resumeCommand struct {
 func newResumeCommand() *resumeCommand {
 	resumeCommand := &resumeCommand{}
 	resumeCommand.cmd = &cobra.Command{
-		Use:   "resume",
-		Short: "Resume a service",
-		RunE:  resumeCommand.run,
-		Args:  cobra.NoArgs,
+		Use:       "resume <service>",
+		Short:     "Resume a service",
+		RunE:      resumeCommand.run,
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{"service"},
 	}
-
-	resumeCommand.cmd.Flags().StringVar(&resumeCommand.args.Host, "host", "", "Host to resume (empty for wildcard)")
 
 	return resumeCommand
 }
 
 func (c *resumeCommand) run(cmd *cobra.Command, args []string) error {
 	var response bool
+
+	c.args.Service = args[0]
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		return client.Call("parachute.Resume", c.args, &response)

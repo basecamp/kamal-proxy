@@ -17,6 +17,7 @@ type CommandHandler struct {
 }
 
 type DeployArgs struct {
+	Service           string
 	Host              string
 	TargetURL         string
 	DeployTimeout     time.Duration
@@ -26,21 +27,21 @@ type DeployArgs struct {
 }
 
 type PauseArgs struct {
-	Host         string
+	Service      string
 	DrainTimeout time.Duration
 	PauseTimeout time.Duration
 }
 
 type ResumeArgs struct {
-	Host string
+	Service string
 }
 
 type RemoveArgs struct {
-	Host string
+	Service string
 }
 
 type ListResponse struct {
-	Targets map[string]string `json:"targets"`
+	Targets ServiceDescriptionMap `json:"services"`
 }
 
 func NewCommandHandler(router *Router) *CommandHandler {
@@ -95,25 +96,25 @@ func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
 		return err
 	}
 
-	err = h.router.SetServiceTarget(args.Host, target, args.DeployTimeout, args.DrainTimeout)
+	err = h.router.SetServiceTarget(args.Service, args.Host, target, args.DeployTimeout, args.DrainTimeout)
 
 	return err
 }
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
-	err := h.router.PauseService(args.Host, args.DrainTimeout, args.PauseTimeout)
+	err := h.router.PauseService(args.Service, args.DrainTimeout, args.PauseTimeout)
 
 	return err
 }
 
 func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {
-	err := h.router.ResumeService(args.Host)
+	err := h.router.ResumeService(args.Service)
 
 	return err
 }
 
 func (h *CommandHandler) Remove(args DeployArgs, reply *bool) error {
-	err := h.router.RemoveService(args.Host)
+	err := h.router.RemoveService(args.Service)
 
 	return err
 }
