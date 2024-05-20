@@ -22,7 +22,8 @@ func TestTarget_Serve(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	target.ServeHTTP(w, req)
+
+	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
@@ -37,7 +38,11 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 		c.Write(context.Background(), websocket.MessageText, []byte("hello"))
 	})
 
-	server := httptest.NewServer(target)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r, err := target.StartRequest(r)
+		require.NoError(t, err)
+		target.SendRequest(w, r)
+	}))
 	defer server.Close()
 
 	websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
@@ -62,7 +67,7 @@ func TestTarget_PreserveTargetHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "custom.example.com"
 	w := httptest.NewRecorder()
-	target.ServeHTTP(w, req)
+	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "custom.example.com", requestTarget)
@@ -90,7 +95,7 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
-	target.ServeHTTP(w, req)
+	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "1.2.3.4, "+clientIP, xForwardedFor)
@@ -99,7 +104,7 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 
 	// Adding X-Forwarded-For if the original does not have one
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
-	target.ServeHTTP(w, req)
+	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, clientIP, xForwardedFor)
@@ -112,7 +117,7 @@ func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/test?p1=a;b;c&p2=%x&p3=ok", nil)
 	w := httptest.NewRecorder()
-	target.ServeHTTP(w, req)
+	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
@@ -129,7 +134,7 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
-	target.ServeHTTP(w, req)
+	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
@@ -157,7 +162,7 @@ func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
-		go target.ServeHTTP(w, req)
+		go testServeRequestWithTarget(t, target, w, req)
 	}
 
 	started.Wait()
@@ -187,7 +192,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
-		go target.ServeHTTP(w, req)
+		go testServeRequestWithTarget(t, target, w, req)
 	}
 
 	started.Wait()
@@ -206,7 +211,11 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	server := httptest.NewServer(target)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r, err := target.StartRequest(r)
+		require.NoError(t, err)
+		target.SendRequest(w, r)
+	}))
 	defer server.Close()
 
 	websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
@@ -218,4 +227,10 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 	startedDraining := time.Now()
 	target.Drain(time.Second * 5)
 	assert.Less(t, time.Since(startedDraining).Seconds(), 1.0)
+}
+
+func testServeRequestWithTarget(t *testing.T, target *Target, w http.ResponseWriter, r *http.Request) {
+	r, err := target.StartRequest(r)
+	require.NoError(t, err)
+	target.SendRequest(w, r)
 }

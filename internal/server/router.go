@@ -112,13 +112,12 @@ func (r *Router) RemoveService(name string) error {
 			return ErrorServiceNotFound
 		}
 
-		if service.active != nil {
-			r.drainAndDispose(service, service.active, DefaultDrainTimeout)
-		}
-
+		service.SetActiveTarget(nil, DefaultDrainTimeout)
 		delete(r.services, service.host)
+
 		return nil
 	})
+
 	if err != nil {
 		return err
 	}
@@ -252,36 +251,9 @@ func (r *Router) setActiveTarget(name string, host string, target *Target, optio
 		return ErrorHostInUse
 	}
 
-	if service.active != nil {
-		r.drainAndDispose(service, service.active, drainTimeout)
-	}
-
-	service.active = target
+	service.SetActiveTarget(target, drainTimeout)
 
 	return nil
-}
-
-func (r *Router) drainAndDispose(service *Service, target *Target, drainTimeout time.Duration) {
-	target.StopHealthChecks()
-	service.draining = append(service.draining, target)
-
-	go func() {
-		target.Drain(drainTimeout)
-
-		r.withWriteLock(func() error {
-			service.draining = removeItem(service.draining, target)
-			return nil
-		})
-	}()
-}
-
-func removeItem[T comparable](s []T, item T) []T {
-	for i, v := range s {
-		if v == item {
-			return append(s[:i], s[i+1:]...)
-		}
-	}
-	return s
 }
 
 func (r *Router) serviceForName(name string, readLock bool) *Service {

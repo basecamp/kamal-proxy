@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrorInvalidHostPattern = errors.New("invalid host pattern")
+	ErrorDraining           = errors.New("target is draining")
 
 	hostRegex = regexp.MustCompile(`^(\w[-_.\w+]+)(:\d+)?$`)
 )
@@ -86,18 +87,30 @@ func (t *Target) Target() string {
 	return t.targetURL.Host
 }
 
-func (t *Target) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	req, inflightRequest := t.beginInflightRequest(req)
-	if req == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		return
+func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
+
+	if t.state == TargetStateDraining {
+		return nil, ErrorDraining
 	}
 
-	defer t.endInflightRequest(req)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
 
+	inflightRequest := &inflightRequest{cancel: cancel}
+	t.inflight[req] = inflightRequest
+
+	return req, nil
+}
+
+func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
+	defer t.endInflightRequest(req)
 	t.recordTargetNameForRequest(req)
 
+	inflightRequest := t.getInflightRequest(req)
 	tw := newTargetResponseWriter(w, inflightRequest)
+
 	t.proxyHandler.ServeHTTP(tw, req)
 }
 
@@ -230,18 +243,17 @@ func (t *Target) createProxyHandler() http.Handler {
 }
 
 func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
-	if !errors.Is(err, context.Canceled) {
-		slog.Error("Error while proxying", "target", t.Target(), "path", r.URL.Path, "error", err)
-	}
-
 	if t.isRequestEntityTooLarge(err) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 		return
 	}
+
 	if t.isGatewayTimeout(err) {
 		w.WriteHeader(http.StatusGatewayTimeout)
 		return
 	}
+
+	slog.Error("Error while proxying", "target", t.Target(), "path", r.URL.Path, "error", err)
 	w.WriteHeader(http.StatusBadGateway)
 }
 
@@ -268,20 +280,11 @@ func (t *Target) updateState(state TargetState) TargetState {
 	return originalState
 }
 
-func (t *Target) beginInflightRequest(req *http.Request) (*http.Request, *inflightRequest) {
+func (t *Target) getInflightRequest(req *http.Request) *inflightRequest {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
 
-	if t.state == TargetStateDraining {
-		return nil, nil
-	}
-
-	ctx, cancel := context.WithCancel(req.Context())
-	req = req.WithContext(ctx)
-
-	inflightRequest := &inflightRequest{cancel: cancel}
-	t.inflight[req] = inflightRequest
-	return req, inflightRequest
+	return t.inflight[req]
 }
 
 func (t *Target) endInflightRequest(req *http.Request) {

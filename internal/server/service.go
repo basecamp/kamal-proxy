@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -65,8 +66,8 @@ type Service struct {
 	host    string
 	options ServiceOptions
 
-	active   *Target
-	draining []*Target
+	active     *Target
+	targetLock sync.RWMutex
 
 	pauseControl *PauseControl
 	certManager  *autocert.Manager
@@ -89,6 +90,33 @@ func (s *Service) UpdateOptions(options ServiceOptions) {
 	s.certManager = s.createCertManager()
 }
 
+func (s *Service) ActiveTarget() *Target {
+	s.targetLock.RLock()
+	defer s.targetLock.RUnlock()
+
+	return s.active
+}
+
+func (s *Service) ClaimTarget(req *http.Request) (*Target, *http.Request, error) {
+	s.targetLock.RLock()
+	defer s.targetLock.RUnlock()
+
+	req, err := s.active.StartRequest(req)
+	return s.active, req, err
+}
+
+func (s *Service) SetActiveTarget(target *Target, drainTimeout time.Duration) {
+	s.targetLock.Lock()
+	defer s.targetLock.Unlock()
+
+	if s.active != nil {
+		s.active.StopHealthChecks()
+		go s.active.Drain(drainTimeout)
+	}
+
+	s.active = target
+}
+
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.recordServiceNameForRequest(r)
 
@@ -104,12 +132,15 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.active == nil {
+	r = s.limitRequestBody(w, r)
+
+	target, req, err := s.ClaimTarget(r)
+	if err != nil {
 		http.Error(w, "Service not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	s.active.ServeHTTP(w, s.limitRequestBody(w, r))
+	target.SendRequest(w, req)
 }
 
 type marshalledService struct {
@@ -124,7 +155,7 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 		Name:         s.name,
 		Host:         s.host,
 		Options:      s.options,
-		ActiveTarget: s.active.Target(),
+		ActiveTarget: s.ActiveTarget().Target(),
 	})
 }
 
@@ -161,7 +192,8 @@ func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) 
 	}
 
 	slog.Info("Service paused", "service", s.name)
-	s.active.Drain(drainTimeout)
+
+	s.ActiveTarget().Drain(drainTimeout)
 	slog.Info("Service drained", "service", s.name)
 	return nil
 }

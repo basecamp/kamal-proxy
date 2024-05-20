@@ -10,6 +10,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestService_ServeRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(server.Close)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultResponseTimeout)
+	require.NoError(t, err)
+
+	service := NewService("test", "", defaultServiceOptions)
+	service.active = target
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
 func TestService_EnforceMaxRequestBodySize(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(server.Close)
