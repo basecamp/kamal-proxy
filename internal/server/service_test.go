@@ -11,17 +11,7 @@ import (
 )
 
 func TestService_ServeRequest(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	t.Cleanup(server.Close)
-
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultResponseTimeout)
-	require.NoError(t, err)
-
-	service := NewService("test", "", defaultServiceOptions)
-	service.active = target
+	service := testCreateService(t, defaultServiceOptions)
 
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
 	w := httptest.NewRecorder()
@@ -31,17 +21,7 @@ func TestService_ServeRequest(t *testing.T) {
 }
 
 func TestService_EnforceMaxRequestBodySize(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	t.Cleanup(server.Close)
-
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultResponseTimeout)
-	require.NoError(t, err)
-
-	service := NewService("test", "", ServiceOptions{MaxRequestBodySize: 10})
-	service.active = target
+	service := testCreateService(t, ServiceOptions{MaxRequestBodySize: 10})
 
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
 	w := httptest.NewRecorder()
@@ -57,17 +37,8 @@ func TestService_EnforceMaxRequestBodySize(t *testing.T) {
 }
 
 func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	t.Cleanup(server.Close)
+	service := testCreateService(t, ServiceOptions{TLSHostname: "example.com"})
 
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultResponseTimeout)
-	require.NoError(t, err)
-
-	service := NewService("test", "", ServiceOptions{TLSHostname: "example.com"})
-	service.active = target
 	require.True(t, service.options.RequireTLS())
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
@@ -81,4 +52,20 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	service.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
+func testCreateService(t *testing.T, options ServiceOptions) *Service {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(server.Close)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultResponseTimeout)
+	require.NoError(t, err)
+
+	service := NewService("test", "", options)
+	service.active = target
+
+	return service
 }
