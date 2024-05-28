@@ -10,11 +10,11 @@ bench:
 	go test -bench=. -benchmem -run=^# ./...
 
 docker:
-	docker build -t parachute .
+	docker build -t kamal-proxy .
 
 release:
 	docker buildx build \
 		--platform linux/amd64,linux/arm64 \
-		--tag basecamp/parachute:latest \
-		--label "org.opencontainers.image.title=parachute" \
+		--tag basecamp/kamal-proxy:latest \
+		--label "org.opencontainers.image.title=kamal-proxy" \
 		--push .

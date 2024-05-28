@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/parachute/internal/server"
+	"github.com/basecamp/kamal-proxy/internal/server"
 )
 
 type deployCommand struct {
@@ -63,6 +63,6 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		var response bool
 
-		return client.Call("parachute.Deploy", c.args, &response)
+		return client.Call("kamal-proxy.Deploy", c.args, &response)
 	})
 }

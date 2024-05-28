@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/parachute/internal/server"
+	"github.com/basecamp/kamal-proxy/internal/server"
 )
 
 type pauseCommand struct {
@@ -35,6 +35,6 @@ func (c *pauseCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
-		return client.Call("parachute.Pause", c.args, &response)
+		return client.Call("kamal-proxy.Pause", c.args, &response)
 	})
 }

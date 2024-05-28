@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/parachute/internal/server"
+	"github.com/basecamp/kamal-proxy/internal/server"
 )
 
 type removeCommand struct {
@@ -32,6 +32,6 @@ func (c *removeCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
-		return client.Call("parachute.Remove", c.args, &response)
+		return client.Call("kamal-proxy.Remove", c.args, &response)
 	})
 }

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/parachute/internal/server"
+	"github.com/basecamp/kamal-proxy/internal/server"
 )
 
 type resumeCommand struct {
@@ -32,6 +32,6 @@ func (c *resumeCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
-		return client.Call("parachute.Resume", c.args, &response)
+		return client.Call("kamal-proxy.Resume", c.args, &response)
 	})
 }

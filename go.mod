@@ -1,4 +1,4 @@
-module github.com/basecamp/parachute
+module github.com/basecamp/kamal-proxy
 
 go 1.22.1
 

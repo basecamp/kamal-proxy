@@ -7,14 +7,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/basecamp/parachute/internal/server"
+	"github.com/basecamp/kamal-proxy/internal/server"
 )
 
 var globalConfig server.Config
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:          "parachute",
+	Use:          "kamal-proxy",
 	Short:        "HTTP proxy for zero downtime deployments",
 	SilenceUsage: true,
 }
@@ -42,7 +42,7 @@ func defaultConfigLocation() string {
 		home = os.TempDir()
 	}
 
-	folder := path.Join(home, "parachute")
+	folder := path.Join(home, "kamal-proxy")
 	err = os.MkdirAll(folder, syscall.S_IRUSR|syscall.S_IWUSR|syscall.S_IXUSR)
 	if err != nil {
 		folder = os.TempDir()

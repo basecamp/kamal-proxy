@@ -17,11 +17,11 @@ type Config struct {
 }
 
 func (c Config) SocketPath() string {
-	return path.Join(c.ConfigDir, "parachute.sock")
+	return path.Join(c.ConfigDir, "kamal-proxy.sock")
 }
 
 func (c Config) StatePath() string {
-	return path.Join(c.ConfigDir, "parachute.state")
+	return path.Join(c.ConfigDir, "kamal-proxy.state")
 }
 
 func (c Config) CertificatePath() string {
