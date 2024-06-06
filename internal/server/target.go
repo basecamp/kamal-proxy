@@ -52,6 +52,7 @@ type inflightMap map[*http.Request]*inflightRequest
 type Target struct {
 	targetURL         *url.URL
 	healthCheckConfig HealthCheckConfig
+	requestTimeout    time.Duration
 	responseTimeout   time.Duration
 	proxyHandler      http.Handler
 
@@ -63,7 +64,7 @@ type Target struct {
 	becameHealthy chan (bool)
 }
 
-func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, responseTimeout time.Duration) (*Target, error) {
+func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, requestTimeout, responseTimeout time.Duration) (*Target, error) {
 	uri, err := parseTargetURL(targetURL)
 	if err != nil {
 		return nil, err
@@ -72,6 +73,7 @@ func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, responseTi
 	target := &Target{
 		targetURL:         uri,
 		healthCheckConfig: healthCheckConfig,
+		requestTimeout:    requestTimeout,
 		responseTimeout:   responseTimeout,
 
 		state:    TargetStateAdding,
@@ -95,8 +97,7 @@ func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
 		return nil, ErrorDraining
 	}
 
-	ctx, cancel := context.WithCancel(req.Context())
-	req = req.WithContext(ctx)
+	req, cancel := t.makeCancellable(req)
 
 	inflightRequest := &inflightRequest{cancel: cancel}
 	t.inflight[req] = inflightRequest
@@ -240,6 +241,19 @@ func (t *Target) createProxyHandler() http.Handler {
 			ResponseHeaderTimeout: t.responseTimeout,
 		},
 	}
+}
+
+func (t *Target) makeCancellable(req *http.Request) (*http.Request, context.CancelFunc) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	if t.requestTimeout > 0 {
+		ctx, cancel = context.WithTimeout(req.Context(), t.requestTimeout)
+	} else {
+		ctx, cancel = context.WithCancel(req.Context())
+	}
+
+	return req.WithContext(ctx), cancel
 }
 
 func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {

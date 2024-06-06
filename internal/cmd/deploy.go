@@ -32,6 +32,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environmnent for certificate provisioning")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.TargetTimeout, "request-timeout", server.DefaultRequestTimeout, "Maximum time for each request to complete")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.TargetTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")

@@ -229,6 +229,58 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 	assert.Less(t, time.Since(startedDraining).Seconds(), 1.0)
 }
 
+func TestTarget_RequestTimeout(t *testing.T) {
+	_, targetURL := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Millisecond * 200)
+	})
+
+	target, err := NewTarget(targetURL, defaultHealthCheckConfig, time.Millisecond*10, defaultResponseTimeout)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	started := time.Now()
+	testServeRequestWithTarget(t, target, w, req)
+
+	assert.Equal(t, http.StatusGatewayTimeout, w.Result().StatusCode)
+	assert.Less(t, time.Since(started).Seconds(), 100.0)
+}
+
+func TestTarget_RequestTimeoutWhenTheRequestCompletesInTime(t *testing.T) {
+	_, targetURL := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Millisecond * 10)
+	})
+
+	target, err := NewTarget(targetURL, defaultHealthCheckConfig, time.Millisecond*200, defaultResponseTimeout)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	started := time.Now()
+	testServeRequestWithTarget(t, target, w, req)
+
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+	assert.Less(t, time.Since(started).Seconds(), 100.0)
+}
+
+func TestTarget_ZeroRequestTimeoutMeansNoTimeout(t *testing.T) {
+	_, targetURL := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Millisecond * 10)
+	})
+
+	target, err := NewTarget(targetURL, defaultHealthCheckConfig, 0, defaultResponseTimeout)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	testServeRequestWithTarget(t, target, w, req)
+
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
 func testServeRequestWithTarget(t *testing.T, target *Target, w http.ResponseWriter, r *http.Request) {
 	r, err := target.StartRequest(r)
 	require.NoError(t, err)

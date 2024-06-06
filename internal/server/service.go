@@ -26,7 +26,8 @@ const (
 
 	MaxIdleConnsPerHost = 100
 
-	DefaultTargetTimeout = time.Second * 10
+	DefaultRequestTimeout = time.Second * 30
+	DefaultTargetTimeout  = time.Second * 10
 )
 
 type HealthCheckConfig struct {
@@ -38,6 +39,7 @@ type HealthCheckConfig struct {
 type ServiceOptions struct {
 	HealthCheckConfig  HealthCheckConfig `json:"health_check"`
 	MaxRequestBodySize int64             `json:"max_request_body_size"`
+	RequestTimeout     time.Duration     `json:"request_timeout"`
 	TargetTimeout      time.Duration     `json:"target_timeout"`
 	TLSHostname        string            `json:"tls_hostname"`
 	ACMEDirectory      string            `json:"acme_directory"`
@@ -166,7 +168,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	active, err := NewTarget(ms.ActiveTarget, s.options.HealthCheckConfig, s.options.TargetTimeout)
+	active, err := NewTarget(ms.ActiveTarget, ms.Options.HealthCheckConfig, ms.Options.RequestTimeout, ms.Options.TargetTimeout)
 	if err != nil {
 		return err
 	}
