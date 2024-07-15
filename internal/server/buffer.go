@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 )
 
@@ -39,6 +40,7 @@ func (b *BufferReadCloser) Close() error {
 	if b.diskBuffer != nil {
 		b.diskBuffer.Close()
 		os.Remove(b.diskBuffer.Name())
+		slog.Debug("Buffer: removing spill", "file", b.diskBuffer.Name())
 	}
 	return nil
 }
@@ -83,6 +85,8 @@ func (b *BufferReadCloser) populateDiskBuffer(r io.ReadCloser) error {
 	if err != nil {
 		return err
 	}
+
+	slog.Debug("Buffer: spilling request to disk", "file", b.diskBuffer.Name())
 
 	maxDiskBytes := b.maxBytes - b.maxMemBytes
 	limitReader := io.LimitReader(r, maxDiskBytes)
