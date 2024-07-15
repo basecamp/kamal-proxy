@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"os"
-	"path"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -21,7 +19,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
-	rootCmd.PersistentFlags().StringVar(&globalConfig.ConfigDir, "state-path", defaultConfigLocation(), "Path to store state")
+	rootCmd.PersistentFlags().StringVar(&globalConfig.ConfigDir, "state-path", "", "Path to store state; empty to use default system paths")
 
 	rootCmd.AddCommand(newRunCommand().cmd)
 	rootCmd.AddCommand(newDeployCommand().cmd)
@@ -34,19 +32,4 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
-}
-
-func defaultConfigLocation() string {
-	home, err := os.UserConfigDir()
-	if err != nil {
-		home = os.TempDir()
-	}
-
-	folder := path.Join(home, "kamal-proxy")
-	err = os.MkdirAll(folder, syscall.S_IRUSR|syscall.S_IWUSR|syscall.S_IXUSR)
-	if err != nil {
-		folder = os.TempDir()
-	}
-
-	return folder
 }
