@@ -85,8 +85,10 @@ func (r *Router) SetServiceTarget(name string, host string, targetURL string, op
 	slog.Info("Deploying", "service", name, "host", host, "target", targetURL, "tls", options.RequireTLS())
 
 	targetOptions := TargetOptions{
-		HealthCheckConfig: options.HealthCheckConfig,
-		ResponseTimeout:   options.TargetTimeout,
+		HealthCheckConfig:          options.HealthCheckConfig,
+		ResponseTimeout:            options.TargetTimeout,
+		MaxRequestMemoryBufferSize: options.MaxRequestMemoryBufferSize,
+		MaxRequestBodySize:         options.MaxRequestBodySize,
 	}
 
 	target, err := NewTarget(targetURL, targetOptions)

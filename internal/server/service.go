@@ -36,12 +36,13 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	HealthCheckConfig  HealthCheckConfig `json:"health_check"`
-	MaxRequestBodySize int64             `json:"max_request_body_size"`
-	TargetTimeout      time.Duration     `json:"target_timeout"`
-	TLSHostname        string            `json:"tls_hostname"`
-	ACMEDirectory      string            `json:"acme_directory"`
-	ACMECachePath      string            `json:"acme_cache_path"`
+	HealthCheckConfig          HealthCheckConfig `json:"health_check"`
+	MaxRequestMemoryBufferSize int64             `json:"max_request_memory_buffer_size"`
+	MaxRequestBodySize         int64             `json:"max_request_body_size"`
+	TargetTimeout              time.Duration     `json:"target_timeout"`
+	TLSHostname                string            `json:"tls_hostname"`
+	ACMEDirectory              string            `json:"acme_directory"`
+	ACMECachePath              string            `json:"acme_cache_path"`
 }
 
 func (to ServiceOptions) RequireTLS() bool {
@@ -132,8 +133,6 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r = s.limitRequestBody(w, r)
-
 	target, req, err := s.ClaimTarget(r)
 	if err != nil {
 		http.Error(w, "Service not available", http.StatusServiceUnavailable)
@@ -167,8 +166,10 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	}
 
 	targetOptions := TargetOptions{
-		HealthCheckConfig: s.options.HealthCheckConfig,
-		ResponseTimeout:   s.options.TargetTimeout,
+		HealthCheckConfig:          s.options.HealthCheckConfig,
+		ResponseTimeout:            s.options.TargetTimeout,
+		MaxRequestMemoryBufferSize: s.options.MaxRequestMemoryBufferSize,
+		MaxRequestBodySize:         s.options.MaxRequestBodySize,
 	}
 
 	active, err := NewTarget(ms.ActiveTarget, targetOptions)
@@ -250,14 +251,4 @@ func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
 
 	url := "https://" + host + r.URL.RequestURI()
 	http.Redirect(w, r, url, http.StatusMovedPermanently)
-}
-
-func (s *Service) limitRequestBody(w http.ResponseWriter, r *http.Request) *http.Request {
-	if s.options.MaxRequestBodySize > 0 {
-		r2 := *r // Copy so we aren't modifying the original request
-		r2.Body = http.MaxBytesReader(w, r.Body, s.options.MaxRequestBodySize)
-		r = &r2
-	}
-
-	return r
 }

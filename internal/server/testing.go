@@ -23,10 +23,13 @@ var (
 func testTarget(t *testing.T, handler http.HandlerFunc) *Target {
 	_, targetURL := testBackendWithHandler(t, handler)
 
-	targetOptions := TargetOptions{
-		HealthCheckConfig: defaultHealthCheckConfig,
-		ResponseTimeout:   defaultResponseTimeout,
-	}
+	target, err := NewTarget(targetURL, defaultTargetOptions)
+	require.NoError(t, err)
+	return target
+}
+
+func testTargetWithOptions(t *testing.T, targetOptions TargetOptions, handler http.HandlerFunc) *Target {
+	_, targetURL := testBackendWithHandler(t, handler)
 
 	target, err := NewTarget(targetURL, targetOptions)
 	require.NoError(t, err)
