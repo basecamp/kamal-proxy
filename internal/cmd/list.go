@@ -17,10 +17,11 @@ type listCommand struct {
 func newListCommand() *listCommand {
 	listCommand := &listCommand{}
 	listCommand.cmd = &cobra.Command{
-		Use:   "list",
-		Short: "List the services currently running",
-		RunE:  listCommand.run,
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List the services currently running",
+		RunE:    listCommand.run,
+		Args:    cobra.NoArgs,
+		Aliases: []string{"ls"},
 	}
 
 	return listCommand
