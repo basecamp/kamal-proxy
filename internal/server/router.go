@@ -84,7 +84,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Router) SetServiceTarget(name string, host string, targetURL string, options ServiceOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	slog.Info("Deploying", "service", name, "host", host, "target", targetURL, "tls", options.RequireTLS())
 
-	target, err := NewTarget(targetURL, options.HealthCheckConfig, options.TargetTimeout)
+	targetOptions := TargetOptions{
+		HealthCheckConfig: options.HealthCheckConfig,
+		ResponseTimeout:   options.TargetTimeout,
+	}
+
+	target, err := NewTarget(targetURL, targetOptions)
 	if err != nil {
 		return err
 	}

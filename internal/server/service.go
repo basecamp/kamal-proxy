@@ -166,7 +166,12 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	active, err := NewTarget(ms.ActiveTarget, s.options.HealthCheckConfig, s.options.TargetTimeout)
+	targetOptions := TargetOptions{
+		HealthCheckConfig: s.options.HealthCheckConfig,
+		ResponseTimeout:   s.options.TargetTimeout,
+	}
+
+	active, err := NewTarget(ms.ActiveTarget, targetOptions)
 	if err != nil {
 		return err
 	}

@@ -61,7 +61,7 @@ func testCreateService(t *testing.T, options ServiceOptions) *Service {
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultResponseTimeout)
+	target, err := NewTarget(serverURL.Host, defaultTargetOptions)
 	require.NoError(t, err)
 
 	service := NewService("test", "", options)

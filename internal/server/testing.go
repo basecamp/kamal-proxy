@@ -17,12 +17,18 @@ var (
 	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: DefaultHealthCheckTimeout}
 	defaultServiceOptions    = ServiceOptions{HealthCheckConfig: defaultHealthCheckConfig}
 	defaultResponseTimeout   = 5 * time.Second
+	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: defaultResponseTimeout}
 )
 
 func testTarget(t *testing.T, handler http.HandlerFunc) *Target {
 	_, targetURL := testBackendWithHandler(t, handler)
 
-	target, err := NewTarget(targetURL, defaultHealthCheckConfig, defaultResponseTimeout)
+	targetOptions := TargetOptions{
+		HealthCheckConfig: defaultHealthCheckConfig,
+		ResponseTimeout:   defaultResponseTimeout,
+	}
+
+	target, err := NewTarget(targetURL, targetOptions)
 	require.NoError(t, err)
 	return target
 }
