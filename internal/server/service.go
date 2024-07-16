@@ -153,18 +153,20 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type marshalledService struct {
-	Name         string         `json:"name"`
-	Host         string         `json:"host"`
-	Options      ServiceOptions `json:"options"`
-	ActiveTarget string         `json:"active_target"`
+	Name          string         `json:"name"`
+	Host          string         `json:"host"`
+	ActiveTarget  string         `json:"active_target"`
+	Options       ServiceOptions `json:"options"`
+	TargetOptions TargetOptions  `json:"target_options"`
 }
 
 func (s *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalledService{
-		Name:         s.name,
-		Host:         s.host,
-		Options:      s.options,
-		ActiveTarget: s.ActiveTarget().Target(),
+		Name:          s.name,
+		Host:          s.host,
+		ActiveTarget:  s.ActiveTarget().Target(),
+		Options:       s.options,
+		TargetOptions: s.ActiveTarget().options,
 	})
 }
 
@@ -179,15 +181,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.host = ms.Host
 	s.options = ms.Options
 
-	targetOptions := TargetOptions{
-		HealthCheckConfig:          s.options.HealthCheckConfig,
-		ResponseTimeout:            s.options.TargetTimeout,
-		BufferRequests:             s.options.BufferRequests,
-		MaxRequestMemoryBufferSize: s.options.MaxRequestMemoryBufferSize,
-		MaxRequestBodySize:         s.options.MaxRequestBodySize,
-	}
-
-	active, err := NewTarget(ms.ActiveTarget, targetOptions)
+	active, err := NewTarget(ms.ActiveTarget, ms.TargetOptions)
 	if err != nil {
 		return err
 	}
