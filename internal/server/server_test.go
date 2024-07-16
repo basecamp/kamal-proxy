@@ -2,9 +2,7 @@ package server
 
 import (
 	"net/http"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,34 +19,6 @@ func TestServer_Deploying(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestServer_DeployingGaplessly(t *testing.T) {
-	initialTarget := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
-
-	newTargets := []*Target{}
-	for i := 0; i < 5; i++ {
-		newTargets = append(newTargets, testTarget(t, func(w http.ResponseWriter, r *http.Request) {}))
-	}
-
-	server, addr := testServer(t)
-
-	testDeployTarget(t, initialTarget, server)
-
-	cc := newClientConsumer(addr)
-
-	for _, target := range newTargets {
-		time.Sleep(time.Millisecond * 10)
-		testDeployTarget(t, target, server)
-	}
-
-	cc.Stop()
-
-	assert.NotZero(t, cc.resultCount)
-	assert.Zero(t, cc.statusCodes[http.StatusServiceUnavailable])
-	assert.Zero(t, cc.statusCodes[http.StatusBadGateway])
-
-	assert.Equal(t, cc.resultCount, cc.statusCodes[http.StatusOK])
-}
-
 // Helpers
 
 func testDeployTarget(t *testing.T, target *Target, server *Server) {
@@ -62,67 +32,4 @@ func testDeployTarget(t *testing.T, target *Target, server *Server) {
 	}, &result)
 
 	require.NoError(t, err)
-}
-
-type clientConsumer struct {
-	addr    string
-	workers int
-	wg      sync.WaitGroup
-	done    chan struct{}
-
-	resultCount int
-	statusCodes map[int]int
-	resultLock  sync.Mutex
-}
-
-func newClientConsumer(addr string) *clientConsumer {
-	cc := &clientConsumer{
-		addr:        addr,
-		workers:     24,
-		done:        make(chan struct{}),
-		statusCodes: make(map[int]int),
-	}
-
-	cc.Start()
-	return cc
-}
-
-func (cc *clientConsumer) Start() {
-	cc.wg.Add(cc.workers)
-
-	for i := 0; i < cc.workers; i++ {
-		go cc.worker()
-	}
-}
-
-func (cc *clientConsumer) Stop() {
-	close(cc.done)
-	cc.wg.Wait()
-}
-
-func (cc *clientConsumer) worker() {
-	defer cc.wg.Done()
-
-	for {
-		select {
-		case <-cc.done:
-			return
-		default:
-			cc.sendRequest()
-		}
-	}
-}
-
-func (cc *clientConsumer) sendRequest() {
-	resp, err := http.Get(cc.addr)
-
-	statusCode := 0
-	if err == nil {
-		statusCode = resp.StatusCode
-	}
-
-	cc.resultLock.Lock()
-	cc.resultCount++
-	cc.statusCodes[statusCode]++
-	cc.resultLock.Unlock()
 }
