@@ -35,15 +35,15 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
-	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
 
-	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.TargetTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.ResponseTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
 
-	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.BufferRequests, "buffer-requests", false, "Enable request buffering")
-	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.ServiceOptions.MaxRequestMemoryBufferSize, "buffer-memory", server.DefaultMaxRequestMemoryBufferSize, "Max size of request memory buffer")
-	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.ServiceOptions.MaxRequestBodySize, "max-request-body", server.DefaultMaxRequestBodySize, "Max size of request body")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.BufferRequests, "buffer-requests", false, "Enable request buffering")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestMemoryBufferSize, "buffer-memory", server.DefaultMaxRequestMemoryBufferSize, "Max size of request memory buffer")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestBodySize, "max-request-body", server.DefaultMaxRequestBodySize, "Max size of request body")
 
 	deployCommand.cmd.MarkFlagRequired("target")
 

@@ -54,10 +54,11 @@ func TestServer_DeployingGaplessly(t *testing.T) {
 func testDeployTarget(t *testing.T, target *Target, server *Server) {
 	var result bool
 	err := server.commandHandler.Deploy(DeployArgs{
-		ServiceOptions: defaultServiceOptions,
 		TargetURL:      target.Target(),
 		DeployTimeout:  DefaultDeployTimeout,
 		DrainTimeout:   DefaultDrainTimeout,
+		ServiceOptions: defaultServiceOptions,
+		TargetOptions:  defaultTargetOptions,
 	}, &result)
 
 	require.NoError(t, err)

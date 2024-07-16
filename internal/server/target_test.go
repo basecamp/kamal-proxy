@@ -36,6 +36,7 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 			BufferRequests:             buffer,
 			MaxRequestMemoryBufferSize: 1,
 			MaxRequestBodySize:         2,
+			HealthCheckConfig:          defaultHealthCheckConfig,
 		}
 
 		target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +78,7 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 		assert.Equal(t, "hello", string(body))
 	})
 
-	t.Run("witht buffering", func(t *testing.T) {
+	t.Run("with buffering", func(t *testing.T) {
 		kind, body, err := sendWebsocketMessage(true, "world")
 		require.NoError(t, err)
 		assert.Equal(t, websocket.MessageText, kind)
@@ -263,6 +264,7 @@ func TestTarget_EnforceMaxRequestBodySize(t *testing.T) {
 			BufferRequests:             buffer,
 			MaxRequestMemoryBufferSize: maxMemorySize,
 			MaxRequestBodySize:         maxBodySize,
+			HealthCheckConfig:          defaultHealthCheckConfig,
 		}
 		target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
 			io.Copy(w, r.Body)

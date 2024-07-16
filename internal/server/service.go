@@ -45,14 +45,9 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	HealthCheckConfig          HealthCheckConfig `json:"health_check"`
-	BufferRequests             bool              `json:"buffer_requests"`
-	MaxRequestMemoryBufferSize int64             `json:"max_request_memory_buffer_size"`
-	MaxRequestBodySize         int64             `json:"max_request_body_size"`
-	TargetTimeout              time.Duration     `json:"target_timeout"`
-	TLSHostname                string            `json:"tls_hostname"`
-	ACMEDirectory              string            `json:"acme_directory"`
-	ACMECachePath              string            `json:"acme_cache_path"`
+	TLSHostname   string `json:"tls_hostname"`
+	ACMEDirectory string `json:"acme_directory"`
+	ACMECachePath string `json:"acme_cache_path"`
 }
 
 func (to ServiceOptions) RequireTLS() bool {

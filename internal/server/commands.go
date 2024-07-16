@@ -23,6 +23,7 @@ type DeployArgs struct {
 	DeployTimeout  time.Duration
 	DrainTimeout   time.Duration
 	ServiceOptions ServiceOptions
+	TargetOptions  TargetOptions
 }
 
 type PauseArgs struct {
@@ -90,7 +91,7 @@ func (h *CommandHandler) Stop() error {
 }
 
 func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
-	return h.router.SetServiceTarget(args.Service, args.Host, args.TargetURL, args.ServiceOptions, args.DeployTimeout, args.DrainTimeout)
+	return h.router.SetServiceTarget(args.Service, args.Host, args.TargetURL, args.ServiceOptions, args.TargetOptions, args.DeployTimeout, args.DrainTimeout)
 }
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {

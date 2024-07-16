@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -15,9 +14,8 @@ import (
 
 var (
 	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: DefaultHealthCheckTimeout}
-	defaultServiceOptions    = ServiceOptions{HealthCheckConfig: defaultHealthCheckConfig}
-	defaultResponseTimeout   = 5 * time.Second
-	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: defaultResponseTimeout}
+	defaultServiceOptions    = ServiceOptions{}
+	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
 )
 
 func testTarget(t *testing.T, handler http.HandlerFunc) *Target {

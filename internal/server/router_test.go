@@ -24,7 +24,7 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://dummy.example.com/")
 
@@ -36,7 +36,7 @@ func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "", target, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "", target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://dummy.example.com/")
 
@@ -49,14 +49,14 @@ func TestRouter_ReplacingActiveService(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://dummy.example.com/")
 
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", second, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendGETRequest(router, "http://dummy.example.com/")
 
@@ -64,27 +64,29 @@ func TestRouter_ReplacingActiveService(t *testing.T) {
 	assert.Equal(t, "second", body)
 }
 
-func TestRouter_UpdatingServiceOptions(t *testing.T) {
+func TestRouter_UpdatingOptions(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
 	serviceOptions := defaultServiceOptions
-	serviceOptions.MaxRequestBodySize = 10
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	targetOptions := defaultTargetOptions
+
+	targetOptions.MaxRequestBodySize = 10
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusRequestEntityTooLarge, statusCode)
 	assert.Empty(t, body)
 
-	serviceOptions.MaxRequestBodySize = 0
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	targetOptions.MaxRequestBodySize = 0
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
 	serviceOptions.TLSHostname = "dummy.example.com"
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
@@ -95,13 +97,13 @@ func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	router.PauseService("service1", time.Second, time.Millisecond*10)
 
 	statusCode, _ := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
@@ -117,14 +119,14 @@ func TestRouter_ChangingHostForService(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://dummy.example.com/")
 
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy2.example.com", second, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "dummy2.example.com", second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendGETRequest(router, "http://dummy2.example.com/")
 
@@ -140,8 +142,8 @@ func TestRouter_ReusingHost(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	err := router.SetServiceTarget("service12", "dummy.example.com", second, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout)
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	err := router.SetServiceTarget("service12", "dummy.example.com", second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout)
 
 	require.EqualError(t, err, "host is used by another service", "Error message does not match expected one")
 
@@ -156,8 +158,8 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "s1.example.com", first, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("service2", "s2.example.com", second, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "s1.example.com", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service2", "s2.example.com", second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://s1.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
@@ -173,8 +175,8 @@ func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", "s1.example.com", first, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("default", "", second, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", "s1.example.com", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("default", "", second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://s1.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
@@ -193,7 +195,7 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "", http.StatusInternalServerError)
 
-	err := router.SetServiceTarget("example", "example.com", target, defaultServiceOptions, time.Millisecond*20, DefaultDrainTimeout)
+	err := router.SetServiceTarget("example", "example.com", target, defaultServiceOptions, defaultTargetOptions, time.Millisecond*20, DefaultDrainTimeout)
 	assert.Equal(t, ErrorTargetFailedToBecomeHealthy, err)
 
 	statusCode, _ := sendGETRequest(router, "http://dummy.example.com/")
@@ -208,8 +210,8 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	_, second := testBackend(t, "second", http.StatusOK)
 
 	router := NewRouter(statePath)
-	require.NoError(t, router.SetServiceTarget("default", "", first, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("other", "other.example.com", second, defaultServiceOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("default", "", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("other", "other.example.com", second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://something.example.com")
 	assert.Equal(t, http.StatusOK, statusCode)
