@@ -31,31 +31,58 @@ func TestTarget_Serve(t *testing.T) {
 }
 
 func TestTarget_ServeWebSocket(t *testing.T) {
-	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
-		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+	sendWebsocketMessage := func(buffer bool, body string) (websocket.MessageType, []byte, error) {
+		targetOptions := TargetOptions{
+			BufferRequests:             buffer,
+			MaxRequestMemoryBufferSize: 1,
+			MaxRequestBodySize:         2,
+		}
+
+		target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
+			c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+			require.NoError(t, err)
+
+			go func() {
+				kind, body, err := c.Read(context.Background())
+				require.NoError(t, err)
+				assert.Equal(t, websocket.MessageText, kind)
+
+				c.Write(context.Background(), websocket.MessageText, body)
+				defer c.CloseNow()
+			}()
+		})
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r, err := target.StartRequest(r)
+			require.NoError(t, err)
+			target.SendRequest(w, r)
+		}))
+		defer server.Close()
+
+		websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
+
+		c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
 		require.NoError(t, err)
 		defer c.CloseNow()
 
-		c.Write(context.Background(), websocket.MessageText, []byte("hello"))
+		c.Write(context.Background(), websocket.MessageText, []byte(body))
+
+		return c.Read(context.Background())
+	}
+
+	t.Run("without buffering", func(t *testing.T) {
+		kind, body, err := sendWebsocketMessage(false, "hello")
+		require.NoError(t, err)
+		assert.Equal(t, websocket.MessageText, kind)
+		assert.Equal(t, "hello", string(body))
 	})
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r, err := target.StartRequest(r)
+	t.Run("witht buffering", func(t *testing.T) {
+		kind, body, err := sendWebsocketMessage(true, "world")
 		require.NoError(t, err)
-		target.SendRequest(w, r)
-	}))
-	defer server.Close()
-
-	websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
-
-	c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
-	require.NoError(t, err)
-	defer c.CloseNow()
-
-	kind, body, err := c.Read(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, websocket.MessageText, kind)
-	assert.Equal(t, "hello", string(body))
+		assert.Equal(t, websocket.MessageText, kind)
+		assert.Equal(t, "world", string(body))
+	})
 }
 
 func TestTarget_PreserveTargetHeader(t *testing.T) {
