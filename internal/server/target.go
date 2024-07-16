@@ -49,11 +49,18 @@ type inflightRequest struct {
 
 type inflightMap map[*http.Request]*inflightRequest
 
+type TargetOptions struct {
+	HealthCheckConfig          HealthCheckConfig
+	ResponseTimeout            time.Duration
+	BufferRequests             bool
+	MaxRequestMemoryBufferSize int64
+	MaxRequestBodySize         int64
+}
+
 type Target struct {
-	targetURL         *url.URL
-	healthCheckConfig HealthCheckConfig
-	responseTimeout   time.Duration
-	proxyHandler      http.Handler
+	targetURL    *url.URL
+	options      TargetOptions
+	proxyHandler http.Handler
 
 	state        TargetState
 	inflight     inflightMap
@@ -63,22 +70,26 @@ type Target struct {
 	becameHealthy chan (bool)
 }
 
-func NewTarget(targetURL string, healthCheckConfig HealthCheckConfig, responseTimeout time.Duration) (*Target, error) {
+func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 	uri, err := parseTargetURL(targetURL)
 	if err != nil {
 		return nil, err
 	}
 
 	target := &Target{
-		targetURL:         uri,
-		healthCheckConfig: healthCheckConfig,
-		responseTimeout:   responseTimeout,
+		targetURL: uri,
+		options:   options,
 
 		state:    TargetStateAdding,
 		inflight: inflightMap{},
 	}
 
 	target.proxyHandler = target.createProxyHandler()
+
+	if options.BufferRequests {
+		maxRequestBody := max(options.MaxRequestMemoryBufferSize, options.MaxRequestBodySize)
+		target.proxyHandler = WithBufferMiddleware(maxRequestBody, options.MaxRequestMemoryBufferSize, target.proxyHandler)
+	}
 
 	return target, nil
 }
@@ -110,6 +121,10 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 
 	inflightRequest := t.getInflightRequest(req)
 	tw := newTargetResponseWriter(w, inflightRequest)
+
+	if t.options.MaxRequestBodySize > 0 {
+		req.Body = http.MaxBytesReader(tw, req.Body, t.options.MaxRequestBodySize)
+	}
 
 	t.proxyHandler.ServeHTTP(tw, req)
 }
@@ -183,9 +198,9 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 func (t *Target) BeginHealthChecks() {
 	t.becameHealthy = make(chan bool)
 	t.healthcheck = NewHealthCheck(t,
-		t.targetURL.JoinPath(t.healthCheckConfig.Path),
-		t.healthCheckConfig.Interval,
-		t.healthCheckConfig.Timeout,
+		t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
+		t.options.HealthCheckConfig.Interval,
+		t.options.HealthCheckConfig.Timeout,
 	)
 }
 
@@ -237,7 +252,7 @@ func (t *Target) createProxyHandler() http.Handler {
 		ErrorHandler: t.handleProxyError,
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost:   MaxIdleConnsPerHost,
-			ResponseHeaderTimeout: t.responseTimeout,
+			ResponseHeaderTimeout: t.options.ResponseTimeout,
 		},
 	}
 }

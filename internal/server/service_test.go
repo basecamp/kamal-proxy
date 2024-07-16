@@ -20,22 +20,6 @@ func TestService_ServeRequest(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
-func TestService_EnforceMaxRequestBodySize(t *testing.T) {
-	service := testCreateService(t, ServiceOptions{MaxRequestBodySize: 10})
-
-	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
-	w := httptest.NewRecorder()
-	service.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-
-	req = httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("Something longer than 10!"))
-	w = httptest.NewRecorder()
-	service.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
-}
-
 func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	service := testCreateService(t, ServiceOptions{TLSHostname: "example.com"})
 
@@ -61,7 +45,7 @@ func testCreateService(t *testing.T, options ServiceOptions) *Service {
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	target, err := NewTarget(serverURL.Host, defaultHealthCheckConfig, defaultResponseTimeout)
+	target, err := NewTarget(serverURL.Host, defaultTargetOptions)
 	require.NoError(t, err)
 
 	service := NewService("test", "", options)
