@@ -175,6 +175,10 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	s.name = ms.Name
+	s.host = ms.Host
+	s.options = ms.Options
+
 	targetOptions := TargetOptions{
 		HealthCheckConfig:          s.options.HealthCheckConfig,
 		ResponseTimeout:            s.options.TargetTimeout,
@@ -192,11 +196,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	// been that way when they were saved.
 	active.state = TargetStateHealthy
 
-	s.name = ms.Name
-	s.host = ms.Host
-	s.options = ms.Options
 	s.active = active
-
 	s.initialize()
 
 	return nil
