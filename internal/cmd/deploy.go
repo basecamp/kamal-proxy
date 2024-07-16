@@ -40,8 +40,10 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.TargetTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
-	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.ServiceOptions.MaxRequestMemoryBufferSize, "request-buffer-size", 0, "Enable request buffering in memory (default of 0 means no buffering)")
-	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.ServiceOptions.MaxRequestBodySize, "max-request-body", 0, "Max size of request body (default of 0 means unlimited)")
+
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.BufferRequests, "buffer-requests", false, "Enable request buffering")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.ServiceOptions.MaxRequestMemoryBufferSize, "buffer-memory", server.DefaultMaxRequestMemoryBufferSize, "Max size of request memory buffer")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.ServiceOptions.MaxRequestBodySize, "max-request-body", server.DefaultMaxRequestBodySize, "Max size of request body")
 
 	deployCommand.cmd.MarkFlagRequired("target")
 

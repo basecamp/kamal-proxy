@@ -16,6 +16,13 @@ import (
 )
 
 const (
+	B  int64 = 1
+	KB       = B << 10
+	MB       = KB << 10
+	GB       = MB << 10
+)
+
+const (
 	DefaultDeployTimeout = time.Second * 30
 	DefaultDrainTimeout  = time.Second * 10
 	DefaultPauseTimeout  = time.Second * 30
@@ -26,7 +33,9 @@ const (
 
 	MaxIdleConnsPerHost = 100
 
-	DefaultTargetTimeout = time.Second * 10
+	DefaultTargetTimeout              = time.Second * 10
+	DefaultMaxRequestMemoryBufferSize = 1 * MB
+	DefaultMaxRequestBodySize         = 1 * GB
 )
 
 type HealthCheckConfig struct {
@@ -37,6 +46,7 @@ type HealthCheckConfig struct {
 
 type ServiceOptions struct {
 	HealthCheckConfig          HealthCheckConfig `json:"health_check"`
+	BufferRequests             bool              `json:"buffer_requests"`
 	MaxRequestMemoryBufferSize int64             `json:"max_request_memory_buffer_size"`
 	MaxRequestBodySize         int64             `json:"max_request_body_size"`
 	TargetTimeout              time.Duration     `json:"target_timeout"`
@@ -168,6 +178,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	targetOptions := TargetOptions{
 		HealthCheckConfig:          s.options.HealthCheckConfig,
 		ResponseTimeout:            s.options.TargetTimeout,
+		BufferRequests:             s.options.BufferRequests,
 		MaxRequestMemoryBufferSize: s.options.MaxRequestMemoryBufferSize,
 		MaxRequestBodySize:         s.options.MaxRequestBodySize,
 	}

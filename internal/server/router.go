@@ -87,6 +87,7 @@ func (r *Router) SetServiceTarget(name string, host string, targetURL string, op
 	targetOptions := TargetOptions{
 		HealthCheckConfig:          options.HealthCheckConfig,
 		ResponseTimeout:            options.TargetTimeout,
+		BufferRequests:             options.BufferRequests,
 		MaxRequestMemoryBufferSize: options.MaxRequestMemoryBufferSize,
 		MaxRequestBodySize:         options.MaxRequestBodySize,
 	}
