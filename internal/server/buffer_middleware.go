@@ -20,7 +20,7 @@ func WithBufferMiddleware(maxBytes, maxMemBytes int64, next http.Handler) http.H
 }
 
 func (h *BufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	buffer, err := NewBufferReadCloser(r.Body, h.maxBytes, h.maxMemBytes)
+	buffer, err := NewBufferedReadCloser(r.Body, h.maxBytes, h.maxMemBytes)
 	if err != nil {
 		if err == ErrMaximumSizeExceeded {
 			http.Error(w, "Request too large", http.StatusRequestEntityTooLarge)

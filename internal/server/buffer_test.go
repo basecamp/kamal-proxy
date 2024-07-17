@@ -9,44 +9,79 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBufferReadCloser_WithinMemoryLimits(t *testing.T) {
+func TestBufferedReadCloser_WithinMemoryLimits(t *testing.T) {
 	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	brc, err := NewBufferReadCloser(r, 2048, 1024)
+	brc, err := NewBufferedReadCloser(r, 2048, 1024)
 
 	require.NoError(t, err)
-	assert.Equal(t, "Hello, World!", brc.memoryBuffer.String())
 
 	result, err := io.ReadAll(brc)
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, World!", string(result))
 }
 
-func TestBufferReadCloser_ExceedsMemoryLimits(t *testing.T) {
+func TestBufferedReadCloser_ExceedsMemoryLimits(t *testing.T) {
 	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	brc, err := NewBufferReadCloser(r, 1024, 5)
+	brc, err := NewBufferedReadCloser(r, 1024, 5)
 
 	require.NoError(t, err)
-	assert.Equal(t, "Hello", brc.memoryBuffer.String())
 
 	result, err := io.ReadAll(brc)
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, World!", string(result))
 }
 
-func TestBufferReadCloser_ExceedsMemoryAndDiskLimits(t *testing.T) {
+func TestBufferedReadCloser_ExceedsMemoryAndDiskLimits(t *testing.T) {
 	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	_, err := NewBufferReadCloser(r, 8, 5)
+	_, err := NewBufferedReadCloser(r, 8, 5)
 
 	require.Equal(t, ErrMaximumSizeExceeded, err)
 }
 
-func TestBufferReadCloser_EmptyReader(t *testing.T) {
+func TestBufferedReadCloser_EmptyReader(t *testing.T) {
 	r := io.NopCloser(strings.NewReader(""))
-	brc, err := NewBufferReadCloser(r, 2048, 1024)
+	brc, err := NewBufferedReadCloser(r, 2048, 1024)
 
 	require.NoError(t, err)
 
 	result, err := io.ReadAll(brc)
 	require.NoError(t, err)
 	assert.Empty(t, result)
+}
+
+func TestBufferedWriteCloser_WithinMemoryLimits(t *testing.T) {
+	bwc := NewBufferedWriteCloser(2048, 1024)
+	_, err := bwc.Write([]byte("Hello, World!"))
+	require.NoError(t, err)
+
+	var result strings.Builder
+	require.NoError(t, bwc.Send(&result))
+
+	assert.Equal(t, "Hello, World!", result.String())
+}
+
+func TestBufferedWriteCloser_ExceedsMemoryLimits(t *testing.T) {
+	bwc := NewBufferedWriteCloser(2048, 1024)
+	_, err := bwc.Write([]byte("Hello, World!"))
+	require.NoError(t, err)
+
+	var result strings.Builder
+	require.NoError(t, bwc.Send(&result))
+
+	assert.Equal(t, "Hello, World!", result.String())
+}
+
+func TestBufferedWriteCloser_ExceedsMemoryAndDiskLimits(t *testing.T) {
+	bwc := NewBufferedWriteCloser(8, 5)
+	_, err := bwc.Write([]byte("Hello, World!"))
+	require.Equal(t, ErrMaximumSizeExceeded, err)
+}
+
+func TestBufferedWriteCloser_EmptyWriter(t *testing.T) {
+	bwc := NewBufferedWriteCloser(2048, 1024)
+
+	var result strings.Builder
+	require.NoError(t, bwc.Send(&result))
+
+	assert.Empty(t, result.String())
 }

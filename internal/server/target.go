@@ -122,7 +122,7 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 	inflightRequest := t.getInflightRequest(req)
 	tw := newTargetResponseWriter(w, inflightRequest)
 
-	if t.options.MaxRequestBodySize > 0 {
+	if !t.options.BufferRequests && t.options.MaxRequestBodySize > 0 {
 		req.Body = http.MaxBytesReader(tw, req.Body, t.options.MaxRequestBodySize)
 	}
 
