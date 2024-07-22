@@ -22,6 +22,7 @@ type Buffer struct {
 	memBytesWritten  int64
 	diskBuffer       *os.File
 	diskBytesWritten int64
+	overflowed       bool
 	reader           io.Reader
 	closeOnce        sync.Once
 }
@@ -56,6 +57,7 @@ func (b *Buffer) Write(p []byte) (int, error) {
 	totalWritten := b.memBytesWritten + b.diskBytesWritten
 
 	if totalWritten+length > b.maxBytes {
+		b.overflowed = true
 		return 0, ErrMaximumSizeExceeded
 	}
 
@@ -85,6 +87,10 @@ func (b *Buffer) Write(p []byte) (int, error) {
 func (b *Buffer) Read(p []byte) (n int, err error) {
 	b.setReader()
 	return b.reader.Read(p)
+}
+
+func (b *Buffer) Overflowed() bool {
+	return b.overflowed
 }
 
 func (b *Buffer) Send(w io.Writer) error {
