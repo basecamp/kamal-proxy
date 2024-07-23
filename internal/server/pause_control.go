@@ -107,7 +107,12 @@ func (p *PauseControl) Wait() PauseWaitAction {
 	default:
 		select {
 		case <-pauseChannel:
-			return PauseWaitActionProceed
+			switch p.State() {
+			case PauseStateStopped:
+				return PauseWaitActionUnavailable
+			default:
+				return PauseWaitActionProceed
+			}
 		case <-failChannel:
 			return PauseWaitActionTimedOut
 		}
