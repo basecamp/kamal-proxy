@@ -25,6 +25,7 @@ func Execute() {
 	rootCmd.AddCommand(newDeployCommand().cmd)
 	rootCmd.AddCommand(newRemoveCommand().cmd)
 	rootCmd.AddCommand(newPauseCommand().cmd)
+	rootCmd.AddCommand(newStopCommand().cmd)
 	rootCmd.AddCommand(newResumeCommand().cmd)
 	rootCmd.AddCommand(newListCommand().cmd)
 

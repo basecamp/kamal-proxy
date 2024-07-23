@@ -132,7 +132,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	action := s.pauseControl.Wait()
-	if action == PauseWaitActionTimedOut {
+	switch action {
+	case PauseWaitActionUnavailable:
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+
+	case PauseWaitActionTimedOut:
 		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
 		w.WriteHeader(http.StatusGatewayTimeout)
 		return
@@ -188,6 +193,19 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.active = active
 	s.initialize()
 
+	return nil
+}
+
+func (s *Service) Stop(drainTimeout time.Duration) error {
+	err := s.pauseControl.Stop()
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Service stopped", "service", s.name)
+
+	s.ActiveTarget().Drain(drainTimeout)
+	slog.Info("Service drained", "service", s.name)
 	return nil
 }
 

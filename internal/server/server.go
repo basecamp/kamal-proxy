@@ -55,7 +55,7 @@ func (s *Server) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
-	s.commandHandler.Stop()
+	s.commandHandler.Close()
 	s.httpServer.Shutdown(ctx)
 
 	slog.Info("Server stopped")

@@ -32,6 +32,11 @@ type PauseArgs struct {
 	PauseTimeout time.Duration
 }
 
+type StopArgs struct {
+	Service      string
+	DrainTimeout time.Duration
+}
+
 type ResumeArgs struct {
 	Service string
 }
@@ -86,7 +91,7 @@ func (h *CommandHandler) Start(socketPath string) error {
 	return nil
 }
 
-func (h *CommandHandler) Stop() error {
+func (h *CommandHandler) Close() error {
 	return h.rpcListener.Close()
 }
 
@@ -96,6 +101,10 @@ func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
 	return h.router.PauseService(args.Service, args.DrainTimeout, args.PauseTimeout)
+}
+
+func (h *CommandHandler) Stop(args StopArgs, reply *bool) error {
+	return h.router.StopService(args.Service, args.DrainTimeout)
 }
 
 func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {

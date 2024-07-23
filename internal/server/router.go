@@ -137,6 +137,15 @@ func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTime
 	return service.Pause(drainTimeout, pauseTimeout)
 }
 
+func (r *Router) StopService(name string, drainTimeout time.Duration) error {
+	service := r.serviceForName(name, true)
+	if service == nil {
+		return ErrorServiceNotFound
+	}
+
+	return service.Stop(drainTimeout)
+}
+
 func (r *Router) ResumeService(name string) error {
 	service := r.serviceForName(name, true)
 	if service == nil {
