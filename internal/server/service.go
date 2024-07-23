@@ -131,8 +131,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proceed := s.pauseControl.Wait()
-	if !proceed {
+	action := s.pauseControl.Wait()
+	if action == PauseWaitActionTimedOut {
 		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
 		w.WriteHeader(http.StatusGatewayTimeout)
 		return

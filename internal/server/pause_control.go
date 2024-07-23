@@ -7,13 +7,30 @@ import (
 )
 
 var (
-	ErrorAlreadyPaused = errors.New("already paused")
-	ErrorNotPaused     = errors.New("not paused")
+	ErrorAlreadyRunning = errors.New("already running")
+	ErrorAlreadyPaused  = errors.New("already paused")
+	ErrorAlreadyStopped = errors.New("already stopped")
+)
+
+type PauseState int
+
+const (
+	PauseStateRunning PauseState = iota
+	PauseStatePaused
+	PauseStateStopped
+)
+
+type PauseWaitAction int
+
+const (
+	PauseWaitActionProceed PauseWaitAction = iota
+	PauseWaitActionTimedOut
+	PauseWaitActionUnavailable
 )
 
 type PauseControl struct {
 	lock         sync.RWMutex
-	paused       bool
+	state        PauseState
 	pauseChannel chan bool
 	failAfter    time.Duration
 }
@@ -22,15 +39,39 @@ func NewPauseControl() *PauseControl {
 	return &PauseControl{}
 }
 
+func (p *PauseControl) State() PauseState {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return p.state
+}
+
+func (p *PauseControl) Stop() error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.state == PauseStateStopped {
+		return ErrorAlreadyStopped
+	}
+
+	if p.state == PauseStatePaused {
+		close(p.pauseChannel)
+	}
+
+	p.state = PauseStateStopped
+
+	return nil
+}
+
 func (p *PauseControl) Pause(failAfter time.Duration) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.paused {
+	if p.state == PauseStatePaused {
 		return ErrorAlreadyPaused
 	}
 
-	p.paused = true
+	p.state = PauseStatePaused
 	p.pauseChannel = make(chan bool)
 	p.failAfter = failAfter
 
@@ -41,37 +82,45 @@ func (p *PauseControl) Resume() error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if !p.paused {
-		return ErrorNotPaused
+	if p.state == PauseStateRunning {
+		return ErrorAlreadyRunning
 	}
 
-	p.paused = false
-	close(p.pauseChannel)
+	if p.state == PauseStatePaused {
+		close(p.pauseChannel)
+	}
+	p.state = PauseStateRunning
 
 	return nil
 }
 
-func (p *PauseControl) Wait() bool {
-	free, pauseChannel, failChannel := p.getWaitState()
-	if free {
-		return true
-	}
+func (p *PauseControl) Wait() PauseWaitAction {
+	state, pauseChannel, failChannel := p.getWaitState()
 
-	select {
-	case <-pauseChannel:
-		return true
-	case <-failChannel:
-		return false
+	switch state {
+	case PauseStateRunning:
+		return PauseWaitActionProceed
+
+	case PauseStateStopped:
+		return PauseWaitActionUnavailable
+
+	default:
+		select {
+		case <-pauseChannel:
+			return PauseWaitActionProceed
+		case <-failChannel:
+			return PauseWaitActionTimedOut
+		}
 	}
 }
 
-func (p *PauseControl) getWaitState() (bool, chan bool, <-chan time.Time) {
+func (p *PauseControl) getWaitState() (PauseState, chan bool, <-chan time.Time) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	if !p.paused {
-		return true, nil, nil
+	if p.state == PauseStatePaused {
+		return PauseStatePaused, p.pauseChannel, time.After(p.failAfter)
 	}
 
-	return false, p.pauseChannel, time.After(p.failAfter)
+	return p.state, nil, nil
 }
