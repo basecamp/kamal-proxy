@@ -50,21 +50,21 @@ type ServiceOptions struct {
 	ACMECachePath string `json:"acme_cache_path"`
 }
 
-func (to ServiceOptions) RequireTLS() bool {
-	return to.TLSHostname != ""
+func (so ServiceOptions) RequireTLS() bool {
+	return so.TLSHostname != ""
 }
 
-func (to ServiceOptions) ScopedCachePath() string {
+func (so ServiceOptions) ScopedCachePath() string {
 	// We need to scope our certificate cache according to whatever ACME settings
 	// we want to use, such as the directory.  This is so we can reuse
 	// certificates between deployments when the settings are the same, but
 	// provision new certificates when they change.
 
 	hasher := sha256.New()
-	hasher.Write([]byte(to.ACMEDirectory))
+	hasher.Write([]byte(so.ACMEDirectory))
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	return path.Join(to.ACMECachePath, hash)
+	return path.Join(so.ACMECachePath, hash)
 }
 
 type Service struct {
