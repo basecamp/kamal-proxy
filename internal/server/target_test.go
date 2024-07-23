@@ -151,6 +151,16 @@ func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestTarget_IsHealthCheckRequest(t *testing.T) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
+
+	assert.True(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up", nil)))
+	assert.True(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up?one=two", nil)))
+
+	assert.False(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up/other", nil)))
+	assert.False(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/health", nil)))
+}
+
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))

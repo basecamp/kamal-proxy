@@ -129,6 +129,10 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 	t.proxyHandler.ServeHTTP(tw, req)
 }
 
+func (t *Target) IsHealthCheckRequest(r *http.Request) bool {
+	return t.options.HealthCheckConfig.Path == r.URL.Path
+}
+
 func (t *Target) Rewrite(req *httputil.ProxyRequest) {
 	// Preserve & append X-Forwarded-For
 	req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]

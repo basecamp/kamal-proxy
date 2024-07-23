@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,32 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	service.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
+func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
+	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
+
+	checkRequest := func(path string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		service.ServeHTTP(w, req)
+		return w.Result().StatusCode
+	}
+
+	assert.Equal(t, http.StatusOK, checkRequest("/up"))
+	assert.Equal(t, http.StatusOK, checkRequest("/other"))
+
+	service.Pause(time.Second, time.Millisecond)
+	assert.Equal(t, http.StatusOK, checkRequest("/up"))
+	assert.Equal(t, http.StatusGatewayTimeout, checkRequest("/other"))
+
+	service.Stop(time.Second)
+	assert.Equal(t, http.StatusOK, checkRequest("/up"))
+	assert.Equal(t, http.StatusServiceUnavailable, checkRequest("/other"))
+
+	service.Resume()
+	assert.Equal(t, http.StatusOK, checkRequest("/up"))
+	assert.Equal(t, http.StatusOK, checkRequest("/other"))
 }
 
 func TestService_MarshallingState(t *testing.T) {

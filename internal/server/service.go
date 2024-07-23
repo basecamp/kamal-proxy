@@ -131,15 +131,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	action := s.pauseControl.Wait()
-	switch action {
-	case PauseWaitActionUnavailable:
-		w.WriteHeader(http.StatusServiceUnavailable)
-		return
-
-	case PauseWaitActionTimedOut:
-		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
-		w.WriteHeader(http.StatusGatewayTimeout)
+	if s.handlePausedAndStoppedRequests(w, r) {
 		return
 	}
 
@@ -150,6 +142,31 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target.SendRequest(w, req)
+}
+
+func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
+	if s.pauseControl.State() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
+		// When paused or stopped, return success for any health check
+		// requests from downstream services. Otherwise they might consider
+		// us as unhealthy while in that state, and remove us from their
+		// pool.
+		w.WriteHeader(http.StatusOK)
+		return true
+	}
+
+	action := s.pauseControl.Wait()
+	switch action {
+	case PauseWaitActionUnavailable:
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return true
+
+	case PauseWaitActionTimedOut:
+		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
+		w.WriteHeader(http.StatusGatewayTimeout)
+		return true
+	}
+
+	return false
 }
 
 type marshalledService struct {
