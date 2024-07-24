@@ -13,6 +13,19 @@ const (
 	PauseStateStopped
 )
 
+func (ps PauseState) String() string {
+	switch ps {
+	case PauseStateRunning:
+		return "running"
+	case PauseStatePaused:
+		return "paused"
+	case PauseStateStopped:
+		return "stopped"
+	default:
+		return ""
+	}
+}
+
 type PauseWaitAction int
 
 const (
