@@ -130,7 +130,7 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 }
 
 func (t *Target) IsHealthCheckRequest(r *http.Request) bool {
-	return t.options.HealthCheckConfig.Path == r.URL.Path
+	return r.Method == http.MethodGet && r.URL.Path == t.options.HealthCheckConfig.Path
 }
 
 func (t *Target) Rewrite(req *httputil.ProxyRequest) {
