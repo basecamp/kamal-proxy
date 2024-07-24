@@ -32,7 +32,7 @@ func TestTarget_Serve(t *testing.T) {
 func TestTarget_ServeWebSocket(t *testing.T) {
 	sendWebsocketMessage := func(buffer bool, body string) (websocket.MessageType, []byte, error) {
 		targetOptions := TargetOptions{
-			BufferRequests:      buffer,
+			BufferingEnabled:    buffer,
 			MaxMemoryBufferSize: 1,
 			MaxRequestBodySize:  2,
 			MaxResponseBodySize: 2,
@@ -271,7 +271,7 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	sendRequest := func(buffer bool, maxMemorySize int64, maxBodySize int64, requestBody, responseBody string) *httptest.ResponseRecorder {
 		targetOptions := TargetOptions{
-			BufferRequests:      buffer,
+			BufferingEnabled:    buffer,
 			MaxMemoryBufferSize: maxMemorySize,
 			MaxRequestBodySize:  maxBodySize,
 			MaxResponseBodySize: maxBodySize,

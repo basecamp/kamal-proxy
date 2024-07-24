@@ -71,7 +71,7 @@ func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 func TestService_MarshallingState(t *testing.T) {
 	targetOptions := TargetOptions{
 		HealthCheckConfig:   HealthCheckConfig{Path: "/health", Interval: 1, Timeout: 2},
-		BufferRequests:      true,
+		BufferingEnabled:    true,
 		MaxMemoryBufferSize: 123,
 	}
 
