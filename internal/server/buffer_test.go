@@ -9,55 +9,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBufferedReadCloser_WithinMemoryLimits(t *testing.T) {
-	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	brc, err := NewBufferedReadCloser(r, 2048, 1024)
+func TestBufferedReadCloser(t *testing.T) {
+	tests := map[string]struct {
+		maxBytes       int64
+		maxMemBytes    int64
+		expectOverflow bool
+	}{
+		"unlimited":                      {0, 0, false},
+		"unlimited disk":                 {0, 5, false},
+		"within memory limits":           {2048, 1024, false},
+		"exceeds memory limits":          {2048, 5, false},
+		"exceeds memory and disk limits": {8, 5, true},
+	}
 
-	require.NoError(t, err)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := io.NopCloser(strings.NewReader("Hello, World!"))
+			brc, err := NewBufferedReadCloser(r, tc.maxBytes, tc.maxMemBytes)
 
-	result, err := io.ReadAll(brc)
-	require.NoError(t, err)
-	assert.Equal(t, "Hello, World!", string(result))
-}
+			if tc.expectOverflow {
+				require.Equal(t, ErrMaximumSizeExceeded, err)
+			} else {
+				require.NoError(t, err)
 
-func TestBufferedReadCloser_ExceedsMemoryLimits(t *testing.T) {
-	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	brc, err := NewBufferedReadCloser(r, 1024, 5)
-
-	require.NoError(t, err)
-
-	result, err := io.ReadAll(brc)
-	require.NoError(t, err)
-	assert.Equal(t, "Hello, World!", string(result))
-}
-
-func TestBufferedReadCloser_ExceedsMemoryLimitWhenDiskIsUnlimited(t *testing.T) {
-	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	brc, err := NewBufferedReadCloser(r, 0, 5)
-
-	require.NoError(t, err)
-
-	result, err := io.ReadAll(brc)
-	require.NoError(t, err)
-	assert.Equal(t, "Hello, World!", string(result))
-}
-
-func TestBufferedReadCloser_Unlimited(t *testing.T) {
-	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	brc, err := NewBufferedReadCloser(r, 0, 0)
-
-	require.NoError(t, err)
-
-	result, err := io.ReadAll(brc)
-	require.NoError(t, err)
-	assert.Equal(t, "Hello, World!", string(result))
-}
-
-func TestBufferedReadCloser_ExceedsMemoryAndDiskLimits(t *testing.T) {
-	r := io.NopCloser(strings.NewReader("Hello, World!"))
-	_, err := NewBufferedReadCloser(r, 8, 5)
-
-	require.Equal(t, ErrMaximumSizeExceeded, err)
+				result, err := io.ReadAll(brc)
+				require.NoError(t, err)
+				assert.Equal(t, "Hello, World!", string(result))
+			}
+		})
+	}
 }
 
 func TestBufferedReadCloser_EmptyReader(t *testing.T) {
@@ -71,57 +51,39 @@ func TestBufferedReadCloser_EmptyReader(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestBufferedWriteCloser_WithinMemoryLimits(t *testing.T) {
-	bwc := NewBufferedWriteCloser(2048, 1024)
-	_, err := bwc.Write([]byte("Hello, World!"))
-	require.NoError(t, err)
+func TestBufferedWriteCloser(t *testing.T) {
+	tests := map[string]struct {
+		maxBytes       int64
+		maxMemBytes    int64
+		expectOverflow bool
+	}{
+		"unlimited":                      {0, 0, false},
+		"unlimited disk":                 {0, 5, false},
+		"within memory limits":           {2048, 1024, false},
+		"exceeds memory limits":          {2048, 5, false},
+		"exceeds memory and disk limits": {8, 5, true},
+	}
 
-	var result strings.Builder
-	require.NoError(t, bwc.Send(&result))
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			bwc := NewBufferedWriteCloser(tc.maxBytes, tc.maxMemBytes)
+			_, err := bwc.Write([]byte("Hello, World!"))
 
-	assert.Equal(t, "Hello, World!", result.String())
+			if tc.expectOverflow {
+				require.Equal(t, ErrMaximumSizeExceeded, err)
+			} else {
+				require.NoError(t, err)
+
+				var result strings.Builder
+				require.NoError(t, bwc.Send(&result))
+
+				assert.Equal(t, "Hello, World!", result.String())
+			}
+		})
+	}
 }
 
-func TestBufferedWriteCloser_ExceedsMemoryLimits(t *testing.T) {
-	bwc := NewBufferedWriteCloser(2048, 2)
-	_, err := bwc.Write([]byte("Hello, World!"))
-	require.NoError(t, err)
-
-	var result strings.Builder
-	require.NoError(t, bwc.Send(&result))
-
-	assert.Equal(t, "Hello, World!", result.String())
-}
-
-func TestBufferedWriteCloser_ExceedsMemoryLimitWhenDiskIsUnlimited(t *testing.T) {
-	bwc := NewBufferedWriteCloser(0, 2)
-	_, err := bwc.Write([]byte("Hello, World!"))
-	require.NoError(t, err)
-
-	var result strings.Builder
-	require.NoError(t, bwc.Send(&result))
-
-	assert.Equal(t, "Hello, World!", result.String())
-}
-
-func TestBufferedWriteCloser_Unlimited(t *testing.T) {
-	bwc := NewBufferedWriteCloser(0, 0)
-	_, err := bwc.Write([]byte("Hello, World!"))
-	require.NoError(t, err)
-
-	var result strings.Builder
-	require.NoError(t, bwc.Send(&result))
-
-	assert.Equal(t, "Hello, World!", result.String())
-}
-
-func TestBufferedWriteCloser_ExceedsMemoryAndDiskLimits(t *testing.T) {
-	bwc := NewBufferedWriteCloser(8, 5)
-	_, err := bwc.Write([]byte("Hello, World!"))
-	require.Equal(t, ErrMaximumSizeExceeded, err)
-}
-
-func TestBufferedWriteCloser_EmptyWriter(t *testing.T) {
+func TestBufferedWriteCloser_NothingWritten(t *testing.T) {
 	bwc := NewBufferedWriteCloser(2048, 1024)
 
 	var result strings.Builder
