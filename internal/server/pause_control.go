@@ -1,15 +1,8 @@
 package server
 
 import (
-	"errors"
 	"sync"
 	"time"
-)
-
-var (
-	ErrorAlreadyRunning = errors.New("already running")
-	ErrorAlreadyPaused  = errors.New("already paused")
-	ErrorAlreadyStopped = errors.New("already stopped")
 )
 
 type PauseState int
@@ -40,26 +33,14 @@ func NewPauseControl() *PauseControl {
 }
 
 func (p *PauseControl) State() PauseState {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.lock.RLock()
+	defer p.lock.RUnlock()
 
 	return p.state
 }
 
 func (p *PauseControl) Stop() error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if p.state == PauseStateStopped {
-		return ErrorAlreadyStopped
-	}
-
-	if p.state == PauseStatePaused {
-		close(p.pauseChannel)
-	}
-
-	p.state = PauseStateStopped
-
+	p.setState(PauseStateStopped)
 	return nil
 }
 
@@ -67,30 +48,17 @@ func (p *PauseControl) Pause(failAfter time.Duration) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.state == PauseStatePaused {
-		return ErrorAlreadyPaused
+	if p.state != PauseStatePaused {
+		p.pauseChannel = make(chan bool)
 	}
 
 	p.state = PauseStatePaused
-	p.pauseChannel = make(chan bool)
 	p.failAfter = failAfter
-
 	return nil
 }
 
 func (p *PauseControl) Resume() error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if p.state == PauseStateRunning {
-		return ErrorAlreadyRunning
-	}
-
-	if p.state == PauseStatePaused {
-		close(p.pauseChannel)
-	}
-	p.state = PauseStateRunning
-
+	p.setState(PauseStateRunning)
 	return nil
 }
 
@@ -128,4 +96,19 @@ func (p *PauseControl) getWaitState() (PauseState, chan bool, <-chan time.Time) 
 	}
 
 	return p.state, nil, nil
+}
+
+func (p *PauseControl) setState(newState PauseState) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.state == newState {
+		return
+	}
+
+	if p.state == PauseStatePaused {
+		close(p.pauseChannel)
+	}
+
+	p.state = newState
 }
