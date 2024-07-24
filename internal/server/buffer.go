@@ -56,7 +56,7 @@ func (b *Buffer) Write(p []byte) (int, error) {
 	length := int64(len(p))
 	totalWritten := b.memBytesWritten + b.diskBytesWritten
 
-	if totalWritten+length > b.maxBytes {
+	if b.maxBytes > 0 && totalWritten+length > b.maxBytes {
 		b.overflowed = true
 		return 0, ErrMaximumSizeExceeded
 	}
