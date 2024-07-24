@@ -36,8 +36,8 @@ const (
 
 	DefaultTargetTimeout       = time.Second * 10
 	DefaultMaxMemoryBufferSize = 1 * MB
-	DefaultMaxRequestBodySize  = 1 * GB
-	DefaultMaxResponseBodySize = 1 * GB
+	DefaultMaxRequestBodySize  = 0
+	DefaultMaxResponseBodySize = 0
 )
 
 type HealthCheckConfig struct {
