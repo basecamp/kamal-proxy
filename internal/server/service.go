@@ -46,9 +46,10 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	TLSHostname   string `json:"tls_hostname"`
-	ACMEDirectory string `json:"acme_directory"`
-	ACMECachePath string `json:"acme_cache_path"`
+	TLSHostname   string   `json:"tls_hostname"`
+	ACMEDirectory string   `json:"acme_directory"`
+	ACMECachePath string   `json:"acme_cache_path"`
+	LogHeaders    []string `json:"log_headers"`
 }
 
 func (so ServiceOptions) RequireTLS() bool {
@@ -126,6 +127,7 @@ func (s *Service) SetActiveTarget(target *Target, drainTimeout time.Duration) {
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.recordServiceNameForRequest(r)
+	s.recordHeadersForRequest(r)
 
 	if s.options.RequireTLS() && r.TLS == nil {
 		s.redirectToHTTPS(w, r)
@@ -261,6 +263,13 @@ func (s *Service) recordServiceNameForRequest(req *http.Request) {
 	serviceIdentifer, ok := req.Context().Value(contextKeyService).(*string)
 	if ok {
 		*serviceIdentifer = s.name
+	}
+}
+
+func (s *Service) recordHeadersForRequest(req *http.Request) {
+	headers, ok := req.Context().Value(contextKeyHeaders).(*[]string)
+	if ok {
+		*headers = s.options.LogHeaders
 	}
 }
 

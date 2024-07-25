@@ -45,6 +45,8 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestMemoryBufferSize, "buffer-memory", server.DefaultMaxRequestMemoryBufferSize, "Max size of request memory buffer")
 	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestBodySize, "max-request-body", server.DefaultMaxRequestBodySize, "Max size of request body")
 
+	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.ServiceOptions.LogHeaders, "log-header", nil, "Additional request header to log (can be specified multiple times)")
+
 	deployCommand.cmd.MarkFlagRequired("target")
 
 	return deployCommand

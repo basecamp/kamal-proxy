@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMiddleware_LoggingMiddleware(t *testing.T) {
+func TestLoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
 	logger := slog.New(slog.NewJSONHandler(out, nil))
 	middleware := WithLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,4 +79,32 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	assert.Equal(t, int64(8), logline.RespContentLength)
 	assert.Equal(t, "upstream:3000", logline.Target)
 	assert.Equal(t, "myapp", logline.Service)
+}
+
+func TestLoggingMiddleware_CustomFields(t *testing.T) {
+	out := &strings.Builder{}
+	logger := slog.New(slog.NewJSONHandler(out, nil))
+	middleware := WithLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add some additional headers to the logs
+		headers, ok := r.Context().Value(contextKeyHeaders).(*[]string)
+		if ok {
+			(*headers) = []string{"X-Version"}
+		}
+	}))
+
+	req := httptest.NewRequest("GET", "http://app.example.com/somepath", nil)
+	req.Header.Set("X-Version", "2.0")
+
+	middleware.ServeHTTP(httptest.NewRecorder(), req)
+
+	logline := struct {
+		Message        string `json:"msg"`
+		HeaderXVersion string `json:"header_x_version"`
+	}{}
+
+	err := json.NewDecoder(strings.NewReader(out.String())).Decode(&logline)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Request", logline.Message)
+	assert.Equal(t, "2.0", logline.HeaderXVersion)
 }

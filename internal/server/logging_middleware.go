@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type contextKey string
 var (
 	contextKeyService = contextKey("service")
 	contextKeyTarget  = contextKey("target")
+	contextKeyHeaders = contextKey("headers")
 )
 
 type LoggingMiddleware struct {
@@ -34,8 +36,10 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var service string
 	var target string
+	var headers = []string{}
 	ctx := context.WithValue(r.Context(), contextKeyService, &service)
 	ctx = context.WithValue(ctx, contextKeyTarget, &target)
+	ctx = context.WithValue(ctx, contextKeyHeaders, &headers)
 	r = r.WithContext(ctx)
 
 	started := time.Now()
@@ -51,22 +55,36 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		remoteAddr = r.RemoteAddr
 	}
 
-	h.logger.Info("Request",
-		"host", r.Host,
-		"path", r.URL.Path,
-		"request_id", requestID,
-		"status", writer.statusCode,
-		"service", service,
-		"target", target,
-		"duration", elapsed.Nanoseconds(),
-		"method", r.Method,
-		"req_content_length", r.ContentLength,
-		"req_content_type", reqContent,
-		"resp_content_length", writer.bytesWritten,
-		"resp_content_type", respContent,
-		"remote_addr", remoteAddr,
-		"user_agent", userAgent,
-		"query", r.URL.RawQuery)
+	loggedFields := h.buildHeaderFields(headers, r)
+	loggedFields = append(loggedFields,
+		slog.String("host", r.Host),
+		slog.String("path", r.URL.Path),
+		slog.String("request_id", requestID),
+		slog.Int("status", writer.statusCode),
+		slog.String("service", service),
+		slog.String("target", target),
+		slog.Int64("duration", elapsed.Nanoseconds()),
+		slog.String("method", r.Method),
+		slog.Int64("req_content_length", r.ContentLength),
+		slog.String("req_content_type", reqContent),
+		slog.Int64("resp_content_length", writer.bytesWritten),
+		slog.String("resp_content_type", respContent),
+		slog.String("remote_addr", remoteAddr),
+		slog.String("user_agent", userAgent),
+		slog.String("query", r.URL.RawQuery),
+	)
+
+	h.logger.LogAttrs(nil, slog.LevelInfo, "Request", loggedFields...)
+}
+
+func (h *LoggingMiddleware) buildHeaderFields(headers []string, r *http.Request) []slog.Attr {
+	attrs := []slog.Attr{}
+	for _, name := range headers {
+		key := "header_" + strings.Replace(strings.ToLower(name), "-", "_", -1)
+		value := r.Header.Get(name)
+		attrs = append(attrs, slog.String(key, value))
+	}
+	return attrs
 }
 
 type loggerResponseWriter struct {
