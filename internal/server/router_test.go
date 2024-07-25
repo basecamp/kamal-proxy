@@ -32,6 +32,18 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 	assert.Equal(t, "first", body)
 }
 
+func TestRouter_ActiveServiceForHostContainingPort(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body := sendGETRequest(router, "http://dummy.example.com:80/")
+
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+}
+
 func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)

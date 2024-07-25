@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -228,7 +229,12 @@ func (r *Router) saveStateSnapshot() error {
 }
 
 func (r *Router) serviceForRequest(req *http.Request) *Service {
-	return r.serviceForHost(req.Host)
+	host, _, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		host = req.Host
+	}
+
+	return r.serviceForHost(host)
 }
 
 func (r *Router) serviceForHost(host string) *Service {
