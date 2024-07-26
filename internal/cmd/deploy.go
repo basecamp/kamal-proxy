@@ -22,6 +22,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd = &cobra.Command{
 		Use:       "deploy <service>",
 		Short:     "Deploy a target host",
+		PreRunE:   deployCommand.preRun,
 		RunE:      deployCommand.deploy,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"service"},
@@ -54,10 +55,6 @@ func newDeployCommand() *deployCommand {
 func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
-	if c.tls && c.args.Host == "" {
-		return fmt.Errorf("host must be set when using TLS")
-	}
-
 	if c.tls {
 		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
 		c.args.ServiceOptions.TLSHostname = c.args.Host
@@ -72,4 +69,19 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 
 		return client.Call("kamal-proxy.Deploy", c.args, &response)
 	})
+}
+
+func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
+	flagsRequiringBuffering := []string{"max-request-body", "max-response-body", "buffer-memory"}
+	for _, flag := range flagsRequiringBuffering {
+		if cmd.Flags().Changed(flag) && !cmd.Flags().Changed("buffer") {
+			return fmt.Errorf("%s can only be set when buffering is enabled", flag)
+		}
+	}
+
+	if cmd.Flags().Changed("tls") && !cmd.Flags().Changed("host") {
+		return fmt.Errorf("host must be set when using TLS")
+	}
+
+	return nil
 }
