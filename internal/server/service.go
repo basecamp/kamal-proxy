@@ -32,6 +32,7 @@ const (
 	DefaultHealthCheckTimeout  = time.Second * 5
 
 	MaxIdleConnsPerHost = 100
+	ProxyBufferSize     = 32 * KB
 
 	DefaultTargetTimeout              = time.Second * 10
 	DefaultMaxRequestMemoryBufferSize = 1 * MB

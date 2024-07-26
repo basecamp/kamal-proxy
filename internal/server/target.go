@@ -251,7 +251,10 @@ func (t *Target) recordTargetNameForRequest(req *http.Request) {
 }
 
 func (t *Target) createProxyHandler() http.Handler {
+	bufferPool := NewBufferPool(ProxyBufferSize)
+
 	return &httputil.ReverseProxy{
+		BufferPool:   bufferPool,
 		Rewrite:      t.Rewrite,
 		ErrorHandler: t.handleProxyError,
 		Transport: &http.Transport{
