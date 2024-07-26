@@ -88,7 +88,7 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 	target.proxyHandler = target.createProxyHandler()
 
 	if options.BufferingEnabled {
-		target.proxyHandler = WithBufferMiddleware(options.MaxRequestBodySize, options.MaxMemoryBufferSize, options.MaxResponseBodySize, options.MaxMemoryBufferSize, target.proxyHandler)
+		target.proxyHandler = WithBufferMiddleware(options.MaxMemoryBufferSize, options.MaxRequestBodySize, options.MaxResponseBodySize, target.proxyHandler)
 	}
 
 	return target, nil

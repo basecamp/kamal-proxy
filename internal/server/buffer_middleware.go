@@ -8,25 +8,23 @@ import (
 )
 
 type BufferMiddleware struct {
-	maxRequestBytes     int64
-	maxRequestMemBytes  int64
-	maxResponseBytes    int64
-	maxResponseMemBytes int64
-	next                http.Handler
+	maxMemBytes      int64
+	maxRequestBytes  int64
+	maxResponseBytes int64
+	next             http.Handler
 }
 
-func WithBufferMiddleware(maxRequestBytes, maxRequestMemBytes, maxResponseBytes, maxResponseMemBytes int64, next http.Handler) http.Handler {
+func WithBufferMiddleware(maxMemBytes, maxRequestBytes, maxResponseBytes int64, next http.Handler) http.Handler {
 	return &BufferMiddleware{
-		maxRequestBytes:     maxRequestBytes,
-		maxRequestMemBytes:  maxRequestMemBytes,
-		maxResponseBytes:    maxResponseBytes,
-		maxResponseMemBytes: maxResponseMemBytes,
-		next:                next,
+		maxMemBytes:      maxMemBytes,
+		maxRequestBytes:  maxRequestBytes,
+		maxResponseBytes: maxResponseBytes,
+		next:             next,
 	}
 }
 
 func (h *BufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	requestBuffer, err := NewBufferedReadCloser(r.Body, h.maxRequestBytes, h.maxRequestMemBytes)
+	requestBuffer, err := NewBufferedReadCloser(r.Body, h.maxRequestBytes, h.maxMemBytes)
 	if err != nil {
 		if err == ErrMaximumSizeExceeded {
 			http.Error(w, "Request too large", http.StatusRequestEntityTooLarge)
@@ -37,7 +35,7 @@ func (h *BufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseBuffer := NewBufferedWriteCloser(h.maxResponseBytes, h.maxResponseMemBytes)
+	responseBuffer := NewBufferedWriteCloser(h.maxResponseBytes, h.maxMemBytes)
 	responseWriter := &bufferedResponseWriter{ResponseWriter: w, statusCode: http.StatusOK, buffer: responseBuffer}
 	defer responseBuffer.Close()
 

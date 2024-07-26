@@ -11,7 +11,7 @@ import (
 
 func TestBufferMiddleware(t *testing.T) {
 	sendRequest := func(requestBody, responseBody string) *httptest.ResponseRecorder {
-		middleware := WithBufferMiddleware(8, 4, 8, 4, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		middleware := WithBufferMiddleware(4, 8, 8, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(responseBody))
 		}))
 
