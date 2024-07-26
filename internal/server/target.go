@@ -50,11 +50,12 @@ type inflightRequest struct {
 type inflightMap map[*http.Request]*inflightRequest
 
 type TargetOptions struct {
-	HealthCheckConfig          HealthCheckConfig
-	ResponseTimeout            time.Duration
-	BufferRequests             bool
-	MaxRequestMemoryBufferSize int64
-	MaxRequestBodySize         int64
+	HealthCheckConfig   HealthCheckConfig
+	ResponseTimeout     time.Duration
+	BufferingEnabled    bool
+	MaxMemoryBufferSize int64
+	MaxRequestBodySize  int64
+	MaxResponseBodySize int64
 }
 
 type Target struct {
@@ -86,9 +87,8 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 
 	target.proxyHandler = target.createProxyHandler()
 
-	if options.BufferRequests {
-		maxRequestBody := max(options.MaxRequestMemoryBufferSize, options.MaxRequestBodySize)
-		target.proxyHandler = WithBufferMiddleware(maxRequestBody, options.MaxRequestMemoryBufferSize, target.proxyHandler)
+	if options.BufferingEnabled {
+		target.proxyHandler = WithBufferMiddleware(options.MaxMemoryBufferSize, options.MaxRequestBodySize, options.MaxResponseBodySize, target.proxyHandler)
 	}
 
 	return target, nil
@@ -121,10 +121,6 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 
 	inflightRequest := t.getInflightRequest(req)
 	tw := newTargetResponseWriter(w, inflightRequest)
-
-	if t.options.MaxRequestBodySize > 0 {
-		req.Body = http.MaxBytesReader(tw, req.Body, t.options.MaxRequestBodySize)
-	}
 
 	t.proxyHandler.ServeHTTP(tw, req)
 }

@@ -34,9 +34,10 @@ const (
 	MaxIdleConnsPerHost = 100
 	ProxyBufferSize     = 32 * KB
 
-	DefaultTargetTimeout              = time.Second * 10
-	DefaultMaxRequestMemoryBufferSize = 1 * MB
-	DefaultMaxRequestBodySize         = 1 * GB
+	DefaultTargetTimeout       = time.Second * 10
+	DefaultMaxMemoryBufferSize = 1 * MB
+	DefaultMaxRequestBodySize  = 0
+	DefaultMaxResponseBodySize = 0
 )
 
 type HealthCheckConfig struct {

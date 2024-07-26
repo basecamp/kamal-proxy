@@ -1,7 +1,6 @@
 package server
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,12 +10,12 @@ import (
 )
 
 func TestBufferMiddleware(t *testing.T) {
-	sendRequest := func(body string) *httptest.ResponseRecorder {
-		middleware := WithBufferMiddleware(8, 4, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			io.Copy(w, r.Body)
+	sendRequest := func(requestBody, responseBody string) *httptest.ResponseRecorder {
+		middleware := WithBufferMiddleware(4, 8, 8, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(responseBody))
 		}))
 
-		req := httptest.NewRequest("POST", "http://app.example.com/somepath", strings.NewReader(body))
+		req := httptest.NewRequest("POST", "http://app.example.com/somepath", strings.NewReader(requestBody))
 		rec := httptest.NewRecorder()
 
 		middleware.ServeHTTP(rec, req)
@@ -24,15 +23,21 @@ func TestBufferMiddleware(t *testing.T) {
 	}
 
 	t.Run("success", func(t *testing.T) {
-		w := sendRequest("hello")
+		w := sendRequest("hello", "ok")
 
 		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
-		assert.Equal(t, "hello", w.Body.String())
+		assert.Equal(t, "ok", w.Body.String())
 	})
 
-	t.Run("body too large", func(t *testing.T) {
-		w := sendRequest("this request body is much too large")
+	t.Run("request body too large", func(t *testing.T) {
+		w := sendRequest("this request body is much too large", "ok")
 
 		assert.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
+	})
+
+	t.Run("response body too large", func(t *testing.T) {
+		w := sendRequest("hello", "this response body is much too large")
+
+		assert.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
 	})
 }

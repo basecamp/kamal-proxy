@@ -22,6 +22,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd = &cobra.Command{
 		Use:       "deploy <service>",
 		Short:     "Deploy a target host",
+		PreRunE:   deployCommand.preRun,
 		RunE:      deployCommand.deploy,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"service"},
@@ -41,9 +42,10 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.ResponseTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
 
-	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.BufferRequests, "buffer-requests", false, "Enable request buffering")
-	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestMemoryBufferSize, "buffer-memory", server.DefaultMaxRequestMemoryBufferSize, "Max size of request memory buffer")
-	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestBodySize, "max-request-body", server.DefaultMaxRequestBodySize, "Max size of request body")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.BufferingEnabled, "buffer", false, "Enable buffering")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxMemoryBufferSize, "buffer-memory", server.DefaultMaxMemoryBufferSize, "Max size of memory buffer")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestBodySize, "max-request-body", server.DefaultMaxRequestBodySize, "Max size of request body when buffering (default of 0 means unlimited)")
+	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxResponseBodySize, "max-response-body", server.DefaultMaxRequestBodySize, "Max size of response body when buffering (default of 0 means unlimited)")
 
 	deployCommand.cmd.MarkFlagRequired("target")
 
@@ -52,10 +54,6 @@ func newDeployCommand() *deployCommand {
 
 func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
-
-	if c.tls && c.args.Host == "" {
-		return fmt.Errorf("host must be set when using TLS")
-	}
 
 	if c.tls {
 		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
@@ -71,4 +69,19 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 
 		return client.Call("kamal-proxy.Deploy", c.args, &response)
 	})
+}
+
+func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
+	flagsRequiringBuffering := []string{"max-request-body", "max-response-body", "buffer-memory"}
+	for _, flag := range flagsRequiringBuffering {
+		if cmd.Flags().Changed(flag) && !cmd.Flags().Changed("buffer") {
+			return fmt.Errorf("%s can only be set when buffering is enabled", flag)
+		}
+	}
+
+	if cmd.Flags().Changed("tls") && !cmd.Flags().Changed("host") {
+		return fmt.Errorf("host must be set when using TLS")
+	}
+
+	return nil
 }
