@@ -126,7 +126,7 @@ func (s *Service) SetActiveTarget(target *Target, drainTimeout time.Duration) {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.recordServiceNameForRequest(r)
+	LoggingRequestContext(r).Service = s.name
 
 	if s.options.RequireTLS() && r.TLS == nil {
 		s.redirectToHTTPS(w, r)
@@ -256,13 +256,6 @@ func (s *Service) Resume() error {
 func (s *Service) initialize() {
 	s.pauseControl = NewPauseControl()
 	s.certManager = s.createCertManager()
-}
-
-func (s *Service) recordServiceNameForRequest(req *http.Request) {
-	serviceIdentifer, ok := req.Context().Value(contextKeyService).(*string)
-	if ok {
-		*serviceIdentifer = s.name
-	}
 }
 
 func (s *Service) createCertManager() *autocert.Manager {

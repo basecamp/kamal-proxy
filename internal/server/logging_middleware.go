@@ -7,15 +7,22 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
 type contextKey string
 
 var (
-	contextKeyService = contextKey("service")
-	contextKeyTarget  = contextKey("target")
+	contextKeyRequestContext = contextKey("request-context")
 )
+
+type loggingRequestContext struct {
+	Service         string
+	Target          string
+	RequestHeaders  []string
+	ResponseHeaders []string
+}
 
 type LoggingMiddleware struct {
 	logger *slog.Logger
@@ -29,44 +36,62 @@ func WithLoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler 
 	}
 }
 
+func LoggingRequestContext(r *http.Request) *loggingRequestContext {
+	lrc, ok := r.Context().Value(contextKeyRequestContext).(*loggingRequestContext)
+	if !ok {
+		return &loggingRequestContext{}
+	}
+	return lrc
+}
+
 func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := newLoggerResponseWriter(w)
 
-	var service string
-	var target string
-	ctx := context.WithValue(r.Context(), contextKeyService, &service)
-	ctx = context.WithValue(ctx, contextKeyTarget, &target)
+	var loggingRequestContext loggingRequestContext
+	ctx := context.WithValue(r.Context(), contextKeyRequestContext, &loggingRequestContext)
 	r = r.WithContext(ctx)
 
 	started := time.Now()
 	h.next.ServeHTTP(writer, r)
 	elapsed := time.Since(started)
 
-	userAgent := r.Header.Get("User-Agent")
-	reqContent := r.Header.Get("Content-Type")
-	respContent := writer.Header().Get("Content-Type")
 	remoteAddr := r.Header.Get("X-Forwarded-For")
-	requestID := r.Header.Get("X-Request-ID")
 	if remoteAddr == "" {
 		remoteAddr = r.RemoteAddr
 	}
 
-	h.logger.Info("Request",
-		"host", r.Host,
-		"path", r.URL.Path,
-		"request_id", requestID,
-		"status", writer.statusCode,
-		"service", service,
-		"target", target,
-		"duration", elapsed.Nanoseconds(),
-		"method", r.Method,
-		"req_content_length", r.ContentLength,
-		"req_content_type", reqContent,
-		"resp_content_length", writer.bytesWritten,
-		"resp_content_type", respContent,
-		"remote_addr", remoteAddr,
-		"user_agent", userAgent,
-		"query", r.URL.RawQuery)
+	attrs := []slog.Attr{
+		slog.String("host", r.Host),
+		slog.String("path", r.URL.Path),
+		slog.String("request_id", r.Header.Get("X-Request-ID")),
+		slog.Int("status", writer.statusCode),
+		slog.String("service", loggingRequestContext.Service),
+		slog.String("target", loggingRequestContext.Target),
+		slog.Int64("duration", elapsed.Nanoseconds()),
+		slog.String("method", r.Method),
+		slog.Int64("req_content_length", r.ContentLength),
+		slog.String("req_content_type", r.Header.Get("Content-Type")),
+		slog.Int64("resp_content_length", writer.bytesWritten),
+		slog.String("resp_content_type", writer.Header().Get("Content-Type")),
+		slog.String("remote_addr", remoteAddr),
+		slog.String("user_agent", r.Header.Get("User-Agent")),
+		slog.String("query", r.URL.RawQuery),
+	}
+
+	attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.RequestHeaders, r.Header, "req")...)
+	attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.ResponseHeaders, writer.Header(), "resp")...)
+
+	h.logger.LogAttrs(nil, slog.LevelInfo, "Request", attrs...)
+}
+
+func (h *LoggingMiddleware) retrieveCustomHeaders(headerNames []string, header http.Header, prefix string) []slog.Attr {
+	attrs := []slog.Attr{}
+	for _, headerName := range headerNames {
+		name := prefix + "_" + strings.ReplaceAll(strings.ToLower(headerName), "-", "_")
+		value := strings.Join(header[headerName], ",")
+		attrs = append(attrs, slog.String(name, value))
+	}
+	return attrs
 }
 
 type loggerResponseWriter struct {

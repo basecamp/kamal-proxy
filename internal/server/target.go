@@ -57,6 +57,17 @@ type TargetOptions struct {
 	MaxMemoryBufferSize int64             `json:"max_memory_buffer_size"`
 	MaxRequestBodySize  int64             `json:"max_request_body_size"`
 	MaxResponseBodySize int64             `json:"max_response_body_size"`
+	LogRequestHeaders   []string          `json:"log_request_headers"`
+	LogResponseHeaders  []string          `json:"log_response_headers"`
+}
+
+func (to *TargetOptions) CanonicalizeLogHeaders() {
+	for i, header := range to.LogRequestHeaders {
+		to.LogRequestHeaders[i] = http.CanonicalHeaderKey(header)
+	}
+	for i, header := range to.LogResponseHeaders {
+		to.LogResponseHeaders[i] = http.CanonicalHeaderKey(header)
+	}
 }
 
 type Target struct {
@@ -77,6 +88,8 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	options.CanonicalizeLogHeaders()
 
 	target := &Target{
 		targetURL: uri,
@@ -120,12 +133,14 @@ func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
 }
 
 func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
-	defer t.endInflightRequest(req)
-	t.recordTargetNameForRequest(req)
+	LoggingRequestContext(req).Target = t.Target()
+	LoggingRequestContext(req).RequestHeaders = t.options.LogRequestHeaders
+	LoggingRequestContext(req).ResponseHeaders = t.options.LogResponseHeaders
 
 	inflightRequest := t.getInflightRequest(req)
-	tw := newTargetResponseWriter(w, inflightRequest)
+	defer t.endInflightRequest(req)
 
+	tw := newTargetResponseWriter(w, inflightRequest)
 	t.proxyHandler.ServeHTTP(tw, req)
 }
 
@@ -242,13 +257,6 @@ func (t *Target) HealthCheckCompleted(success bool) {
 }
 
 // Private
-
-func (t *Target) recordTargetNameForRequest(req *http.Request) {
-	targetIdentifer, ok := req.Context().Value(contextKeyTarget).(*string)
-	if ok {
-		*targetIdentifer = t.Target()
-	}
-}
 
 func (t *Target) createProxyHandler() http.Handler {
 	bufferPool := NewBufferPool(ProxyBufferSize)

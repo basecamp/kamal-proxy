@@ -18,17 +18,14 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
 	logger := slog.New(slog.NewJSONHandler(out, nil))
 	middleware := WithLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Record a value for the `service` and `target` context keys
-		service, ok := r.Context().Value(contextKeyService).(*string)
-		if ok {
-			*service = "myapp"
-		}
-		target, ok := r.Context().Value(contextKeyTarget).(*string)
-		if ok {
-			*target = "upstream:3000"
-		}
+		LoggingRequestContext(r).Service = "myapp"
+		LoggingRequestContext(r).Target = "upstream:3000"
+		LoggingRequestContext(r).RequestHeaders = []string{"X-Custom"}
+		LoggingRequestContext(r).ResponseHeaders = []string{"Cache-Control", "X-Custom"}
 
 		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("X-Custom", "goodbye")
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintln(w, "goodbye")
 	}))
@@ -38,6 +35,9 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "192.168.1.1")
 	req.Header.Set("User-Agent", "Robot/1")
 	req.Header.Set("Content-Type", "application/json")
+
+	// Ensure non-canonicalised headers are logged too
+	req.Header.Set("x-custom", "hello")
 
 	middleware.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -58,6 +58,9 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 		Query             string `json:"query"`
 		Service           string `json:"service"`
 		Target            string `json:"target"`
+		ReqXCustom        string `json:"req_x_custom"`
+		RespCacheControl  string `json:"resp_cache_control"`
+		RespXCustom       string `json:"resp_x_custom"`
 	}{}
 
 	err := json.NewDecoder(strings.NewReader(out.String())).Decode(&logline)
@@ -79,4 +82,7 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	assert.Equal(t, int64(8), logline.RespContentLength)
 	assert.Equal(t, "upstream:3000", logline.Target)
 	assert.Equal(t, "myapp", logline.Service)
+	assert.Equal(t, "hello", logline.ReqXCustom)
+	assert.Equal(t, "public, max-age=3600", logline.RespCacheControl)
+	assert.Equal(t, "goodbye", logline.RespXCustom)
 }
