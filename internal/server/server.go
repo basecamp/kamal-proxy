@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -17,10 +16,6 @@ const (
 	ACMEStagingDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 	shutdownTimeout = 10 * time.Second
-)
-
-var (
-	ErrorHostTLSNotPermitted = errors.New("host not permitted for TLS")
 )
 
 type Server struct {
