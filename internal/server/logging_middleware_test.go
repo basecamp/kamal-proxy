@@ -17,7 +17,7 @@ import (
 func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
 	logger := slog.New(slog.NewJSONHandler(out, nil))
-	middleware := WithLoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		LoggingRequestContext(r).Service = "myapp"
 		LoggingRequestContext(r).Target = "upstream:3000"
 		LoggingRequestContext(r).RequestHeaders = []string{"X-Custom"}
@@ -28,7 +28,9 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 		w.Header().Set("X-Custom", "goodbye")
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintln(w, "goodbye")
-	}))
+	})
+
+	middleware := WithLoggingMiddleware(logger, 80, 443, handler)
 
 	req := httptest.NewRequest("POST", "http://app.example.com/somepath?q=ok", bytes.NewReader([]byte("hello")))
 	req.Header.Set("X-Request-ID", "request-id")
@@ -46,9 +48,12 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 		Level             string `json:"level"`
 		RequestID         string `json:"request_id"`
 		Host              string `json:"host"`
+		Port              int    `json:"port"`
 		Path              string `json:"path"`
 		Method            string `json:"method"`
 		Status            int    `json:"status"`
+		ClientAddr        string `json:"client_addr"`
+		ClientPort        string `json:"client_port"`
 		RemoteAddr        string `json:"remote_addr"`
 		UserAgent         string `json:"user_agent"`
 		ReqContentLength  int64  `json:"req_content_length"`
@@ -61,6 +66,8 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 		ReqXCustom        string `json:"req_x_custom"`
 		RespCacheControl  string `json:"resp_cache_control"`
 		RespXCustom       string `json:"resp_x_custom"`
+		Proto             string `json:"proto"`
+		Scheme            string `json:"scheme"`
 	}{}
 
 	err := json.NewDecoder(strings.NewReader(out.String())).Decode(&logline)
@@ -70,9 +77,12 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	assert.Equal(t, "INFO", logline.Level)
 	assert.Equal(t, "request-id", logline.RequestID)
 	assert.Equal(t, "app.example.com", logline.Host)
+	assert.Equal(t, 80, logline.Port)
 	assert.Equal(t, "/somepath", logline.Path)
 	assert.Equal(t, "POST", logline.Method)
 	assert.Equal(t, http.StatusCreated, logline.Status)
+	assert.Equal(t, "192.0.2.1", logline.ClientAddr)
+	assert.Equal(t, "1234", logline.ClientPort)
 	assert.Equal(t, "192.168.1.1", logline.RemoteAddr)
 	assert.Equal(t, "Robot/1", logline.UserAgent)
 	assert.Equal(t, "application/json", logline.ReqContentType)
@@ -85,4 +95,6 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	assert.Equal(t, "hello", logline.ReqXCustom)
 	assert.Equal(t, "public, max-age=3600", logline.RespCacheControl)
 	assert.Equal(t, "goodbye", logline.RespXCustom)
+	assert.Equal(t, "HTTP/1.1", logline.Proto)
+	assert.Equal(t, "http", logline.Scheme)
 }

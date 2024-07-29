@@ -25,14 +25,18 @@ type loggingRequestContext struct {
 }
 
 type LoggingMiddleware struct {
-	logger *slog.Logger
-	next   http.Handler
+	logger    *slog.Logger
+	httpPort  int
+	httpsPort int
+	next      http.Handler
 }
 
-func WithLoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+func WithLoggingMiddleware(logger *slog.Logger, httpPort, httpsPort int, next http.Handler) http.Handler {
 	return &LoggingMiddleware{
-		logger: logger,
-		next:   next,
+		logger:    logger,
+		httpPort:  httpPort,
+		httpsPort: httpsPort,
+		next:      next,
 	}
 }
 
@@ -55,13 +59,27 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.next.ServeHTTP(writer, r)
 	elapsed := time.Since(started)
 
+	port := h.httpPort
+	scheme := "http"
+	if r.TLS != nil {
+		port = h.httpsPort
+		scheme = "https"
+	}
+
+	clientAddr, clientPort, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		clientAddr = r.RemoteAddr
+		clientPort = ""
+	}
+
 	remoteAddr := r.Header.Get("X-Forwarded-For")
 	if remoteAddr == "" {
-		remoteAddr = r.RemoteAddr
+		remoteAddr = clientAddr
 	}
 
 	attrs := []slog.Attr{
 		slog.String("host", r.Host),
+		slog.Int("port", port),
 		slog.String("path", r.URL.Path),
 		slog.String("request_id", r.Header.Get("X-Request-ID")),
 		slog.Int("status", writer.statusCode),
@@ -73,8 +91,12 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.String("req_content_type", r.Header.Get("Content-Type")),
 		slog.Int64("resp_content_length", writer.bytesWritten),
 		slog.String("resp_content_type", writer.Header().Get("Content-Type")),
+		slog.String("client_addr", clientAddr),
+		slog.String("client_port", clientPort),
 		slog.String("remote_addr", remoteAddr),
 		slog.String("user_agent", r.Header.Get("User-Agent")),
+		slog.String("proto", r.Proto),
+		slog.String("scheme", scheme),
 		slog.String("query", r.URL.RawQuery),
 	}
 
