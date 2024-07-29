@@ -50,13 +50,13 @@ type inflightRequest struct {
 type inflightMap map[*http.Request]*inflightRequest
 
 type TargetOptions struct {
-	HealthCheckConfig   HealthCheckConfig
-	ResponseTimeout     time.Duration
-	BufferRequests      bool
-	BufferResponses     bool
-	MaxMemoryBufferSize int64
-	MaxRequestBodySize  int64
-	MaxResponseBodySize int64
+	HealthCheckConfig   HealthCheckConfig `json:"health_check_config"`
+	ResponseTimeout     time.Duration     `json:"response_timeout"`
+	BufferRequests      bool              `json:"buffer_requests"`
+	BufferResponses     bool              `json:"buffer_responses"`
+	MaxMemoryBufferSize int64             `json:"max_memory_buffer_size"`
+	MaxRequestBodySize  int64             `json:"max_request_body_size"`
+	MaxResponseBodySize int64             `json:"max_response_body_size"`
 }
 
 type Target struct {
