@@ -52,7 +52,8 @@ type inflightMap map[*http.Request]*inflightRequest
 type TargetOptions struct {
 	HealthCheckConfig   HealthCheckConfig
 	ResponseTimeout     time.Duration
-	BufferingEnabled    bool
+	BufferRequests      bool
+	BufferResponses     bool
 	MaxMemoryBufferSize int64
 	MaxRequestBodySize  int64
 	MaxResponseBodySize int64
@@ -87,8 +88,11 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 
 	target.proxyHandler = target.createProxyHandler()
 
-	if options.BufferingEnabled {
-		target.proxyHandler = WithBufferMiddleware(options.MaxMemoryBufferSize, options.MaxRequestBodySize, options.MaxResponseBodySize, target.proxyHandler)
+	if options.BufferResponses {
+		target.proxyHandler = WithResponseBufferMiddleware(options.MaxMemoryBufferSize, options.MaxResponseBodySize, target.proxyHandler)
+	}
+	if options.BufferRequests {
+		target.proxyHandler = WithRequestBufferMiddleware(options.MaxMemoryBufferSize, options.MaxRequestBodySize, target.proxyHandler)
 	}
 
 	return target, nil

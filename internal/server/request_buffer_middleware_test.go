@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBufferMiddleware(t *testing.T) {
+func TestRequestBufferMiddleware(t *testing.T) {
 	sendRequest := func(requestBody, responseBody string) *httptest.ResponseRecorder {
-		middleware := WithBufferMiddleware(4, 8, 8, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		middleware := WithRequestBufferMiddleware(4, 8, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(responseBody))
 		}))
 
@@ -33,11 +33,5 @@ func TestBufferMiddleware(t *testing.T) {
 		w := sendRequest("this request body is much too large", "ok")
 
 		assert.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
-	})
-
-	t.Run("response body too large", func(t *testing.T) {
-		w := sendRequest("hello", "this response body is much too large")
-
-		assert.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
 	})
 }

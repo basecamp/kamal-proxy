@@ -83,14 +83,14 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 	serviceOptions := defaultServiceOptions
 	targetOptions := defaultTargetOptions
 
-	targetOptions.BufferingEnabled = true
+	targetOptions.BufferRequests = true
 	targetOptions.MaxRequestBodySize = 10
 	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusRequestEntityTooLarge, statusCode)
 
-	targetOptions.BufferingEnabled = false
+	targetOptions.BufferRequests = false
 	targetOptions.MaxRequestBodySize = 0
 	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 

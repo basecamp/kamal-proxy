@@ -42,7 +42,8 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.ResponseTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
 
-	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.BufferingEnabled, "buffer", false, "Enable buffering")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.BufferRequests, "buffer-requests", false, "Buffer requests before forwarding to target")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.BufferResponses, "buffer-responses", false, "Buffer responses before forwarding to client")
 	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxMemoryBufferSize, "buffer-memory", server.DefaultMaxMemoryBufferSize, "Max size of memory buffer")
 	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxRequestBodySize, "max-request-body", server.DefaultMaxRequestBodySize, "Max size of request body when buffering (default of 0 means unlimited)")
 	deployCommand.cmd.Flags().Int64Var(&deployCommand.args.TargetOptions.MaxResponseBodySize, "max-response-body", server.DefaultMaxResponseBodySize, "Max size of response body when buffering (default of 0 means unlimited)")
@@ -72,11 +73,12 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 }
 
 func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
-	flagsRequiringBuffering := []string{"max-request-body", "max-response-body", "buffer-memory"}
-	for _, flag := range flagsRequiringBuffering {
-		if cmd.Flags().Changed(flag) && !cmd.Flags().Changed("buffer") {
-			return fmt.Errorf("%s can only be set when buffering is enabled", flag)
-		}
+	if cmd.Flags().Changed("max-request-body") && !cmd.Flags().Changed("buffer-requests") {
+		return fmt.Errorf("max-request-body can only be set when request buffering is enabled")
+	}
+
+	if cmd.Flags().Changed("max-response-body") && !cmd.Flags().Changed("buffer-responses") {
+		return fmt.Errorf("max-response-body can only be set when response buffering is enabled")
 	}
 
 	if cmd.Flags().Changed("tls") && !cmd.Flags().Changed("host") {
