@@ -1,0 +1,33 @@
+#!/bin/bash
+
+set -e
+
+usage() {
+  echo "Usage: $0 <version>"
+  echo "  <version>    The new version number (e.g. 1.2.3)"
+  exit 1
+}
+
+if [ $# -ne 1 ]; then
+  usage
+fi
+
+VERSION=$1
+TAG=v$VERSION
+
+docker login
+make test
+git fetch origin --tags
+
+git tag -a ${TAG} -m "Version ${VERSION}
+
+- list important changes here" -e
+
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --tag dmcbreen/kamal-proxy:${TAG} \
+  --tag dmcbreen/kamal-proxy:latest \
+  --label "org.opencontainers.image.title=kamal-proxy" \
+  --push .
+
+git push origin tag ${TAG}
