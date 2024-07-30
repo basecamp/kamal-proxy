@@ -45,6 +45,13 @@ type RemoveArgs struct {
 	Service string
 }
 
+type RolloutDeployArgs struct {
+	Service       string
+	TargetURL     string
+	DeployTimeout time.Duration
+	DrainTimeout  time.Duration
+}
+
 type ListResponse struct {
 	Targets ServiceDescriptionMap `json:"services"`
 }
@@ -119,4 +126,8 @@ func (h *CommandHandler) List(args bool, reply *ListResponse) error {
 	reply.Targets = h.router.ListActiveServices()
 
 	return nil
+}
+
+func (h *CommandHandler) RolloutDeploy(args RolloutDeployArgs, reply *bool) error {
+	return h.router.SetRolloutTarget(args.Service, args.TargetURL, args.DeployTimeout, args.DrainTimeout)
 }

@@ -111,6 +111,35 @@ func (r *Router) SetServiceTarget(name string, host string, targetURL string,
 	return r.saveStateSnapshot()
 }
 
+func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	slog.Info("Deploying for rollout", "service", name, "target", targetURL)
+
+	// TODO: check locking here, since our ordering is different from the usual case.
+
+	service := r.serviceForName(name, true)
+	if service == nil {
+		return ErrorServiceNotFound
+	}
+	targetOptions := service.ActiveTarget().options
+
+	target, err := NewTarget(targetURL, targetOptions)
+	if err != nil {
+		return err
+	}
+
+	becameHealthy := target.WaitUntilHealthy(deployTimeout)
+	if !becameHealthy {
+		slog.Info("Rollout target failed to become healthy", "service", service, "target", targetURL)
+		return ErrorTargetFailedToBecomeHealthy
+	}
+
+	service.SetTarget(TargetSlotRollout, target, drainTimeout)
+
+	slog.Info("Deployed for rollout", "service", name, "target", targetURL)
+
+	return r.saveStateSnapshot()
+}
+
 func (r *Router) RemoveService(name string) error {
 	err := r.withWriteLock(func() error {
 		service := r.serviceForName(name, false)

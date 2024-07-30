@@ -28,6 +28,7 @@ func Execute() {
 	rootCmd.AddCommand(newStopCommand().cmd)
 	rootCmd.AddCommand(newResumeCommand().cmd)
 	rootCmd.AddCommand(newListCommand().cmd)
+	rootCmd.AddCommand(newRolloutCommand().cmd)
 
 	err := rootCmd.Execute()
 	if err != nil {

@@ -72,7 +72,6 @@ func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		var response bool
-
 		return client.Call("kamal-proxy.Deploy", c.args, &response)
 	})
 }
