@@ -40,6 +40,13 @@ const (
 	DefaultMaxResponseBodySize = 0
 )
 
+type TargetSlot int
+
+const (
+	TargetSlotActive TargetSlot = iota
+	TargetSlotRollout
+)
+
 type HealthCheckConfig struct {
 	Path     string        `json:"path"`
 	Interval time.Duration `json:"interval"`
@@ -75,6 +82,7 @@ type Service struct {
 	options ServiceOptions
 
 	active     *Target
+	rollout    *Target
 	targetLock sync.RWMutex
 
 	pauseControl *PauseControl
@@ -105,6 +113,13 @@ func (s *Service) ActiveTarget() *Target {
 	return s.active
 }
 
+func (s *Service) RolloutTarget() *Target {
+	s.targetLock.RLock()
+	defer s.targetLock.RUnlock()
+
+	return s.rollout
+}
+
 func (s *Service) ClaimTarget(req *http.Request) (*Target, *http.Request, error) {
 	s.targetLock.RLock()
 	defer s.targetLock.RUnlock()
@@ -113,16 +128,26 @@ func (s *Service) ClaimTarget(req *http.Request) (*Target, *http.Request, error)
 	return s.active, req, err
 }
 
-func (s *Service) SetActiveTarget(target *Target, drainTimeout time.Duration) {
+func (s *Service) SetTarget(slot TargetSlot, target *Target, drainTimeout time.Duration) {
 	s.targetLock.Lock()
 	defer s.targetLock.Unlock()
 
-	if s.active != nil {
-		s.active.StopHealthChecks()
-		go s.active.Drain(drainTimeout)
+	var replaced *Target
+
+	switch slot {
+	case TargetSlotActive:
+		replaced = s.active
+		s.active = target
+
+	case TargetSlotRollout:
+		replaced = s.rollout
+		s.rollout = target
 	}
 
-	s.active = target
+	if replaced != nil {
+		replaced.StopHealthChecks()
+		go replaced.Drain(drainTimeout)
+	}
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -175,17 +200,26 @@ type marshalledService struct {
 	Name          string         `json:"name"`
 	Host          string         `json:"host"`
 	ActiveTarget  string         `json:"active_target"`
+	RolloutTarget string         `json:"rollout_target"`
 	Options       ServiceOptions `json:"options"`
 	TargetOptions TargetOptions  `json:"target_options"`
 }
 
 func (s *Service) MarshalJSON() ([]byte, error) {
+	activeTarget := s.active.Target()
+	rolloutTarget := ""
+	if s.rollout != nil {
+		rolloutTarget = s.rollout.Target()
+	}
+	targetOptions := s.active.options
+
 	return json.Marshal(marshalledService{
 		Name:          s.name,
 		Host:          s.host,
-		ActiveTarget:  s.ActiveTarget().Target(),
+		ActiveTarget:  activeTarget,
+		RolloutTarget: rolloutTarget,
 		Options:       s.options,
-		TargetOptions: s.ActiveTarget().options,
+		TargetOptions: targetOptions,
 	})
 }
 
@@ -200,16 +234,9 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.host = ms.Host
 	s.options = ms.Options
 
-	active, err := NewTarget(ms.ActiveTarget, ms.TargetOptions)
-	if err != nil {
-		return err
-	}
+	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
+	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
 
-	// Restored targets are always considered healthy, because they would have
-	// been that way when they were saved.
-	active.state = TargetStateHealthy
-
-	s.active = active
 	s.initialize()
 
 	return nil
@@ -269,6 +296,31 @@ func (s *Service) createCertManager() *autocert.Manager {
 		HostPolicy: autocert.HostWhitelist(s.options.TLSHostname),
 		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
 	}
+}
+
+func (s *Service) restoreSavedTarget(slot TargetSlot, savedTarget string, options TargetOptions) error {
+	if savedTarget == "" {
+		return nil // Nothing to restore
+	}
+
+	target, err := NewTarget(savedTarget, options)
+	if err != nil {
+		return err
+	}
+
+	// Restored targets are always considered healthy, because they would have
+	// been that way when they were saved.
+	target.state = TargetStateHealthy
+
+	switch slot {
+	case TargetSlotActive:
+		s.active = target
+
+	case TargetSlotRollout:
+		s.rollout = target
+	}
+
+	return nil
 }
 
 func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {

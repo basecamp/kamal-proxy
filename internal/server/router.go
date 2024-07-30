@@ -118,7 +118,7 @@ func (r *Router) RemoveService(name string) error {
 			return ErrorServiceNotFound
 		}
 
-		service.SetActiveTarget(nil, DefaultDrainTimeout)
+		service.SetTarget(TargetSlotActive, nil, DefaultDrainTimeout)
 		delete(r.services, service.host)
 
 		return nil
@@ -273,7 +273,7 @@ func (r *Router) setActiveTarget(name string, host string, target *Target, optio
 		return ErrorHostInUse
 	}
 
-	service.SetActiveTarget(target, drainTimeout)
+	service.SetTarget(TargetSlotActive, target, drainTimeout)
 
 	return nil
 }
