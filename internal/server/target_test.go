@@ -103,22 +103,30 @@ func TestTarget_PreserveTargetHeader(t *testing.T) {
 	require.Equal(t, "custom.example.com", requestTarget)
 }
 
-func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
+func TestTarget_XForwardedHeadersPopulatedByDefault(t *testing.T) {
 	var (
 		xForwardedFor   string
 		xForwardedProto string
+		xForwardedHost  string
 		customHeader    string
 	)
 
-	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+	targetOptions := TargetOptions{ForwardHeaders: false}
+	target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
 		xForwardedFor = r.Header.Get("X-Forwarded-For")
 		xForwardedProto = r.Header.Get("X-Forwarded-Proto")
+		xForwardedHost = r.Header.Get("X-Forwarded-Host")
 		customHeader = r.Header.Get("Custom-Header")
 	})
 
-	// Preserving headers where X-Forwarded-For exists
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+
+	// These values should be untrusted and cleared
+	req.Header.Set("X-Forwarded-For", "10.10.10.10")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "untrusted.example.com")
+
+	// Other headers should be preserved
 	req.Header.Set("Custom-Header", "Custom value")
 
 	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
@@ -128,16 +136,56 @@ func TestTarget_HeadersAreCorrectlyPreserved(t *testing.T) {
 	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-	require.Equal(t, "1.2.3.4, "+clientIP, xForwardedFor)
+	require.Equal(t, clientIP, xForwardedFor)
 	require.Equal(t, "http", xForwardedProto)
+	require.Equal(t, "example.com", xForwardedHost)
+	require.Equal(t, "Custom value", customHeader)
+}
+
+func TestTarget_XForwardedHeadersCanBeForwarded(t *testing.T) {
+	var (
+		xForwardedFor   string
+		xForwardedProto string
+		xForwardedHost  string
+		customHeader    string
+	)
+
+	targetOptions := TargetOptions{ForwardHeaders: true}
+	target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
+		xForwardedFor = r.Header.Get("X-Forwarded-For")
+		xForwardedProto = r.Header.Get("X-Forwarded-Proto")
+		xForwardedHost = r.Header.Get("X-Forwarded-Host")
+		customHeader = r.Header.Get("Custom-Header")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	// These headers should all be trusted and forwarded
+	req.Header.Set("X-Forwarded-For", "10.10.10.10")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "untrusted.example.com")
+	req.Header.Set("Custom-Header", "Custom value")
+
+	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	testServeRequestWithTarget(t, target, w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, "10.10.10.10, "+clientIP, xForwardedFor)
+	require.Equal(t, "https", xForwardedProto)
+	require.Equal(t, "untrusted.example.com", xForwardedHost)
 	require.Equal(t, "Custom value", customHeader)
 
-	// Adding X-Forwarded-For if the original does not have one
+	// Headers will still be populated as usual if they are not present
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
 	testServeRequestWithTarget(t, target, w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, clientIP, xForwardedFor)
+	require.Equal(t, "http", xForwardedProto)
+	require.Equal(t, "example.com", xForwardedHost)
 }
 
 func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {

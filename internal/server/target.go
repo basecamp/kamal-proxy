@@ -59,6 +59,7 @@ type TargetOptions struct {
 	MaxResponseBodySize int64             `json:"max_response_body_size"`
 	LogRequestHeaders   []string          `json:"log_request_headers"`
 	LogResponseHeaders  []string          `json:"log_response_headers"`
+	ForwardHeaders      bool              `json:"forward_headers"`
 }
 
 func (to *TargetOptions) CanonicalizeLogHeaders() {
@@ -148,10 +149,25 @@ func (t *Target) IsHealthCheckRequest(r *http.Request) bool {
 	return r.Method == http.MethodGet && r.URL.Path == t.options.HealthCheckConfig.Path
 }
 
-func (t *Target) Rewrite(req *httputil.ProxyRequest) {
-	// Preserve & append X-Forwarded-For
-	req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
+func (t *Target) forwardHeaders(req *httputil.ProxyRequest) {
+	if t.options.ForwardHeaders {
+		req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
+	}
+
 	req.SetXForwarded()
+
+	if t.options.ForwardHeaders {
+		if req.In.Header.Get("X-Forwarded-Proto") != "" {
+			req.Out.Header.Set("X-Forwarded-Proto", req.In.Header.Get("X-Forwarded-Proto"))
+		}
+		if req.In.Header.Get("X-Forwarded-Host") != "" {
+			req.Out.Header.Set("X-Forwarded-Host", req.In.Header.Get("X-Forwarded-Host"))
+		}
+	}
+}
+
+func (t *Target) Rewrite(req *httputil.ProxyRequest) {
+	t.forwardHeaders(req)
 
 	req.SetURL(t.targetURL)
 	req.Out.Host = req.In.Host
