@@ -62,7 +62,7 @@ type TargetOptions struct {
 	ForwardHeaders      bool              `json:"forward_headers"`
 }
 
-func (to *TargetOptions) CanonicalizeLogHeaders() {
+func (to *TargetOptions) canonicalizeLogHeaders() {
 	for i, header := range to.LogRequestHeaders {
 		to.LogRequestHeaders[i] = http.CanonicalHeaderKey(header)
 	}
@@ -90,7 +90,7 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 		return nil, err
 	}
 
-	options.CanonicalizeLogHeaders()
+	options.canonicalizeLogHeaders()
 
 	target := &Target{
 		targetURL: uri,
@@ -147,55 +147,6 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 
 func (t *Target) IsHealthCheckRequest(r *http.Request) bool {
 	return r.Method == http.MethodGet && r.URL.Path == t.options.HealthCheckConfig.Path
-}
-
-func (t *Target) forwardHeaders(req *httputil.ProxyRequest) {
-	if t.options.ForwardHeaders {
-		req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
-	}
-
-	req.SetXForwarded()
-
-	if t.options.ForwardHeaders {
-		if req.In.Header.Get("X-Forwarded-Proto") != "" {
-			req.Out.Header.Set("X-Forwarded-Proto", req.In.Header.Get("X-Forwarded-Proto"))
-		}
-		if req.In.Header.Get("X-Forwarded-Host") != "" {
-			req.Out.Header.Set("X-Forwarded-Host", req.In.Header.Get("X-Forwarded-Host"))
-		}
-	}
-}
-
-func (t *Target) Rewrite(req *httputil.ProxyRequest) {
-	t.forwardHeaders(req)
-
-	req.SetURL(t.targetURL)
-	req.Out.Host = req.In.Host
-
-	// Ensure query params are preserved exactly, including those we could not
-	// parse.
-	//
-	// By default, httputil.ReverseProxy will drop unparseable query params to
-	// guard against parameter smuggling attacks
-	// (https://github.com/golang/go/issues/54663).
-	//
-	// One example of this is the use of semicolons in query params. Given a URL
-	// like:
-	//
-	//   /path?p=a;b
-	//
-	// Some platforms interpret these params as equivalent to `p=a` and `b=`,
-	// while others interpret it as a single query param: `p=a;b`. Because of this
-	// confusion, Go's default behaviour is to drop the parameter entirely,
-	// effectively turning our URL into just `/path`.
-	//
-	// However, any changes to the query params could break applications that
-	// depend on them, so we should avoid doing this, and strive to be as
-	// transparent as possible.
-	//
-	// In our case, we don't make any decisions based on the query params, so it's
-	// safe for us to pass them through verbatim.
-	req.Out.URL.RawQuery = req.In.URL.RawQuery
 }
 
 func (t *Target) Drain(timeout time.Duration) {
@@ -279,12 +230,61 @@ func (t *Target) createProxyHandler() http.Handler {
 
 	return &httputil.ReverseProxy{
 		BufferPool:   bufferPool,
-		Rewrite:      t.Rewrite,
+		Rewrite:      t.rewrite,
 		ErrorHandler: t.handleProxyError,
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost:   MaxIdleConnsPerHost,
 			ResponseHeaderTimeout: t.options.ResponseTimeout,
 		},
+	}
+}
+
+func (t *Target) rewrite(req *httputil.ProxyRequest) {
+	t.forwardHeaders(req)
+
+	req.SetURL(t.targetURL)
+	req.Out.Host = req.In.Host
+
+	// Ensure query params are preserved exactly, including those we could not
+	// parse.
+	//
+	// By default, httputil.ReverseProxy will drop unparseable query params to
+	// guard against parameter smuggling attacks
+	// (https://github.com/golang/go/issues/54663).
+	//
+	// One example of this is the use of semicolons in query params. Given a URL
+	// like:
+	//
+	//   /path?p=a;b
+	//
+	// Some platforms interpret these params as equivalent to `p=a` and `b=`,
+	// while others interpret it as a single query param: `p=a;b`. Because of this
+	// confusion, Go's default behaviour is to drop the parameter entirely,
+	// effectively turning our URL into just `/path`.
+	//
+	// However, any changes to the query params could break applications that
+	// depend on them, so we should avoid doing this, and strive to be as
+	// transparent as possible.
+	//
+	// In our case, we don't make any decisions based on the query params, so it's
+	// safe for us to pass them through verbatim.
+	req.Out.URL.RawQuery = req.In.URL.RawQuery
+}
+
+func (t *Target) forwardHeaders(req *httputil.ProxyRequest) {
+	if t.options.ForwardHeaders {
+		req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
+	}
+
+	req.SetXForwarded()
+
+	if t.options.ForwardHeaders {
+		if req.In.Header.Get("X-Forwarded-Proto") != "" {
+			req.Out.Header.Set("X-Forwarded-Proto", req.In.Header.Get("X-Forwarded-Proto"))
+		}
+		if req.In.Header.Get("X-Forwarded-Host") != "" {
+			req.Out.Header.Set("X-Forwarded-Host", req.In.Header.Get("X-Forwarded-Host"))
+		}
 	}
 }
 
