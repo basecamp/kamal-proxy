@@ -25,8 +25,8 @@ git tag -a ${TAG} -m "Version ${VERSION}
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --tag dmcbreen/kamal-proxy:${TAG} \
-  --tag dmcbreen/kamal-proxy:latest \
+  --tag basecamp/kamal-proxy:${TAG} \
+  --tag basecamp/kamal-proxy:latest \
   --label "org.opencontainers.image.title=kamal-proxy" \
   --push .
 
