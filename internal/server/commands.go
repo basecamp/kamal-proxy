@@ -52,6 +52,16 @@ type RolloutDeployArgs struct {
 	DrainTimeout  time.Duration
 }
 
+type RolloutSetArgs struct {
+	Service    string
+	Percentage int
+	Allowlist  []string
+}
+
+type RolloutStopArgs struct {
+	Service string
+}
+
 type ListResponse struct {
 	Targets ServiceDescriptionMap `json:"services"`
 }
@@ -130,4 +140,12 @@ func (h *CommandHandler) List(args bool, reply *ListResponse) error {
 
 func (h *CommandHandler) RolloutDeploy(args RolloutDeployArgs, reply *bool) error {
 	return h.router.SetRolloutTarget(args.Service, args.TargetURL, args.DeployTimeout, args.DrainTimeout)
+}
+
+func (h *CommandHandler) RolloutSet(args RolloutSetArgs, reply *bool) error {
+	return h.router.SetRolloutSplit(args.Service, args.Percentage, args.Allowlist)
+}
+
+func (h *CommandHandler) RolloutStop(args RolloutStopArgs, reply *bool) error {
+	return h.router.StopRollout(args.Service)
 }

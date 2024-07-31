@@ -6,8 +6,9 @@ import (
 	"slices"
 )
 
+const RolloutCookieName = "kamal-rollout"
+
 type RolloutController struct {
-	cookie               string
 	percentage           int
 	percentageSplitPoint float64
 	allowlist            []string
@@ -18,7 +19,6 @@ func NewRolloutController(cookie string, percentage int, allowlist []string) *Ro
 	percentageSplitPoint := maxHashValue * (float64(percentage) / 100.0)
 
 	return &RolloutController{
-		cookie:               cookie,
 		percentage:           percentage,
 		percentageSplitPoint: percentageSplitPoint,
 		allowlist:            allowlist,
@@ -54,7 +54,7 @@ func (rc *RolloutController) hashForValue(value string) uint32 {
 }
 
 func (rc *RolloutController) splitValue(r *http.Request) string {
-	cookie, err := r.Cookie(rc.cookie)
+	cookie, err := r.Cookie(RolloutCookieName)
 	if err != nil {
 		return ""
 	}

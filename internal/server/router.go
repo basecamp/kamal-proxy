@@ -140,6 +140,14 @@ func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout t
 	return r.saveStateSnapshot()
 }
 
+func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) error {
+	return nil
+}
+
+func (r *Router) StopRollout(name string) error {
+	return nil
+}
+
 func (r *Router) RemoveService(name string) error {
 	err := r.withWriteLock(func() error {
 		service := r.serviceForName(name, false)
