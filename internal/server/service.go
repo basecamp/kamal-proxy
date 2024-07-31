@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -38,6 +39,10 @@ const (
 	DefaultMaxMemoryBufferSize = 1 * MB
 	DefaultMaxRequestBodySize  = 0
 	DefaultMaxResponseBodySize = 0
+)
+
+var (
+	ErrorRolloutTargetNotSet = errors.New("rollout target not set")
 )
 
 type TargetSlot int
@@ -85,8 +90,9 @@ type Service struct {
 	rollout    *Target
 	targetLock sync.RWMutex
 
-	pauseControl *PauseControl
-	certManager  *autocert.Manager
+	pauseControl      *PauseControl
+	rolloutController *RolloutController
+	certManager       *autocert.Manager
 }
 
 func NewService(name, host string, options ServiceOptions) *Service {
@@ -124,8 +130,14 @@ func (s *Service) ClaimTarget(req *http.Request) (*Target, *http.Request, error)
 	s.targetLock.RLock()
 	defer s.targetLock.RUnlock()
 
-	req, err := s.active.StartRequest(req)
-	return s.active, req, err
+	target := s.active
+	if s.rollout != nil && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
+		slog.Debug("Using rollout target for request", "service", s.name, "path", req.URL.Path)
+		target = s.rollout
+	}
+
+	req, err := target.StartRequest(req)
+	return target, req, err
 }
 
 func (s *Service) SetTarget(slot TargetSlot, target *Target, drainTimeout time.Duration) {
@@ -148,6 +160,29 @@ func (s *Service) SetTarget(slot TargetSlot, target *Target, drainTimeout time.D
 		replaced.StopHealthChecks()
 		go replaced.Drain(drainTimeout)
 	}
+}
+
+func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
+	// TODO: this state needs to survive marshalling/unmarshalling to cover restarts
+	s.targetLock.Lock()
+	defer s.targetLock.Unlock()
+
+	if s.rollout == nil {
+		return ErrorRolloutTargetNotSet
+	}
+
+	s.rolloutController = NewRolloutController(percentage, allowlist)
+	slog.Info("Set rollout split", "service", s.name, "percentage", percentage, "allowlist", allowlist)
+	return nil
+}
+
+func (s *Service) StopRollout() error {
+	s.targetLock.Lock()
+	defer s.targetLock.Unlock()
+
+	s.rolloutController = nil
+	slog.Info("Stopped rollout", "service", s.name)
+	return nil
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {

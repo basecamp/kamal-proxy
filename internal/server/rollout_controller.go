@@ -14,7 +14,7 @@ type RolloutController struct {
 	allowlist            []string
 }
 
-func NewRolloutController(cookie string, percentage int, allowlist []string) *RolloutController {
+func NewRolloutController(percentage int, allowlist []string) *RolloutController {
 	maxHashValue := float64(uint32(0xFFFFFFFF))
 	percentageSplitPoint := maxHashValue * (float64(percentage) / 100.0)
 

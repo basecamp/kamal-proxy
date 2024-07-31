@@ -22,6 +22,11 @@ func newHandler(host string) http.HandlerFunc {
 		io.Copy(io.Discard, r.Body)
 		slog.Info("Read body", "duration", time.Since(started))
 
+		http.SetCookie(w, &http.Cookie{
+			Name:  "kamal-rollout",
+			Value: "1",
+		})
+
 		w.Header().Add("Content-Type", "text/html")
 		fmt.Fprintf(w, "<body>Hello from %s</body>\n", host)
 	}

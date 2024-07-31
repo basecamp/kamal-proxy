@@ -141,11 +141,21 @@ func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout t
 }
 
 func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) error {
-	return nil
+	service := r.serviceForName(name, true)
+	if service == nil {
+		return ErrorServiceNotFound
+	}
+
+	return service.SetRolloutSplit(percent, allowList)
 }
 
 func (r *Router) StopRollout(name string) error {
-	return nil
+	service := r.serviceForName(name, true)
+	if service == nil {
+		return ErrorServiceNotFound
+	}
+
+	return service.StopRollout()
 }
 
 func (r *Router) RemoveService(name string) error {
