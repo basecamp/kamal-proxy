@@ -88,6 +88,8 @@ func (r *Router) SetServiceTarget(name string, host string, targetURL string,
 	options ServiceOptions, targetOptions TargetOptions,
 	deployTimeout time.Duration, drainTimeout time.Duration) error {
 
+	defer r.saveStateSnapshot()
+
 	slog.Info("Deploying", "service", name, "host", host, "target", targetURL, "tls", options.RequireTLS())
 
 	target, err := NewTarget(targetURL, targetOptions)
@@ -107,11 +109,12 @@ func (r *Router) SetServiceTarget(name string, host string, targetURL string,
 	}
 
 	slog.Info("Deployed", "service", name, "host", host, "target", targetURL)
-
-	return r.saveStateSnapshot()
+	return nil
 }
 
 func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	defer r.saveStateSnapshot()
+
 	slog.Info("Deploying for rollout", "service", name, "target", targetURL)
 
 	service := r.serviceForName(name, true)
@@ -134,11 +137,12 @@ func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout t
 	service.SetTarget(TargetSlotRollout, target, drainTimeout)
 
 	slog.Info("Deployed for rollout", "service", name, "target", targetURL)
-
-	return r.saveStateSnapshot()
+	return nil
 }
 
 func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) error {
+	defer r.saveStateSnapshot()
+
 	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound
@@ -148,6 +152,8 @@ func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) e
 }
 
 func (r *Router) StopRollout(name string) error {
+	defer r.saveStateSnapshot()
+
 	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound
@@ -157,6 +163,8 @@ func (r *Router) StopRollout(name string) error {
 }
 
 func (r *Router) RemoveService(name string) error {
+	defer r.saveStateSnapshot()
+
 	err := r.withWriteLock(func() error {
 		service := r.serviceForName(name, false)
 		if service == nil {
@@ -173,10 +181,12 @@ func (r *Router) RemoveService(name string) error {
 		return err
 	}
 
-	return r.saveStateSnapshot()
+	return nil
 }
 
 func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
+	defer r.saveStateSnapshot()
+
 	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound
@@ -186,6 +196,8 @@ func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTime
 }
 
 func (r *Router) StopService(name string, drainTimeout time.Duration) error {
+	defer r.saveStateSnapshot()
+
 	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound
@@ -195,6 +207,8 @@ func (r *Router) StopService(name string, drainTimeout time.Duration) error {
 }
 
 func (r *Router) ResumeService(name string) error {
+	defer r.saveStateSnapshot()
+
 	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound
