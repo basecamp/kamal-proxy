@@ -34,30 +34,30 @@ const (
 	PauseWaitActionUnavailable
 )
 
-type PauseControl struct {
+type PauseController struct {
 	lock         sync.RWMutex
 	state        PauseState
 	pauseChannel chan bool
 	failAfter    time.Duration
 }
 
-func NewPauseControl() *PauseControl {
-	return &PauseControl{}
+func NewPauseController() *PauseController {
+	return &PauseController{}
 }
 
-func (p *PauseControl) State() PauseState {
+func (p *PauseController) State() PauseState {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	return p.state
 }
 
-func (p *PauseControl) Stop() error {
+func (p *PauseController) Stop() error {
 	p.setState(PauseStateStopped)
 	return nil
 }
 
-func (p *PauseControl) Pause(failAfter time.Duration) error {
+func (p *PauseController) Pause(failAfter time.Duration) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -70,12 +70,12 @@ func (p *PauseControl) Pause(failAfter time.Duration) error {
 	return nil
 }
 
-func (p *PauseControl) Resume() error {
+func (p *PauseController) Resume() error {
 	p.setState(PauseStateRunning)
 	return nil
 }
 
-func (p *PauseControl) Wait() PauseWaitAction {
+func (p *PauseController) Wait() PauseWaitAction {
 	state, pauseChannel, failChannel := p.getWaitState()
 
 	switch state {
@@ -100,7 +100,7 @@ func (p *PauseControl) Wait() PauseWaitAction {
 	}
 }
 
-func (p *PauseControl) getWaitState() (PauseState, chan bool, <-chan time.Time) {
+func (p *PauseController) getWaitState() (PauseState, chan bool, <-chan time.Time) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -111,7 +111,7 @@ func (p *PauseControl) getWaitState() (PauseState, chan bool, <-chan time.Time) 
 	return p.state, nil, nil
 }
 
-func (p *PauseControl) setState(newState PauseState) {
+func (p *PauseController) setState(newState PauseState) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 

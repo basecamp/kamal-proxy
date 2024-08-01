@@ -90,7 +90,7 @@ type Service struct {
 	rollout    *Target
 	targetLock sync.RWMutex
 
-	pauseControl      *PauseControl
+	pauseController   *PauseController
 	rolloutController *RolloutController
 	certManager       *autocert.Manager
 }
@@ -206,7 +206,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
-	if s.pauseControl.State() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
+	if s.pauseController.State() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
 		// When paused or stopped, return success for any health check
 		// requests from downstream services. Otherwise they might consider
 		// us as unhealthy while in that state, and remove us from their
@@ -215,7 +215,7 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 		return true
 	}
 
-	action := s.pauseControl.Wait()
+	action := s.pauseController.Wait()
 	switch action {
 	case PauseWaitActionUnavailable:
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -280,7 +280,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 }
 
 func (s *Service) Stop(drainTimeout time.Duration) error {
-	err := s.pauseControl.Stop()
+	err := s.pauseController.Stop()
 	if err != nil {
 		return err
 	}
@@ -293,7 +293,7 @@ func (s *Service) Stop(drainTimeout time.Duration) error {
 }
 
 func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) error {
-	err := s.pauseControl.Pause(pauseTimeout)
+	err := s.pauseController.Pause(pauseTimeout)
 	if err != nil {
 		return err
 	}
@@ -306,7 +306,7 @@ func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) 
 }
 
 func (s *Service) Resume() error {
-	err := s.pauseControl.Resume()
+	err := s.pauseController.Resume()
 	if err != nil {
 		return err
 	}
@@ -318,7 +318,7 @@ func (s *Service) Resume() error {
 // Private
 
 func (s *Service) initialize() {
-	s.pauseControl = NewPauseControl()
+	s.pauseController = NewPauseController()
 	s.certManager = s.createCertManager()
 }
 
