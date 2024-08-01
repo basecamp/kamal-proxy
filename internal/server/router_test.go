@@ -216,6 +216,34 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
 }
 
+func TestRouter_EnablingRollout(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("service1", "", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetRolloutTarget("service1", second, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	checkResponse := func(expected string) {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		req.AddCookie(&http.Cookie{Name: "kamal-rollout", Value: "1"})
+		statusCode, body := sendRequest(router, req)
+		assert.Equal(t, http.StatusOK, statusCode)
+		assert.Equal(t, expected, body)
+	}
+
+	checkResponse("first")
+
+	require.NoError(t, router.SetRolloutSplit("service1", 0, []string{"1"}))
+	checkResponse("second")
+
+	require.NoError(t, router.SetRolloutSplit("service1", 0, []string{"2"}))
+	checkResponse("first")
+
+	require.NoError(t, router.StopRollout("service1"))
+	checkResponse("first")
+}
+
 func TestRouter_RestoreLastSavedState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 
