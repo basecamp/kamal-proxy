@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -206,7 +207,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
-	if s.pauseController.State() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
+	if s.pauseController.GetState() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
 		// When paused or stopped, return success for any health check
 		// requests from downstream services. Otherwise they might consider
 		// us as unhealthy while in that state, and remove us from their
@@ -237,6 +238,7 @@ type marshalledService struct {
 	RolloutTarget     string             `json:"rollout_target"`
 	Options           ServiceOptions     `json:"options"`
 	TargetOptions     TargetOptions      `json:"target_options"`
+	PauseController   *PauseController   `json:"pause_controller"`
 	RolloutController *RolloutController `json:"rollout_controller"`
 }
 
@@ -255,11 +257,13 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 		RolloutTarget:     rolloutTarget,
 		Options:           s.options,
 		TargetOptions:     targetOptions,
+		PauseController:   s.pauseController,
 		RolloutController: s.rolloutController,
 	})
 }
 
 func (s *Service) UnmarshalJSON(data []byte) error {
+	fmt.Println(string(data))
 	var ms marshalledService
 	err := json.Unmarshal(data, &ms)
 	if err != nil {
@@ -269,12 +273,12 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.name = ms.Name
 	s.host = ms.Host
 	s.options = ms.Options
-	s.rolloutController = ms.RolloutController
+	s.initialize()
 
+	s.pauseController = ms.PauseController
+	s.rolloutController = ms.RolloutController
 	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
 	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
-
-	s.initialize()
 
 	return nil
 }

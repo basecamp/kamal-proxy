@@ -216,7 +216,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 					Host:   host,
 					Target: service.active.Target(),
 					TLS:    service.options.RequireTLS(),
-					State:  service.pauseController.State().String(),
+					State:  service.pauseController.GetState().String(),
 				}
 			}
 		}

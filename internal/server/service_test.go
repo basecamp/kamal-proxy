@@ -92,6 +92,8 @@ func TestService_MarshallingState(t *testing.T) {
 	assert.Equal(t, service.active.Target(), service2.active.Target())
 	assert.Equal(t, service.active.options, service2.active.options)
 
+	assert.Equal(t, PauseStateStopped, service2.pauseController.GetState())
+
 	assert.Equal(t, 20, service2.rolloutController.Percentage)
 	assert.Equal(t, []string{"first"}, service2.rolloutController.Allowlist)
 }

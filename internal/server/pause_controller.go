@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 )
@@ -35,21 +36,41 @@ const (
 )
 
 type PauseController struct {
+	State     PauseState    `json:"state"`
+	FailAfter time.Duration `json:"fail_after"`
+
 	lock         sync.RWMutex
-	state        PauseState
 	pauseChannel chan bool
-	failAfter    time.Duration
 }
 
 func NewPauseController() *PauseController {
 	return &PauseController{}
 }
 
-func (p *PauseController) State() PauseState {
+func (p *PauseController) UnmarshalJSON(data []byte) error {
+	type alias *PauseController // Avoid infinite recursion when we call Unmarshal
+	err := json.Unmarshal(data, alias(p))
+	if err != nil {
+		return err
+	}
+
+	switch p.State {
+	case PauseStateRunning:
+		p.Resume()
+	case PauseStatePaused:
+		p.Pause(p.FailAfter)
+	case PauseStateStopped:
+		p.Stop()
+	}
+
+	return nil
+}
+
+func (p *PauseController) GetState() PauseState {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return p.state
+	return p.State
 }
 
 func (p *PauseController) Stop() error {
@@ -61,12 +82,12 @@ func (p *PauseController) Pause(failAfter time.Duration) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.state != PauseStatePaused {
+	if p.State != PauseStatePaused {
 		p.pauseChannel = make(chan bool)
 	}
 
-	p.state = PauseStatePaused
-	p.failAfter = failAfter
+	p.State = PauseStatePaused
+	p.FailAfter = failAfter
 	return nil
 }
 
@@ -88,7 +109,7 @@ func (p *PauseController) Wait() PauseWaitAction {
 	default:
 		select {
 		case <-pauseChannel:
-			switch p.State() {
+			switch p.GetState() {
 			case PauseStateStopped:
 				return PauseWaitActionUnavailable
 			default:
@@ -104,24 +125,24 @@ func (p *PauseController) getWaitState() (PauseState, chan bool, <-chan time.Tim
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	if p.state == PauseStatePaused {
-		return PauseStatePaused, p.pauseChannel, time.After(p.failAfter)
+	if p.State == PauseStatePaused {
+		return PauseStatePaused, p.pauseChannel, time.After(p.FailAfter)
 	}
 
-	return p.state, nil, nil
+	return p.State, nil, nil
 }
 
 func (p *PauseController) setState(newState PauseState) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.state == newState {
+	if p.State == newState {
 		return
 	}
 
-	if p.state == PauseStatePaused {
+	if p.State == PauseStatePaused {
 		close(p.pauseChannel)
 	}
 
-	p.state = newState
+	p.State = newState
 }

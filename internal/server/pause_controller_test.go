@@ -12,7 +12,7 @@ import (
 func TestPauseController_RunningByDefault(t *testing.T) {
 	p := NewPauseController()
 
-	assert.Equal(t, PauseStateRunning, p.State())
+	assert.Equal(t, PauseStateRunning, p.GetState())
 	assert.Equal(t, PauseWaitActionProceed, p.Wait())
 }
 
@@ -21,7 +21,7 @@ func TestPauseController_WaitBlocksWhenPaused(t *testing.T) {
 	var wg sync.WaitGroup
 
 	require.NoError(t, p.Pause(time.Second))
-	assert.Equal(t, PauseStatePaused, p.State())
+	assert.Equal(t, PauseStatePaused, p.GetState())
 
 	wg.Add(1)
 	go func() {
@@ -37,7 +37,7 @@ func TestPauseController_PausedWaitsCanTimeout(t *testing.T) {
 	p := NewPauseController()
 
 	require.NoError(t, p.Pause(time.Millisecond))
-	assert.Equal(t, PauseStatePaused, p.State())
+	assert.Equal(t, PauseStatePaused, p.GetState())
 	assert.Equal(t, PauseWaitActionTimedOut, p.Wait())
 }
 
@@ -45,7 +45,7 @@ func TestPauseController_Stopped(t *testing.T) {
 	p := NewPauseController()
 
 	require.NoError(t, p.Stop())
-	assert.Equal(t, PauseStateStopped, p.State())
+	assert.Equal(t, PauseStateStopped, p.GetState())
 	assert.Equal(t, PauseWaitActionUnavailable, p.Wait())
 }
 
@@ -54,7 +54,7 @@ func TestPauseController_StoppingPausedRequestsFailsThemImmediately(t *testing.T
 	var wg sync.WaitGroup
 
 	require.NoError(t, p.Pause(time.Second))
-	assert.Equal(t, PauseStatePaused, p.State())
+	assert.Equal(t, PauseStatePaused, p.GetState())
 
 	wg.Add(1)
 	go func() {
