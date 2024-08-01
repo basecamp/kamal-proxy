@@ -163,7 +163,6 @@ func (s *Service) SetTarget(slot TargetSlot, target *Target, drainTimeout time.D
 }
 
 func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
-	// TODO: this state needs to survive marshalling/unmarshalling to cover restarts
 	s.targetLock.Lock()
 	defer s.targetLock.Unlock()
 
@@ -232,12 +231,13 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 }
 
 type marshalledService struct {
-	Name          string         `json:"name"`
-	Host          string         `json:"host"`
-	ActiveTarget  string         `json:"active_target"`
-	RolloutTarget string         `json:"rollout_target"`
-	Options       ServiceOptions `json:"options"`
-	TargetOptions TargetOptions  `json:"target_options"`
+	Name              string             `json:"name"`
+	Host              string             `json:"host"`
+	ActiveTarget      string             `json:"active_target"`
+	RolloutTarget     string             `json:"rollout_target"`
+	Options           ServiceOptions     `json:"options"`
+	TargetOptions     TargetOptions      `json:"target_options"`
+	RolloutController *RolloutController `json:"rollout_controller"`
 }
 
 func (s *Service) MarshalJSON() ([]byte, error) {
@@ -249,12 +249,13 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 	targetOptions := s.active.options
 
 	return json.Marshal(marshalledService{
-		Name:          s.name,
-		Host:          s.host,
-		ActiveTarget:  activeTarget,
-		RolloutTarget: rolloutTarget,
-		Options:       s.options,
-		TargetOptions: targetOptions,
+		Name:              s.name,
+		Host:              s.host,
+		ActiveTarget:      activeTarget,
+		RolloutTarget:     rolloutTarget,
+		Options:           s.options,
+		TargetOptions:     targetOptions,
+		RolloutController: s.rolloutController,
 	})
 }
 
@@ -268,6 +269,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.name = ms.Name
 	s.host = ms.Host
 	s.options = ms.Options
+	s.rolloutController = ms.RolloutController
 
 	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
 	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)

@@ -114,8 +114,6 @@ func (r *Router) SetServiceTarget(name string, host string, targetURL string,
 func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	slog.Info("Deploying for rollout", "service", name, "target", targetURL)
 
-	// TODO: check locking here, since our ordering is different from the usual case.
-
 	service := r.serviceForName(name, true)
 	if service == nil {
 		return ErrorServiceNotFound

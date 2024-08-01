@@ -9,9 +9,9 @@ import (
 const RolloutCookieName = "kamal-rollout"
 
 type RolloutController struct {
-	percentage           int
-	percentageSplitPoint float64
-	allowlist            []string
+	Percentage           int      `json:"percentage"`
+	PercentageSplitPoint float64  `json:"percentage_split_point"`
+	Allowlist            []string `json:"allowlist"`
 }
 
 func NewRolloutController(percentage int, allowlist []string) *RolloutController {
@@ -19,9 +19,9 @@ func NewRolloutController(percentage int, allowlist []string) *RolloutController
 	percentageSplitPoint := maxHashValue * (float64(percentage) / 100.0)
 
 	return &RolloutController{
-		percentage:           percentage,
-		percentageSplitPoint: percentageSplitPoint,
-		allowlist:            allowlist,
+		Percentage:           percentage,
+		PercentageSplitPoint: percentageSplitPoint,
+		Allowlist:            allowlist,
 	}
 }
 
@@ -39,12 +39,12 @@ func (rc *RolloutController) RequestUsesRolloutGroup(r *http.Request) bool {
 }
 
 func (rc *RolloutController) valueInAllowlist(value string) bool {
-	return slices.Contains(rc.allowlist, value)
+	return slices.Contains(rc.Allowlist, value)
 }
 
 func (rc *RolloutController) valueInRolloutPercentage(value string) bool {
 	hash := rc.hashForValue(value)
-	return float64(hash) <= rc.percentageSplitPoint
+	return float64(hash) <= rc.PercentageSplitPoint
 }
 
 func (rc *RolloutController) hashForValue(value string) uint32 {

@@ -71,11 +71,14 @@ func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 func TestService_MarshallingState(t *testing.T) {
 	targetOptions := TargetOptions{
 		HealthCheckConfig:   HealthCheckConfig{Path: "/health", Interval: 1, Timeout: 2},
-		BufferRequests:        true,
+		BufferRequests:      true,
 		MaxMemoryBufferSize: 123,
 	}
 
 	service := testCreateService(t, defaultServiceOptions, targetOptions)
+	require.NoError(t, service.Stop(time.Second))
+	service.SetTarget(TargetSlotRollout, service.active, time.Millisecond)
+	require.NoError(t, service.SetRolloutSplit(20, []string{"first"}))
 
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(service)
@@ -88,6 +91,9 @@ func TestService_MarshallingState(t *testing.T) {
 	assert.Equal(t, service.name, service2.name)
 	assert.Equal(t, service.active.Target(), service2.active.Target())
 	assert.Equal(t, service.active.options, service2.active.options)
+
+	assert.Equal(t, 20, service2.rolloutController.Percentage)
+	assert.Equal(t, []string{"first"}, service2.rolloutController.Allowlist)
 }
 
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
