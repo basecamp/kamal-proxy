@@ -103,7 +103,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.RequestHeaders, r.Header, "req")...)
 	attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.ResponseHeaders, writer.Header(), "resp")...)
 
-	h.logger.LogAttrs(nil, slog.LevelInfo, "Request", attrs...)
+	h.logger.LogAttrs(context.TODO(), slog.LevelInfo, "Request", attrs...)
 }
 
 func (h *LoggingMiddleware) retrieveCustomHeaders(headerNames []string, header http.Header, prefix string) []slog.Attr {
