@@ -6,7 +6,8 @@ func NewBufferPool(bufferSize int64) *BufferPool {
 	return &BufferPool{
 		pool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, bufferSize)
+				buf := make([]byte, bufferSize)
+				return &buf
 			},
 		},
 	}
@@ -17,9 +18,9 @@ type BufferPool struct {
 }
 
 func (b *BufferPool) Get() []byte {
-	return b.pool.Get().([]byte)
+	return *(b.pool.Get().(*[]byte))
 }
 
 func (b *BufferPool) Put(content []byte) {
-	b.pool.Put(content)
+	b.pool.Put(&content)
 }
