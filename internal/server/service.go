@@ -159,7 +159,7 @@ func (s *Service) SetTarget(slot TargetSlot, target *Target, drainTimeout time.D
 
 	if replaced != nil {
 		replaced.StopHealthChecks()
-		go replaced.Drain(drainTimeout)
+		replaced.Drain(drainTimeout)
 	}
 }
 
