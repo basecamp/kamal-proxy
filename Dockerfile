@@ -1,11 +1,11 @@
-FROM golang:1.22 as build
-WORKDIR /app
-COPY . .
-RUN make
+from golang:1.22 as build
+workdir /app
+copy . .
+run make
 
-FROM ubuntu as base
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=build /app/bin/kamal-proxy /usr/local/bin/
-EXPOSE 80 443
+from ubuntu as base
+copy --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+copy --from=build /app/bin/kamal-proxy /usr/local/bin/
+expose 80 443
 
-CMD [ "kamal-proxy", "run" ]
+cmd [ "kamal-proxy", "run" ]
