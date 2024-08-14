@@ -65,7 +65,8 @@ const (
 )
 
 func (c *listCommand) format(text string, width int, style string) string {
-	text = (text + strings.Repeat(" ", width-len(text)))[0:width]
+	paddingLength := max(0, width-len(text))
+	text = (text + strings.Repeat(" ", paddingLength))[0:width]
 	if style != "" {
 		text = "\033[" + style + "m" + text + "\033[0m"
 	}
