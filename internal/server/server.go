@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -16,6 +17,7 @@ const (
 	ACMEStagingDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 	shutdownTimeout = 10 * time.Second
+	errorPagePath   = "/usr/local/share/kamal-proxy/pages"
 )
 
 type Server struct {
@@ -62,6 +64,20 @@ func (s *Server) HttpPort() int {
 
 func (s *Server) HttpsPort() int {
 	return s.httpsListener.Addr().(*net.TCPAddr).Port
+}
+
+func SendHTTPError(w http.ResponseWriter, code int) {
+	f, err := http.Dir(errorPagePath).Open(fmt.Sprintf("%d.html", code))
+	if err != nil {
+		http.Error(w, http.StatusText(code), code)
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+
+	_, _ = io.Copy(w, f)
 }
 
 // Private

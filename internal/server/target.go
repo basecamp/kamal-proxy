@@ -290,17 +290,17 @@ func (t *Target) forwardHeaders(req *httputil.ProxyRequest) {
 
 func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err error) {
 	if t.isRequestEntityTooLarge(err) {
-		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		SendHTTPError(w, http.StatusRequestEntityTooLarge)
 		return
 	}
 
 	if t.isGatewayTimeout(err) {
-		w.WriteHeader(http.StatusGatewayTimeout)
+		SendHTTPError(w, http.StatusGatewayTimeout)
 		return
 	}
 
 	slog.Error("Error while proxying", "target", t.Target(), "path", r.URL.Path, "error", err)
-	w.WriteHeader(http.StatusBadGateway)
+	SendHTTPError(w, http.StatusBadGateway)
 }
 
 func (t *Target) isRequestEntityTooLarge(err error) bool {
