@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -263,7 +262,6 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 }
 
 func (s *Service) UnmarshalJSON(data []byte) error {
-	fmt.Println(string(data))
 	var ms marshalledService
 	err := json.Unmarshal(data, &ms)
 	if err != nil {
