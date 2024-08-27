@@ -17,7 +17,7 @@ func newRolloutStopCommand() *rolloutStopCommand {
 	rolloutStopCommand.cmd = &cobra.Command{
 		Use:       "stop <service>",
 		Short:     "Stops rollout of a service",
-		RunE:      rolloutStopCommand.stop,
+		RunE:      rolloutStopCommand.run,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"service"},
 	}
@@ -25,7 +25,7 @@ func newRolloutStopCommand() *rolloutStopCommand {
 	return rolloutStopCommand
 }
 
-func (c *rolloutStopCommand) stop(cmd *cobra.Command, args []string) error {
+func (c *rolloutStopCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {

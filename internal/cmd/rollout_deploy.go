@@ -17,7 +17,7 @@ func newRolloutDeployCommand() *rolloutDeployCommand {
 	rolloutDeployCommand.cmd = &cobra.Command{
 		Use:       "deploy <service>",
 		Short:     "Deploy the rollout target",
-		RunE:      rolloutDeployCommand.deploy,
+		RunE:      rolloutDeployCommand.run,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"service"},
 	}
@@ -31,7 +31,7 @@ func newRolloutDeployCommand() *rolloutDeployCommand {
 	return rolloutDeployCommand
 }
 
-func (c *rolloutDeployCommand) deploy(cmd *cobra.Command, args []string) error {
+func (c *rolloutDeployCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {

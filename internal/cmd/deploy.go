@@ -23,7 +23,7 @@ func newDeployCommand() *deployCommand {
 		Use:       "deploy <service>",
 		Short:     "Deploy a target host",
 		PreRunE:   deployCommand.preRun,
-		RunE:      deployCommand.deploy,
+		RunE:      deployCommand.run,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"service"},
 	}
@@ -58,7 +58,7 @@ func newDeployCommand() *deployCommand {
 	return deployCommand
 }
 
-func (c *deployCommand) deploy(cmd *cobra.Command, args []string) error {
+func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
 	if c.tls {
