@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"maps"
 	"net/rpc"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -39,10 +41,13 @@ func (c *listCommand) run(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func (c *listCommand) displayResponse(reponse server.ListResponse) {
+func (c *listCommand) displayResponse(response server.ListResponse) {
 	table := NewTable()
 	table.AddRow([]string{"Service", "Host", "Target", "State", "TLS"})
-	for name, service := range reponse.Targets {
+
+	sortedKeys := slices.Sorted(maps.Keys(response.Targets))
+	for _, name := range sortedKeys {
+		service := response.Targets[name]
 		tls := "no"
 		if service.TLS {
 			tls = "yes"
