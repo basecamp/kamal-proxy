@@ -41,9 +41,7 @@ const (
 	DefaultMaxResponseBodySize = 0
 )
 
-var (
-	ErrorRolloutTargetNotSet = errors.New("rollout target not set")
-)
+var ErrorRolloutTargetNotSet = errors.New("rollout target not set")
 
 type TargetSlot int
 
