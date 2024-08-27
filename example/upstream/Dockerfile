@@ -1,13 +1,11 @@
-FROM golang:1.22 as build
+from golang:1.23 as build
+workdir /app
+copy . .
+env CGO_ENABLED=0
+run go build -o upstream main.go
 
-WORKDIR /app
-COPY . .
-ENV CGO_ENABLED=0
-RUN go build -o upstream main.go
+from scratch as base
+copy --from=build /app/upstream /usr/local/bin/
+expose 80
 
-
-FROM scratch as base
-
-COPY --from=build /app/upstream /usr/local/bin/
-EXPOSE 3000
-CMD [ "upstream" ]
+cmd [ "upstream" ]
