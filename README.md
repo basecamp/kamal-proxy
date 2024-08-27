@@ -89,23 +89,6 @@ applications. To enable this, add the `--tls` flag when deploying an instance:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls
 
 
-## Building
-
-To build Kamal Proxy locally, if you have a working Go environment you can:
-
-    make
-
-Alternatively, build as a Docker container:
-
-    make docker
-
-
-## Trying it out
-
-See the [example](./example) folder for a Docker Compose setup that you can use
-to try out the proxy commands.
-
-
 ## Specifying `run` options with environment variables
 
 In some environments, like when running a Docker container, it can be convenient
@@ -125,3 +108,20 @@ environment, you can prefix them with `KAMAL_PROXY_` to disambiguate them. For
 example:
 
     KAMAL_PROXY_HTTP_PORT=8080 kamal-proxy run
+
+
+## Building
+
+To build Kamal Proxy locally, if you have a working Go environment you can:
+
+    make
+
+Alternatively, build as a Docker container:
+
+    make docker
+
+
+## Trying it out
+
+See the [example](./example) folder for a Docker Compose setup that you can use
+to try out the proxy commands.
