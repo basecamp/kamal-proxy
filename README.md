@@ -1,11 +1,18 @@
-# kamal-proxy - A minimal HTTP proxy for zero-downtime deployments 🪂
+# Kamal Proxy - A minimal HTTP proxy for zero-downtime deployments
+
 
 ## What it does
 
-`kamal-proxy` is a tiny HTTP proxy, designed to make it easy to coordinate
-zero-downtime deployments. By running a web application behind `kamal-proxy` you can
-deploy changes to it without interruping any of the traffic that's in progress.
-No particular cooperation from the application is required for this to work.
+Kamal Proxy is a tiny HTTP proxy, designed to make it easy to coordinate
+zero-downtime deployments. By running your web applications behind Kamal Proxy,
+you can deploy changes to them without interruping any of the traffic that's in
+progress. No particular cooperation from an application is required for this to
+work.
+
+Kamal Proxy is designed to work as part of [Kamal](https://kamal-deploy.org/),
+which provides a complete deployment experience including container packaging
+and provisioning. However, Kamal Proxy could also be used standalone or as part
+of other deployment tooling.
 
 
 ## A quick overview
@@ -22,7 +29,7 @@ Run `kamal-proxy help run` to see the full list of options.
 
 To route traffic through the proxy to a web application, you `deploy` instances
 of the application to the proxy. Deploying an instance makes it available to the
-proxy, and replace the instance it was using before (if any).
+proxy, and replaces the instance it was using before (if any).
 
 Use the format `hostname:port` when specifying the instance to deploy.
 
@@ -31,30 +38,31 @@ For example:
     kamal-proxy deploy service1 --target web-1:3000
 
 This will instruct the proxy to register `web-1:3000` to receive traffic under
-the service name `service1. It will immediately begin running HTTP health checks
-to ensure it's reachable and working and, as soon as those health checks succeed,
-will start routing traffic to it.
+the service name `service1`. It will immediately begin running HTTP health
+checks to ensure it's reachable and working and, as soon as those health checks
+succeed, will start routing traffic to it.
 
 If the instance fails to become healthy within a reasonable time, the `deploy`
-command will stop the deployment and return a non-zero exit code, so that
-deployment scripts can handle the failure appropriately.
+command will stop the deployment and return a non-zero exit code, allowing
+deployment scripts to handle the failure appropriately.
 
-Each deployment takes over traffic from the previously deployed instance. As
-soon as kamal-proxy determines that the new instance is healthy, it will route all
-new traffic to that instance.
+Each deployment takes over all the traffic from the previously deployed
+instance. As soon as Kamal Proxy determines that the new instance is healthy,
+it will route all new traffic to that instance.
 
-The `deploy` command will wait for traffic to drain from the old instance before
+The `deploy` command also waits for traffic to drain from the old instance before
 returning. This means it's safe to remove the old instance as soon as `deploy`
 returns successfully, without interrupting any in-flight requests.
 
 Because traffic is only routed to a new instance once it's healthy, and traffic
-is drained from old instances before they are removed, deployments take place
-with zero downtime.
+is drained completely from old instances before they are removed, deployments
+take place with zero downtime.
+
 
 ### Host-based routing
 
 Host-based routing allows you to run multiple applications on the same server,
-using a single instance of `kamal-proxy` to route traffic to all of them.
+using a single instance of Kamal Proxy to route traffic to all of them.
 
 When deploying an instance, you can specify a host that it should serve traffic
 for:
@@ -75,7 +83,7 @@ Only one service at a time can route a specific host:
 
 ### Automatic TLS
 
-`kamal-proxy` can automatically obtain and renew TLS certificates for your
+Kamal Proxy can automatically obtain and renew TLS certificates for your
 applications. To enable this, add the `--tls` flag when deploying an instance:
 
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls
@@ -83,7 +91,7 @@ applications. To enable this, add the `--tls` flag when deploying an instance:
 
 ## Building
 
-To build `kamal-proxy` locally, if you have a working Go environment you can:
+To build Kamal Proxy locally, if you have a working Go environment you can:
 
     make
 
@@ -96,6 +104,7 @@ Alternatively, build as a Docker container:
 
 See the [example](./example) folder for a Docker Compose setup that you can use
 to try out the proxy commands.
+
 
 ## Specifying `run` options with environment variables
 
