@@ -1,4 +1,4 @@
-from golang:1.22 as build
+from golang:1.23 as build
 workdir /app
 copy . .
 run make
