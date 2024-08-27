@@ -94,16 +94,8 @@ Alternatively, build as a Docker container:
 
 ## Trying it out
 
-You can start up a sample environment to try it out using Docker Compose:
-
-    docker compose up --build
-
-This will start the proxy, and 4 instances of a simple web server. You can run
-proxy commands with `docker compose exec proxy ...`, for example:
-
-    docker compose exec proxy kamal-proxy deploy service1 --target kamal-proxy-web-1:3000
-
-And then access the proxy from a browser at http://localhost/.
+See the [example](./example) folder for a Docker Compose setup that you can use
+to try out the proxy commands.
 
 ## Specifying `run` options with environment variables
 
