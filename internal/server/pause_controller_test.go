@@ -46,7 +46,7 @@ func TestPauseController_Stopped(t *testing.T) {
 
 	require.NoError(t, p.Stop())
 	assert.Equal(t, PauseStateStopped, p.GetState())
-	assert.Equal(t, PauseWaitActionUnavailable, p.Wait())
+	assert.Equal(t, PauseWaitActionStopped, p.Wait())
 }
 
 func TestPauseController_StoppingPausedRequestsFailsThemImmediately(t *testing.T) {
@@ -62,6 +62,6 @@ func TestPauseController_StoppingPausedRequestsFailsThemImmediately(t *testing.T
 		wg.Done()
 	}()
 
-	assert.Equal(t, PauseWaitActionUnavailable, p.Wait())
+	assert.Equal(t, PauseWaitActionStopped, p.Wait())
 	wg.Wait()
 }

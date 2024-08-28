@@ -32,7 +32,7 @@ type PauseWaitAction int
 const (
 	PauseWaitActionProceed PauseWaitAction = iota
 	PauseWaitActionTimedOut
-	PauseWaitActionUnavailable
+	PauseWaitActionStopped
 )
 
 type PauseController struct {
@@ -104,14 +104,14 @@ func (p *PauseController) Wait() PauseWaitAction {
 		return PauseWaitActionProceed
 
 	case PauseStateStopped:
-		return PauseWaitActionUnavailable
+		return PauseWaitActionStopped
 
 	default:
 		select {
 		case <-pauseChannel:
 			switch p.GetState() {
 			case PauseStateStopped:
-				return PauseWaitActionUnavailable
+				return PauseWaitActionStopped
 			default:
 				return PauseWaitActionProceed
 			}

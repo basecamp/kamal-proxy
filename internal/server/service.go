@@ -215,7 +215,7 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 
 	action := s.pauseController.Wait()
 	switch action {
-	case PauseWaitActionUnavailable:
+	case PauseWaitActionStopped:
 		SendHTTPError(w, http.StatusServiceUnavailable)
 		return true
 
