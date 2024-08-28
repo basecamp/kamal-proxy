@@ -16,7 +16,6 @@ const (
 	ACMEStagingDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 	shutdownTimeout = 10 * time.Second
-	errorPagePath   = "/usr/local/share/kamal-proxy/pages"
 )
 
 type Server struct {
@@ -113,7 +112,7 @@ func (s *Server) buildHandler() http.Handler {
 	var handler http.Handler
 
 	handler = s.router
-	handler = WithErrorPageMiddleware(handler)
+	handler = WithErrorPageMiddleware(handler, DefaultErrorPagePath)
 	handler = WithLoggingMiddleware(slog.Default(), s.config.HttpPort, s.config.HttpsPort, handler)
 	handler = WithRequestIDMiddleware(handler)
 

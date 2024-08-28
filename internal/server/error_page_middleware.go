@@ -8,6 +8,8 @@ import (
 	"net/http"
 )
 
+const DefaultErrorPagePath = "/usr/local/share/kamal-proxy/pages"
+
 var contextKeyErrorResponse = contextKey("error-response")
 
 type errorResponseContent struct {
@@ -20,7 +22,7 @@ type ErrorPageMiddleware struct {
 	next     http.Handler
 }
 
-func WithErrorPageMiddleware(next http.Handler) http.Handler {
+func WithErrorPageMiddleware(next http.Handler, errorPagePath string) http.Handler {
 	template, err := template.ParseGlob(fmt.Sprintf("%s/*.html", errorPagePath))
 	if err != nil {
 		slog.Error("Failed to parse error page templates", "error", err)
