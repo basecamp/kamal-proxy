@@ -198,7 +198,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	target, req, err := s.ClaimTarget(r)
 	if err != nil {
-		SendHTTPError(w, http.StatusServiceUnavailable, nil)
+		SetErrorResponse(w, req, http.StatusServiceUnavailable, nil)
 		return
 	}
 
@@ -219,12 +219,12 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 	switch action {
 	case PauseWaitActionStopped:
 		templateArguments := struct{ Message string }{message}
-		SendHTTPError(w, http.StatusServiceUnavailable, templateArguments)
+		SetErrorResponse(w, r, http.StatusServiceUnavailable, templateArguments)
 		return true
 
 	case PauseWaitActionTimedOut:
 		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
-		SendHTTPError(w, http.StatusGatewayTimeout, nil)
+		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
 		return true
 	}
 

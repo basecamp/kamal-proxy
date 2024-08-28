@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
@@ -66,20 +65,6 @@ func (s *Server) HttpsPort() int {
 	return s.httpsListener.Addr().(*net.TCPAddr).Port
 }
 
-func SendHTTPError(w http.ResponseWriter, code int, templateArguments any) {
-	t, err := template.ParseGlob(fmt.Sprintf("%s/*.html", errorPagePath))
-	if err != nil {
-		slog.Error("Failed to parse error page templates", "error", err)
-		http.Error(w, http.StatusText(code), code)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(code)
-
-	t.ExecuteTemplate(w, fmt.Sprintf("%d.html", code), templateArguments)
-}
-
 // Private
 
 func (s *Server) startHTTPServers() error {
@@ -130,6 +115,7 @@ func (s *Server) buildHandler() http.Handler {
 	handler = s.router
 	handler = WithLoggingMiddleware(slog.Default(), s.config.HttpPort, s.config.HttpsPort, handler)
 	handler = WithRequestIDMiddleware(handler)
+	handler = WithErrorPageMiddleware(handler)
 
 	return handler
 }

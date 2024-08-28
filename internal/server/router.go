@@ -77,7 +77,7 @@ func (r *Router) RestoreLastSavedState() error {
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service := r.serviceForRequest(req)
 	if service == nil {
-		SendHTTPError(w, http.StatusServiceUnavailable, nil)
+		SetErrorResponse(w, req, http.StatusServiceUnavailable, nil)
 		return
 	}
 
