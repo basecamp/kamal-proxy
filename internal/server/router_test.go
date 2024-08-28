@@ -17,7 +17,7 @@ func TestRouter_Empty(t *testing.T) {
 
 	statusCode, _ := sendGETRequest(router, "http://example.com/")
 
-	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
+	assert.Equal(t, http.StatusNotFound, statusCode)
 }
 
 func TestRouter_ActiveServiceForHost(t *testing.T) {
@@ -30,6 +30,17 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
+}
+
+func TestRouter_ActiveServiceForUnknownHost(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, _ := sendGETRequest(router, "http://other.example.com/")
+
+	assert.Equal(t, http.StatusNotFound, statusCode)
 }
 
 func TestRouter_ActiveServiceForHostContainingPort(t *testing.T) {
@@ -147,7 +158,7 @@ func TestRouter_ChangingHostForService(t *testing.T) {
 	assert.Equal(t, "second", body)
 
 	statusCode, _ = sendGETRequest(router, "http://dummy.example.com/")
-	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
+	assert.Equal(t, http.StatusNotFound, statusCode)
 }
 
 func TestRouter_ReusingHost(t *testing.T) {
@@ -211,9 +222,9 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	err := router.SetServiceTarget("example", "example.com", target, defaultServiceOptions, defaultTargetOptions, time.Millisecond*20, DefaultDrainTimeout)
 	assert.Equal(t, ErrorTargetFailedToBecomeHealthy, err)
 
-	statusCode, _ := sendGETRequest(router, "http://dummy.example.com/")
+	statusCode, _ := sendGETRequest(router, "http://example.com/")
 
-	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
+	assert.Equal(t, http.StatusNotFound, statusCode)
 }
 
 func TestRouter_EnablingRollout(t *testing.T) {
