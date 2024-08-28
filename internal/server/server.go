@@ -113,9 +113,9 @@ func (s *Server) buildHandler() http.Handler {
 	var handler http.Handler
 
 	handler = s.router
+	handler = WithErrorPageMiddleware(handler)
 	handler = WithLoggingMiddleware(slog.Default(), s.config.HttpPort, s.config.HttpsPort, handler)
 	handler = WithRequestIDMiddleware(handler)
-	handler = WithErrorPageMiddleware(handler)
 
 	return handler
 }
