@@ -21,6 +21,7 @@ func newRemoveCommand() *removeCommand {
 		RunE:      removeCommand.run,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"service"},
+		Aliases:   []string{"rm"},
 	}
 
 	return removeCommand
