@@ -39,6 +39,8 @@ const (
 	DefaultMaxMemoryBufferSize = 1 * MB
 	DefaultMaxRequestBodySize  = 0
 	DefaultMaxResponseBodySize = 0
+
+	DefaultStopMessage = ""
 )
 
 var ErrorRolloutTargetNotSet = errors.New("rollout target not set")
@@ -196,7 +198,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	target, req, err := s.ClaimTarget(r)
 	if err != nil {
-		SendHTTPError(w, http.StatusServiceUnavailable)
+		SendHTTPError(w, http.StatusServiceUnavailable, nil)
 		return
 	}
 
@@ -213,15 +215,16 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 		return true
 	}
 
-	action := s.pauseController.Wait()
+	action, message := s.pauseController.Wait()
 	switch action {
 	case PauseWaitActionStopped:
-		SendHTTPError(w, http.StatusServiceUnavailable)
+		templateArguments := struct{ Message string }{message}
+		SendHTTPError(w, http.StatusServiceUnavailable, templateArguments)
 		return true
 
 	case PauseWaitActionTimedOut:
 		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
-		SendHTTPError(w, http.StatusGatewayTimeout)
+		SendHTTPError(w, http.StatusGatewayTimeout, nil)
 		return true
 	}
 
@@ -279,8 +282,8 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (s *Service) Stop(drainTimeout time.Duration) error {
-	err := s.pauseController.Stop()
+func (s *Service) Stop(drainTimeout time.Duration, message string) error {
+	err := s.pauseController.Stop(message)
 	if err != nil {
 		return err
 	}

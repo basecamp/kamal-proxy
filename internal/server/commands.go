@@ -35,6 +35,7 @@ type PauseArgs struct {
 type StopArgs struct {
 	Service      string
 	DrainTimeout time.Duration
+	Message      string
 }
 
 type ResumeArgs struct {
@@ -121,7 +122,7 @@ func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
 }
 
 func (h *CommandHandler) Stop(args StopArgs, reply *bool) error {
-	return h.router.StopService(args.Service, args.DrainTimeout)
+	return h.router.StopService(args.Service, args.DrainTimeout, args.Message)
 }
 
 func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {

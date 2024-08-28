@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io"
+	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
@@ -66,18 +66,18 @@ func (s *Server) HttpsPort() int {
 	return s.httpsListener.Addr().(*net.TCPAddr).Port
 }
 
-func SendHTTPError(w http.ResponseWriter, code int) {
-	f, err := http.Dir(errorPagePath).Open(fmt.Sprintf("%d.html", code))
+func SendHTTPError(w http.ResponseWriter, code int, templateArguments any) {
+	t, err := template.ParseGlob(fmt.Sprintf("%s/*.html", errorPagePath))
 	if err != nil {
+		slog.Error("Failed to parse error page templates", "error", err)
 		http.Error(w, http.StatusText(code), code)
 		return
 	}
-	defer f.Close()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)
 
-	_, _ = io.Copy(w, f)
+	t.ExecuteTemplate(w, fmt.Sprintf("%d.html", code), templateArguments)
 }
 
 // Private

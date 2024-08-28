@@ -77,7 +77,7 @@ func (r *Router) RestoreLastSavedState() error {
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service := r.serviceForRequest(req)
 	if service == nil {
-		SendHTTPError(w, http.StatusServiceUnavailable)
+		SendHTTPError(w, http.StatusServiceUnavailable, nil)
 		return
 	}
 
@@ -86,8 +86,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) SetServiceTarget(name string, host string, targetURL string,
 	options ServiceOptions, targetOptions TargetOptions,
-	deployTimeout time.Duration, drainTimeout time.Duration) error {
-
+	deployTimeout time.Duration, drainTimeout time.Duration,
+) error {
 	defer r.saveStateSnapshot()
 
 	slog.Info("Deploying", "service", name, "host", host, "target", targetURL, "tls", options.RequireTLS())
@@ -176,7 +176,6 @@ func (r *Router) RemoveService(name string) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return err
 	}
@@ -195,7 +194,7 @@ func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTime
 	return service.Pause(drainTimeout, pauseTimeout)
 }
 
-func (r *Router) StopService(name string, drainTimeout time.Duration) error {
+func (r *Router) StopService(name string, drainTimeout time.Duration, message string) error {
 	defer r.saveStateSnapshot()
 
 	service := r.serviceForName(name, true)
@@ -203,7 +202,7 @@ func (r *Router) StopService(name string, drainTimeout time.Duration) error {
 		return ErrorServiceNotFound
 	}
 
-	return service.Stop(drainTimeout)
+	return service.Stop(drainTimeout, message)
 }
 
 func (r *Router) ResumeService(name string) error {

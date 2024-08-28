@@ -24,6 +24,7 @@ func newStopCommand() *stopCommand {
 	}
 
 	stopCommand.cmd.Flags().DurationVar(&stopCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "How long to allow in-flight requests to complete")
+	stopCommand.cmd.Flags().StringVar(&stopCommand.args.Message, "message", server.DefaultStopMessage, "Message to display to clients while stopped")
 
 	return stopCommand
 }
