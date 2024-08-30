@@ -10,7 +10,7 @@ import (
 
 func TestErrorPageMiddleware(t *testing.T) {
 	check := func(handler http.HandlerFunc) (int, string) {
-		middleware := WithErrorPageMiddleware(handler, "../../pages")
+		middleware := WithErrorPageMiddleware(handler)
 
 		req := httptest.NewRequest("GET", "http://example.com", nil)
 		resp := httptest.NewRecorder()

@@ -2,15 +2,19 @@ package server
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
 )
 
-const DefaultErrorPagePath = "/usr/local/share/kamal-proxy/pages"
+var (
+	//go:embed pages
+	pages embed.FS
 
-var contextKeyErrorResponse = contextKey("error-response")
+	contextKeyErrorResponse = contextKey("error-response")
+)
 
 type errorResponseContent struct {
 	StatusCode        int
@@ -22,8 +26,8 @@ type ErrorPageMiddleware struct {
 	next     http.Handler
 }
 
-func WithErrorPageMiddleware(next http.Handler, errorPagePath string) http.Handler {
-	template, err := template.ParseGlob(fmt.Sprintf("%s/*.html", errorPagePath))
+func WithErrorPageMiddleware(next http.Handler) http.Handler {
+	template, err := template.ParseFS(pages, "pages/*.html")
 	if err != nil {
 		slog.Error("Failed to parse error page templates", "error", err)
 		template = nil
