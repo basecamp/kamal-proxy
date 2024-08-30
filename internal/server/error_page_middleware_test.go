@@ -41,7 +41,17 @@ func TestErrorPageMiddleware(t *testing.T) {
 		assert.Regexp(t, "Gone to lunch", body)
 	})
 
-	t.Run("When returning an error directly", func(t *testing.T) {
+	t.Run("When trying to set an error that we don't have a template for", func(t *testing.T) {
+		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
+			SetErrorResponse(w, r, http.StatusTeapot, nil)
+		})
+
+		assert.Equal(t, http.StatusTeapot, status)
+		assert.Equal(t, "text/html; charset=utf-8", contentType)
+		assert.Regexp(t, "I'm a teapot", body)
+	})
+
+	t.Run("When the backend returns an error normally", func(t *testing.T) {
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(http.StatusTeapot), http.StatusTeapot)
 		})
@@ -49,14 +59,5 @@ func TestErrorPageMiddleware(t *testing.T) {
 		assert.Equal(t, http.StatusTeapot, status)
 		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 		assert.Regexp(t, "I'm a teapot", body)
-	})
-
-	t.Run("When trying to set an error that we don't have a template for", func(t *testing.T) {
-		status, contentType, _ := check(func(w http.ResponseWriter, r *http.Request) {
-			SetErrorResponse(w, r, http.StatusTeapot, nil)
-		})
-
-		assert.Equal(t, http.StatusTeapot, status)
-		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 	})
 }

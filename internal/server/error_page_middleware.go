@@ -57,20 +57,38 @@ func (h *ErrorPageMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	h.next.ServeHTTP(w, r)
 
 	if errorResponseContext.StatusCode != 0 {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(errorResponseContext.StatusCode)
-
-		template := h.template.Lookup(fmt.Sprintf("%d.html", errorResponseContext.StatusCode))
-		if template == nil {
-			slog.Error("No error template found for status", "status", errorResponseContext.StatusCode)
-			http.Error(w, http.StatusText(errorResponseContext.StatusCode), errorResponseContext.StatusCode)
-			return
-		}
-
-		err := template.Execute(w, errorResponseContext.TemplateArguments)
-		if err != nil {
-			slog.Error("Failed to render error page template", "name", template.Name, "error", err)
-			http.Error(w, http.StatusText(errorResponseContext.StatusCode), errorResponseContext.StatusCode)
-		}
+		h.respondWithErrorPage(w, errorResponseContext.StatusCode, errorResponseContext.TemplateArguments)
 	}
+}
+
+// Private
+
+func (h *ErrorPageMiddleware) respondWithErrorPage(w http.ResponseWriter, statusCode int, templateArguments any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(statusCode)
+
+	template := h.getTemplate(statusCode)
+	if template == nil {
+		slog.Error("Failed to render error page due to missing template", "status", statusCode)
+		h.writeErrorWithoutTemplate(w, statusCode)
+		return
+	}
+
+	err := template.Execute(w, templateArguments)
+	if err != nil {
+		slog.Error("Failed to render error page template", "name", template.Name, "error", err)
+		h.writeErrorWithoutTemplate(w, statusCode)
+	}
+}
+
+func (h *ErrorPageMiddleware) getTemplate(statusCode int) *template.Template {
+	if h.template == nil {
+		return nil
+	}
+
+	return h.template.Lookup(fmt.Sprintf("%d.html", statusCode))
+}
+
+func (h *ErrorPageMiddleware) writeErrorWithoutTemplate(w http.ResponseWriter, statusCode int) {
+	fmt.Fprintf(w, "<h1>%d %s</h1>", statusCode, http.StatusText(statusCode))
 }
