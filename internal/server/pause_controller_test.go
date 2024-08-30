@@ -13,7 +13,9 @@ func TestPauseController_RunningByDefault(t *testing.T) {
 	p := NewPauseController()
 
 	assert.Equal(t, PauseStateRunning, p.GetState())
-	assert.Equal(t, PauseWaitActionProceed, p.Wait())
+	action, message := p.Wait()
+	assert.Equal(t, PauseWaitActionProceed, action)
+	assert.Empty(t, message)
 }
 
 func TestPauseController_WaitBlocksWhenPaused(t *testing.T) {
@@ -29,7 +31,9 @@ func TestPauseController_WaitBlocksWhenPaused(t *testing.T) {
 		wg.Done()
 	}()
 
-	assert.Equal(t, PauseWaitActionProceed, p.Wait())
+	action, message := p.Wait()
+	assert.Equal(t, PauseWaitActionProceed, action)
+	assert.Empty(t, message)
 	wg.Wait()
 }
 
@@ -38,15 +42,21 @@ func TestPauseController_PausedWaitsCanTimeout(t *testing.T) {
 
 	require.NoError(t, p.Pause(time.Millisecond))
 	assert.Equal(t, PauseStatePaused, p.GetState())
-	assert.Equal(t, PauseWaitActionTimedOut, p.Wait())
+
+	action, message := p.Wait()
+	assert.Equal(t, PauseWaitActionTimedOut, action)
+	assert.Empty(t, message)
 }
 
 func TestPauseController_Stopped(t *testing.T) {
 	p := NewPauseController()
 
-	require.NoError(t, p.Stop())
+	require.NoError(t, p.Stop(DefaultStopMessage))
 	assert.Equal(t, PauseStateStopped, p.GetState())
-	assert.Equal(t, PauseWaitActionUnavailable, p.Wait())
+
+	action, message := p.Wait()
+	assert.Equal(t, PauseWaitActionStopped, action)
+	assert.Equal(t, DefaultStopMessage, message)
 }
 
 func TestPauseController_StoppingPausedRequestsFailsThemImmediately(t *testing.T) {
@@ -58,10 +68,12 @@ func TestPauseController_StoppingPausedRequestsFailsThemImmediately(t *testing.T
 
 	wg.Add(1)
 	go func() {
-		require.NoError(t, p.Stop())
+		require.NoError(t, p.Stop("Back in 15 mins!"))
 		wg.Done()
 	}()
 
-	assert.Equal(t, PauseWaitActionUnavailable, p.Wait())
+	action, message := p.Wait()
+	assert.Equal(t, PauseWaitActionStopped, action)
+	assert.Equal(t, "Back in 15 mins!", message)
 	wg.Wait()
 }
