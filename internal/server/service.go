@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path"
 	"sync"
 	"time"
@@ -62,6 +63,7 @@ type ServiceOptions struct {
 	TLSHostname   string `json:"tls_hostname"`
 	ACMEDirectory string `json:"acme_directory"`
 	ACMECachePath string `json:"acme_cache_path"`
+	ErrorPagePath string `json:"error_page_path"`
 }
 
 func (so ServiceOptions) RequireTLS() bool {
@@ -93,6 +95,7 @@ type Service struct {
 	pauseController   *PauseController
 	rolloutController *RolloutController
 	certManager       *autocert.Manager
+	middleware        http.Handler
 }
 
 func NewService(name, host string, options ServiceOptions) *Service {
@@ -110,6 +113,7 @@ func NewService(name, host string, options ServiceOptions) *Service {
 func (s *Service) UpdateOptions(options ServiceOptions) {
 	s.options = options
 	s.certManager = s.createCertManager()
+	s.middleware = s.createMiddleware()
 }
 
 func (s *Service) ActiveTarget() *Target {
@@ -185,6 +189,10 @@ func (s *Service) StopRollout() error {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.middleware.ServeHTTP(w, r)
+}
+
+func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
 	if s.options.RequireTLS() && r.TLS == nil {
@@ -323,6 +331,7 @@ func (s *Service) Resume() error {
 func (s *Service) initialize() {
 	s.pauseController = NewPauseController()
 	s.certManager = s.createCertManager()
+	s.middleware = s.createMiddleware()
 }
 
 func (s *Service) createCertManager() *autocert.Manager {
@@ -336,6 +345,16 @@ func (s *Service) createCertManager() *autocert.Manager {
 		HostPolicy: autocert.HostWhitelist(s.options.TLSHostname),
 		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
 	}
+}
+
+func (s *Service) createMiddleware() http.Handler {
+	if s.options.ErrorPagePath != "" {
+		slog.Debug("Using custom error pages", "service", s.name, "path", s.options.ErrorPagePath)
+		errorPageFS := os.DirFS(s.options.ErrorPagePath)
+		return WithErrorPageMiddleware(errorPageFS, false, http.HandlerFunc(s.serviceRequestWithTarget))
+	}
+
+	return http.HandlerFunc(s.serviceRequestWithTarget)
 }
 
 func (s *Service) restoreSavedTarget(slot TargetSlot, savedTarget string, options TargetOptions) error {
