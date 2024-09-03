@@ -192,53 +192,6 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.middleware.ServeHTTP(w, r)
 }
 
-func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
-	LoggingRequestContext(r).Service = s.name
-
-	if s.options.RequireTLS() && r.TLS == nil {
-		s.redirectToHTTPS(w, r)
-		return
-	}
-
-	if s.handlePausedAndStoppedRequests(w, r) {
-		return
-	}
-
-	target, req, err := s.ClaimTarget(r)
-	if err != nil {
-		SetErrorResponse(w, req, http.StatusServiceUnavailable, nil)
-		return
-	}
-
-	target.SendRequest(w, req)
-}
-
-func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
-	if s.pauseController.GetState() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
-		// When paused or stopped, return success for any health check
-		// requests from downstream services. Otherwise they might consider
-		// us as unhealthy while in that state, and remove us from their
-		// pool.
-		w.WriteHeader(http.StatusOK)
-		return true
-	}
-
-	action, message := s.pauseController.Wait()
-	switch action {
-	case PauseWaitActionStopped:
-		templateArguments := struct{ Message string }{message}
-		SetErrorResponse(w, r, http.StatusServiceUnavailable, templateArguments)
-		return true
-
-	case PauseWaitActionTimedOut:
-		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
-		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
-		return true
-	}
-
-	return false
-}
-
 type marshalledService struct {
 	Name              string             `json:"name"`
 	Host              string             `json:"host"`
@@ -355,6 +308,53 @@ func (s *Service) createMiddleware() http.Handler {
 	}
 
 	return http.HandlerFunc(s.serviceRequestWithTarget)
+}
+
+func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
+	LoggingRequestContext(r).Service = s.name
+
+	if s.options.RequireTLS() && r.TLS == nil {
+		s.redirectToHTTPS(w, r)
+		return
+	}
+
+	if s.handlePausedAndStoppedRequests(w, r) {
+		return
+	}
+
+	target, req, err := s.ClaimTarget(r)
+	if err != nil {
+		SetErrorResponse(w, req, http.StatusServiceUnavailable, nil)
+		return
+	}
+
+	target.SendRequest(w, req)
+}
+
+func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
+	if s.pauseController.GetState() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
+		// When paused or stopped, return success for any health check
+		// requests from downstream services. Otherwise they might consider
+		// us as unhealthy while in that state, and remove us from their
+		// pool.
+		w.WriteHeader(http.StatusOK)
+		return true
+	}
+
+	action, message := s.pauseController.Wait()
+	switch action {
+	case PauseWaitActionStopped:
+		templateArguments := struct{ Message string }{message}
+		SetErrorResponse(w, r, http.StatusServiceUnavailable, templateArguments)
+		return true
+
+	case PauseWaitActionTimedOut:
+		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
+		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
+		return true
+	}
+
+	return false
 }
 
 func (s *Service) restoreSavedTarget(slot TargetSlot, savedTarget string, options TargetOptions) error {
