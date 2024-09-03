@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -40,7 +41,11 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
-	s.startCommandHandler()
+
+	err = s.startCommandHandler()
+	if err != nil {
+		return err
+	}
 
 	slog.Info("Server started", "http", s.HttpPort(), "https", s.HttpsPort())
 	return nil
@@ -102,10 +107,11 @@ func (s *Server) startHTTPServers() error {
 	return nil
 }
 
-func (s *Server) startCommandHandler() {
+func (s *Server) startCommandHandler() error {
 	s.commandHandler = NewCommandHandler(s.router)
+	_ = os.Remove(s.config.SocketPath())
 
-	go s.commandHandler.Start(s.config.SocketPath())
+	return s.commandHandler.Start(s.config.SocketPath())
 }
 
 func (s *Server) buildHandler() http.Handler {
