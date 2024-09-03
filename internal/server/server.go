@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/acme"
+
+	"github.com/basecamp/kamal-proxy/internal/pages"
 )
 
 const (
@@ -118,7 +120,7 @@ func (s *Server) buildHandler() http.Handler {
 	var handler http.Handler
 
 	handler = s.router
-	handler = WithErrorPageMiddleware(handler)
+	handler = WithErrorPageMiddleware(pages.DefaultErrorPages, true, handler)
 	handler = WithLoggingMiddleware(slog.Default(), s.config.HttpPort, s.config.HttpsPort, handler)
 	handler = WithRequestIDMiddleware(handler)
 
