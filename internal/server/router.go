@@ -48,7 +48,7 @@ func (r *Router) RestoreLastSavedState() error {
 	f, err := os.Open(r.statePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			slog.Debug("No state to restore", "path", r.statePath)
+			slog.Info("No previous state to restore", "path", r.statePath)
 			return nil
 		}
 		slog.Error("Failed to restore saved state", "path", r.statePath, "error", err)

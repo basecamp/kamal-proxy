@@ -53,10 +53,10 @@ func testBackendWithHandler(t *testing.T, handler http.HandlerFunc) (*httptest.S
 
 func testServer(t *testing.T) (*Server, string) {
 	config := &Config{
-		Bind:      "127.0.0.1",
-		HttpPort:  0,
-		HttpsPort: 0,
-		ConfigDir: shortTmpDir(t),
+		Bind:               "127.0.0.1",
+		HttpPort:           0,
+		HttpsPort:          0,
+		AlternateConfigDir: shortTmpDir(t),
 	}
 	router := NewRouter(config.StatePath())
 	server := NewServer(config, router)

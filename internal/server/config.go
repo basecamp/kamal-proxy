@@ -3,8 +3,8 @@ package server
 import (
 	"cmp"
 	"os"
-	"os/user"
 	"path"
+	"syscall"
 )
 
 const (
@@ -14,50 +14,45 @@ const (
 
 type Config struct {
 	Bind      string
-	ConfigDir string
 	HttpPort  int
 	HttpsPort int
+
+	AlternateConfigDir string
 }
 
 func (c Config) SocketPath() string {
-	return path.Join(c.RuntimeDirectory(), "kamal-proxy.sock")
+	return path.Join(c.runtimeDirectory(), "kamal-proxy.sock")
 }
 
 func (c Config) StatePath() string {
-	return path.Join(c.StateDirectory(), "kamal-proxy.state")
+	return path.Join(c.dataDirectory(), "kamal-proxy.state")
 }
 
 func (c Config) CertificatePath() string {
-	return path.Join(c.DataDirectory(), "certs")
+	return path.Join(c.dataDirectory(), "certs")
 }
 
-func (c Config) RuntimeDirectory() string {
-	return c.locateDirectory("XDG_RUNTIME_DIR", "/tmp", "run")
+// Private
+
+func (c Config) runtimeDirectory() string {
+	return cmp.Or(os.Getenv("XDG_RUNTIME_DIR"), os.TempDir())
 }
 
-func (c Config) StateDirectory() string {
-	return c.locateDirectory("XDG_STATE_HOME", ".local/state", "state")
+func (c Config) dataDirectory() string {
+	return cmp.Or(c.AlternateConfigDir, c.defaultDataDirectory())
 }
 
-func (c Config) DataDirectory() string {
-	return c.locateDirectory("XDG_DATA_HOME", ".local/share", "data")
-}
-
-func (c Config) locateDirectory(env, defaultDir, relocatedDir string) string {
-	if defaultDir[0] != '/' {
-		usr, _ := user.Current()
-		defaultDir = path.Join(usr.HomeDir, defaultDir)
-	}
-
-	dir := cmp.Or(os.Getenv(env), defaultDir)
-	if c.ConfigDir != "" {
-		dir = path.Join(c.ConfigDir, relocatedDir)
-	}
-
-	dir = path.Join(dir, "kamal-proxy")
-	err := os.MkdirAll(dir, 0700)
+func (c Config) defaultDataDirectory() string {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		panic(err)
+		home = os.TempDir()
+	}
+
+	dir := path.Join(home, ".config", "kamal-proxy")
+
+	err = os.MkdirAll(dir, syscall.S_IRUSR|syscall.S_IWUSR|syscall.S_IXUSR)
+	if err != nil {
+		dir = os.TempDir()
 	}
 
 	return dir

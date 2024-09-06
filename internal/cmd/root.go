@@ -19,7 +19,6 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
-	rootCmd.PersistentFlags().StringVar(&globalConfig.ConfigDir, "state-path", "", "Path to store state; empty to use default system paths")
 
 	rootCmd.AddCommand(newRunCommand().cmd)
 	rootCmd.AddCommand(newDeployCommand().cmd)
