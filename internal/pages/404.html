@@ -31,10 +31,11 @@
         color: #FFF;
         display: grid;
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Aptos, Roboto, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-        font-size: clamp(1.25rem, 2vw, 2rem);
+        font-size: clamp(1rem, 2.5vw, 2rem);
         -webkit-font-smoothing: antialiased;
         font-style: normal;
         font-weight: 400;
+        letter-spacing: -0.0025em;
         line-height: 1.4;
         min-height: 100vh;
         place-items: center;
@@ -59,40 +60,38 @@
 
       main {
         display: grid;
-        gap: 1.4em;
+        gap: 1em;
         padding: 2em;
         place-items: center;
         text-align: center;
-        width: min(100%, 36em);
       }
 
       main header {
-        position: relative;
+        width: min(100%, 18em);
+      }
+
+      main header svg {
+        height: auto;
+        max-width: 100%;
         width: 100%;
       }
 
-      main header h1 {
-        font-size: 675%;
-        font-weight: 700;
-        letter-spacing: -0.025em;
-        line-height: 1;
-        opacity: 0.1;
-      }
-
-      main header h2 {
-        display: grid;
-        font-size: 135%;
-        font-weight: 700;
-        height: 100%;
-        left: 0;
-        place-content: center;
-        position: absolute;
-        top: 0;
-        width: 100%;
+      main article {
+        width: min(100%, 30em);
       }
 
       main article p {
         font-size: 75%;
+      }
+
+      main article br {
+
+        display: none;
+
+        @media(min-width: 48em) {
+          display: inline;
+        }
+
       }
 
     </style>
@@ -104,8 +103,7 @@
     <main>
 
       <header>
-        <h1>404</h1>
-        <h2>Not Found</h2>
+        <svg fill="none" height="154" viewBox="0 0 618 154" width="618" xmlns="http://www.w3.org/2000/svg"><g fill="#fff"><path d="m170.31 3.49999h32.34l-40.74 91.14001h30.24v-29.61h32.76v29.61h17.85v26.88h-17.85v28.98h-32.76v-28.98h-64.89v-25.83zm138.429 149.94001c-34.44 0-57.54-21.21-57.54-52.5v-47.88c0-31.29 23.1-52.50001 57.54-52.50001s57.54 21.21001 57.54 52.50001v47.88c0 31.29-23.1 52.5-57.54 52.5zm21.84-100.38c0-16.17-8.61-23.31-21.84-23.31s-21.84 7.14-21.84 23.31v47.88c0 16.17 8.61 23.31 21.84 23.31s21.84-7.14 21.84-23.31zm89.787-49.56001h32.34l-40.74 91.14001h30.24v-29.61h32.76v29.61h17.85v26.88h-17.85v28.98h-32.76v-28.98h-64.89v-25.83z" opacity=".1"/><path d="m237.052 91.5h-6.888l-11.004-17.178v17.178h-7.056v-29.4h6.846l11.046 17.178v-17.178h7.056zm24.922-12.474v2.94c0 5.796-3.864 10.038-10.71 10.038s-10.71-4.242-10.71-10.038v-2.94c0-5.796 3.864-10.038 10.71-10.038s10.71 4.242 10.71 10.038zm-6.846-.378c0-2.226-1.176-4.074-3.864-4.074s-3.864 1.848-3.864 4.074v3.696c0 2.226 1.176 4.074 3.864 4.074s3.864-1.848 3.864-4.074zm11.008-15.078h7.056v5.922h4.242v5.46h-4.242v9.366c0 1.008.504 1.47 1.596 1.47h2.31v5.712h-4.662c-4.2 0-6.3-2.478-6.3-6.51v-10.038h-2.856v-5.46h2.856zm30.818 27.93h-7.224v-29.4h20.664v6.006h-13.44v6.342h12.18v6.006h-12.18zm36.534-12.474v2.94c0 5.796-3.864 10.038-10.71 10.038s-10.71-4.242-10.71-10.038v-2.94c0-5.796 3.864-10.038 10.71-10.038s10.71 4.242 10.71 10.038zm-6.846-.378c0-2.226-1.176-4.074-3.864-4.074s-3.864 1.848-3.864 4.074v3.696c0 2.226 1.176 4.074 3.864 4.074s3.864-1.848 3.864-4.074zm23.056-9.156h7.056v22.008h-6.762v-2.562c-1.134 2.016-3.318 3.066-6.132 3.066-4.914 0-7.518-3.234-7.518-8.316v-14.196h7.056v13.314c0 2.016 1.008 3.276 3.024 3.276 1.806 0 3.276-.84 3.276-3.36zm18.084 22.008h-7.056v-22.008h6.762v2.562c1.134-2.016 3.318-3.066 6.132-3.066 5.04 0 7.728 3.234 7.728 8.316v14.196h-7.056v-13.104c0-2.016-1.05-3.276-3.192-3.276-1.806 0-3.318.84-3.318 3.36zm38.533-30.66v30.66h-6.72v-2.31c-.672 1.218-3.024 2.814-6.048 2.814-6.216 0-9.324-4.704-9.324-9.702v-3.612c0-4.998 3.108-9.702 9.324-9.702 2.646 0 4.746 1.218 5.712 2.352v-10.5zm-7.056 21.21v-3.108c0-2.772-1.848-4.158-3.948-4.158-2.772 0-4.032 1.68-4.032 4.284v2.856c0 2.52 1.26 4.284 4.032 4.284 2.1 0 3.948-1.386 3.948-4.158z"/></g></svg>
       </header>
 
       <article>
