@@ -318,6 +318,11 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if !s.options.RequireTLS() && r.TLS != nil {
+		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
+		return
+	}
+
 	if s.handlePausedAndStoppedRequests(w, r) {
 		return
 	}
