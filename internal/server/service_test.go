@@ -42,6 +42,24 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
+	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
+
+	require.False(t, service.options.RequireTLS())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	req = httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+	w = httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Result().StatusCode)
+}
+
 func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
 
