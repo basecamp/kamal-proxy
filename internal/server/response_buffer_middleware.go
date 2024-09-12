@@ -43,9 +43,10 @@ func (h *ResponseBufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Requ
 
 type bufferedResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
-	buffer     *Buffer
-	hijacked   bool
+	statusCode    int
+	buffer        *Buffer
+	hijacked      bool
+	headerWritten bool
 }
 
 func (w *bufferedResponseWriter) Send() error {
@@ -57,7 +58,9 @@ func (w *bufferedResponseWriter) Send() error {
 		return nil
 	}
 
-	w.ResponseWriter.WriteHeader(w.statusCode)
+	if w.headerWritten {
+		w.ResponseWriter.WriteHeader(w.statusCode)
+	}
 	return w.buffer.Send(w.ResponseWriter)
 }
 
@@ -66,7 +69,10 @@ func (w *bufferedResponseWriter) Header() http.Header {
 }
 
 func (w *bufferedResponseWriter) WriteHeader(statusCode int) {
-	w.statusCode = statusCode
+	if !w.headerWritten {
+		w.statusCode = statusCode
+		w.headerWritten = true
+	}
 }
 
 func (w *bufferedResponseWriter) Write(data []byte) (int, error) {
