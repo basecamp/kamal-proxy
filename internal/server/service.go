@@ -26,7 +26,7 @@ const (
 
 const (
 	DefaultDeployTimeout = time.Second * 30
-	DefaultDrainTimeout  = time.Second * 10
+	DefaultDrainTimeout  = time.Second * 30
 	DefaultPauseTimeout  = time.Second * 30
 
 	DefaultHealthCheckPath     = "/up"
@@ -36,7 +36,7 @@ const (
 	MaxIdleConnsPerHost = 100
 	ProxyBufferSize     = 32 * KB
 
-	DefaultTargetTimeout       = time.Second * 10
+	DefaultTargetTimeout       = time.Second * 30
 	DefaultMaxMemoryBufferSize = 1 * MB
 	DefaultMaxRequestBodySize  = 0
 	DefaultMaxResponseBodySize = 0
