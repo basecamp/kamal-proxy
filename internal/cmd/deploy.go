@@ -10,9 +10,11 @@ import (
 )
 
 type deployCommand struct {
-	cmd        *cobra.Command
-	args       server.DeployArgs
-	tlsStaging bool
+	cmd                *cobra.Command
+	args               server.DeployArgs
+	tlsStaging         bool
+	tlsCertificatePath string
+	tlsPrivateKeyPath  string
 }
 
 func newDeployCommand() *deployCommand {
@@ -31,6 +33,8 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.TLSEnabled, "tls", false, "Configure TLS for this target (requires a non-empty host)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environment for certificate provisioning")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.tlsCertificatePath, "tls-certificate-path", "", "")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.tlsPrivateKeyPath, "tls-private-key-path", "", "")
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
@@ -62,6 +66,8 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 
 	if c.args.ServiceOptions.TLSEnabled {
 		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
+		c.args.ServiceOptions.TLSCertificatePath = c.tlsCertificatePath
+		c.args.ServiceOptions.TLSPrivateKeyPath = c.tlsPrivateKeyPath
 
 		if c.tlsStaging {
 			c.args.ServiceOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
@@ -85,6 +91,14 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 
 	if cmd.Flags().Changed("tls") && !cmd.Flags().Changed("host") {
 		return fmt.Errorf("host must be set when using TLS")
+	}
+
+	if cmd.Flags().Changed("tls-certificate-path") && !cmd.Flags().Changed("tls-private-key-path") {
+		return fmt.Errorf("tls-private-key-path must be set when specified tls-certificate-path")
+	}
+
+	if cmd.Flags().Changed("tls-private-key-path") && !cmd.Flags().Changed("tls-certificate-path") {
+		return fmt.Errorf("tls-certificate-path must be set when specified tls-private-key-path")
 	}
 
 	if !cmd.Flags().Changed("forward-headers") {

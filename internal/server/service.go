@@ -60,10 +60,12 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	TLSEnabled    bool   `json:"tls_enabled"`
-	ACMEDirectory string `json:"acme_directory"`
-	ACMECachePath string `json:"acme_cache_path"`
-	ErrorPagePath string `json:"error_page_path"`
+	TLSEnabled         bool   `json:"tls_enabled"`
+	TLSCertificatePath string `json:"tls_certificate_path"`
+	TLSPrivateKeyPath  string `json:"tls_private_key_path"`
+	ACMEDirectory      string `json:"acme_directory"`
+	ACMECachePath      string `json:"acme_cache_path"`
+	ErrorPagePath      string `json:"error_page_path"`
 }
 
 func (so ServiceOptions) ScopedCachePath() string {
@@ -90,7 +92,7 @@ type Service struct {
 
 	pauseController   *PauseController
 	rolloutController *RolloutController
-	certManager       *autocert.Manager
+	certManager       CertManager
 	middleware        http.Handler
 }
 
@@ -284,9 +286,13 @@ func (s *Service) initialize() {
 	s.middleware = s.createMiddleware()
 }
 
-func (s *Service) createCertManager() *autocert.Manager {
+func (s *Service) createCertManager() CertManager {
 	if !s.options.TLSEnabled {
 		return nil
+	}
+
+	if s.options.TLSCertificatePath != "" && s.options.TLSPrivateKeyPath != "" {
+		return NewStaticCertManager(s.options.TLSCertificatePath, s.options.TLSPrivateKeyPath)
 	}
 
 	return &autocert.Manager{
