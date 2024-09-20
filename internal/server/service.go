@@ -339,7 +339,7 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
 	if s.pauseController.GetState() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
 		// When paused or stopped, return success for any health check
-		// requests from downstream services. Otherwise they might consider
+		// requests from downstream services. Otherwise, they might consider
 		// us as unhealthy while in that state, and remove us from their
 		// pool.
 		w.WriteHeader(http.StatusOK)
