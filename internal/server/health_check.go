@@ -75,6 +75,7 @@ func (hc *HealthCheck) check() {
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		slog.Info("Healthcheck failed", "status", resp.StatusCode)

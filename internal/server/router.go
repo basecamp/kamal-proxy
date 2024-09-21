@@ -54,6 +54,7 @@ func (r *Router) RestoreLastSavedState() error {
 		slog.Error("Failed to restore saved state", "path", r.statePath, "error", err)
 		return err
 	}
+	defer f.Close()
 
 	var services []*Service
 	err = json.NewDecoder(f).Decode(&services)
