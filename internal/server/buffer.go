@@ -35,6 +35,7 @@ func NewBufferedReadCloser(r io.ReadCloser, maxBytes, maxMemBytes int64) (io.Rea
 
 	_, err := io.Copy(buf, r)
 	if err != nil {
+		buf.Close()
 		return nil, err
 	}
 
