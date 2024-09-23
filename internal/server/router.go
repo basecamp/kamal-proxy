@@ -20,12 +20,31 @@ var (
 	ErrorUnknownServerName           = errors.New("unknown server name")
 )
 
+type ServiceMap map[string]*Service
 type HostServiceMap map[string]*Service
 
+func (m *ServiceMap) HostServices() HostServiceMap {
+	hostServices := HostServiceMap{}
+	for _, service := range *m {
+		hostServices[service.host] = service
+	}
+	return hostServices
+}
+
+func (m *ServiceMap) CheckHostAvailability(service *Service, host string) *Service {
+	for _, s := range *m {
+		if s.host == host && s != service {
+			return s
+		}
+	}
+	return nil
+}
+
 type Router struct {
-	statePath   string
-	services    HostServiceMap
-	serviceLock sync.RWMutex
+	statePath    string
+	services     ServiceMap
+	hostServices HostServiceMap
+	serviceLock  sync.RWMutex
 }
 
 type ServiceDescription struct {
@@ -39,8 +58,9 @@ type ServiceDescriptionMap map[string]ServiceDescription
 
 func NewRouter(statePath string) *Router {
 	return &Router{
-		statePath: statePath,
-		services:  HostServiceMap{},
+		statePath:    statePath,
+		services:     ServiceMap{},
+		hostServices: HostServiceMap{},
 	}
 }
 
@@ -64,10 +84,12 @@ func (r *Router) RestoreLastSavedState() error {
 	}
 
 	r.withWriteLock(func() error {
-		r.services = HostServiceMap{}
+		r.services = ServiceMap{}
 		for _, service := range services {
-			r.services[service.host] = service
+			r.services[service.name] = service
 		}
+
+		r.hostServices = r.services.HostServices()
 		return nil
 	})
 
@@ -118,7 +140,7 @@ func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout t
 
 	slog.Info("Deploying for rollout", "service", name, "target", targetURL)
 
-	service := r.serviceForName(name, true)
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -144,7 +166,7 @@ func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout t
 func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) error {
 	defer r.saveStateSnapshot()
 
-	service := r.serviceForName(name, true)
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -155,7 +177,7 @@ func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) e
 func (r *Router) StopRollout(name string) error {
 	defer r.saveStateSnapshot()
 
-	service := r.serviceForName(name, true)
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -167,13 +189,14 @@ func (r *Router) RemoveService(name string) error {
 	defer r.saveStateSnapshot()
 
 	err := r.withWriteLock(func() error {
-		service := r.serviceForName(name, false)
+		service := r.services[name]
 		if service == nil {
 			return ErrorServiceNotFound
 		}
 
 		service.SetTarget(TargetSlotActive, nil, DefaultDrainTimeout)
-		delete(r.services, service.host)
+		delete(r.services, service.name)
+		r.hostServices = r.services.HostServices()
 
 		return nil
 	})
@@ -187,7 +210,7 @@ func (r *Router) RemoveService(name string) error {
 func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
 	defer r.saveStateSnapshot()
 
-	service := r.serviceForName(name, true)
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -198,7 +221,7 @@ func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTime
 func (r *Router) StopService(name string, drainTimeout time.Duration, message string) error {
 	defer r.saveStateSnapshot()
 
-	service := r.serviceForName(name, true)
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -209,7 +232,7 @@ func (r *Router) StopService(name string, drainTimeout time.Duration, message st
 func (r *Router) ResumeService(name string) error {
 	defer r.saveStateSnapshot()
 
-	service := r.serviceForName(name, true)
+	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
@@ -221,12 +244,13 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 	result := ServiceDescriptionMap{}
 
 	r.withReadLock(func() error {
-		for host, service := range r.services {
+		for name, service := range r.services {
+			host := service.host
 			if host == "" {
 				host = "*"
 			}
 			if service.active != nil {
-				result[service.name] = ServiceDescription{
+				result[name] = ServiceDescription{
 					Host:   host,
 					Target: service.active.Target(),
 					TLS:    service.options.RequireTLS(),
@@ -300,9 +324,9 @@ func (r *Router) serviceForHost(host string) *Service {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	service, ok := r.services[host]
+	service, ok := r.hostServices[host]
 	if !ok {
-		service = r.services[""]
+		service = r.hostServices[""]
 	}
 
 	return service
@@ -312,44 +336,31 @@ func (r *Router) setActiveTarget(name string, host string, target *Target, optio
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	service := r.serviceForName(name, false)
+	service := r.services[name]
 	if service == nil {
 		service = NewService(name, host, options)
 	} else {
-		service.UpdateOptions(options)
+		service.UpdateOptions(host, options)
 	}
 
-	hostService, ok := r.services[host]
-	if !ok {
-		if host != service.host {
-			delete(r.services, service.host)
-			service.host = host
-		}
-
-		r.services[host] = service
-	} else if hostService != service {
-		slog.Error("Host in use by another service", "service", hostService.name, "host", host)
+	conflict := r.services.CheckHostAvailability(service, host)
+	if conflict != nil {
+		slog.Error("Host in use by another service", "service", conflict.name, "host", host)
 		return ErrorHostInUse
 	}
+	r.services[name] = service
+	r.hostServices = r.services.HostServices()
 
 	service.SetTarget(TargetSlotActive, target, drainTimeout)
 
 	return nil
 }
 
-func (r *Router) serviceForName(name string, readLock bool) *Service {
-	if readLock {
-		r.serviceLock.RLock()
-		defer r.serviceLock.RUnlock()
-	}
+func (r *Router) serviceForName(name string) *Service {
+	r.serviceLock.RLock()
+	defer r.serviceLock.RUnlock()
 
-	for _, service := range r.services {
-		if name == service.name {
-			return service
-		}
-	}
-
-	return nil
+	return r.services[name]
 }
 
 func (r *Router) withReadLock(fn func() error) error {

@@ -110,7 +110,8 @@ func NewService(name, host string, options ServiceOptions) *Service {
 	return service
 }
 
-func (s *Service) UpdateOptions(options ServiceOptions) {
+func (s *Service) UpdateOptions(host string, options ServiceOptions) {
+	s.host = host
 	s.options = options
 	s.certManager = s.createCertManager()
 	s.middleware = s.createMiddleware()
