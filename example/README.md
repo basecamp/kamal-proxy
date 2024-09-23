@@ -1,6 +1,6 @@
 # Deployment example
 
-You can start up a example environment using Docker Compose in this directory.
+You can start up an example environment using Docker Compose in this directory.
 
 First, start the services:
 

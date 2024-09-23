@@ -5,7 +5,7 @@
 
 Kamal Proxy is a tiny HTTP proxy, designed to make it easy to coordinate
 zero-downtime deployments. By running your web applications behind Kamal Proxy,
-you can deploy changes to them without interruping any of the traffic that's in
+you can deploy changes to them without interrupting any of the traffic that's in
 progress. No particular cooperation from an application is required for this to
 work.
 
@@ -78,7 +78,7 @@ Only one service at a time can route a specific host:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com
     kamal-proxy deploy service2 --target web-2:3000 --host app1.example.com # returns "Error: host is used by another service"
     kamal-proxy remove service1
-    kamal-proxy deploy service2 --target web-2:3000 --host app1.example.com # suceeds
+    kamal-proxy deploy service2 --target web-2:3000 --host app1.example.com # succeeds
 
 
 ### Automatic TLS

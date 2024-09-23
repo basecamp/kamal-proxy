@@ -95,7 +95,7 @@ func (h *ErrorPageMiddleware) getTemplate(statusCode int) *template.Template {
 
 func (h *ErrorPageMiddleware) writeErrorWithoutTemplate(w http.ResponseWriter, statusCode int) bool {
 	if h.root {
-		// Only do this when we're the root middleware. Otherwise we can let our parent try to handle it.
+		// Only do this when we're the root middleware. Otherwise, we can let our parent try to handle it.
 		fmt.Fprintf(w, "<h1>%d %s</h1>", statusCode, http.StatusText(statusCode))
 		return true
 	}
