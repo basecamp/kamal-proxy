@@ -38,6 +38,21 @@ func TestCertificateLoading(t *testing.T) {
 	require.NotNil(t, cert)
 }
 
+func TestCertificateLoadingRaceCondition(t *testing.T) {
+	certPath, keyPath, err := prepareTestCertificateFiles()
+	require.NoError(t, err)
+	defer os.Remove(certPath)
+	defer os.Remove(keyPath)
+
+	manager := NewStaticCertManager(certPath, keyPath)
+	go func() {
+		manager.GetCertificate(&tls.ClientHelloInfo{})
+	}()
+	cert, err := manager.GetCertificate(&tls.ClientHelloInfo{})
+	require.NoError(t, err)
+	require.NotNil(t, cert)
+}
+
 func TestCachesLoadedCertificate(t *testing.T) {
 	certPath, keyPath, err := prepareTestCertificateFiles()
 	require.NoError(t, err)

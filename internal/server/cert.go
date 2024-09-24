@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"log/slog"
+	"sync"
 )
 
 type CertManager interface {
@@ -14,6 +15,7 @@ type StaticCertManager struct {
 	tlsCertificateFilePath string
 	tlsPrivateKeyFilePath  string
 	cert                   *tls.Certificate
+	lock                   sync.RWMutex
 }
 
 func NewStaticCertManager(tlsCertificateFilePath, tlsPrivateKeyFilePath string) *StaticCertManager {
@@ -24,7 +26,16 @@ func NewStaticCertManager(tlsCertificateFilePath, tlsPrivateKeyFilePath string) 
 }
 
 func (m *StaticCertManager) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	m.lock.RLock()
 	if m.cert != nil {
+		defer m.lock.RUnlock()
+		return m.cert, nil
+	}
+	m.lock.RUnlock()
+
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	if m.cert != nil { // Double-check locking
 		return m.cert, nil
 	}
 
