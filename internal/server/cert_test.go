@@ -56,6 +56,25 @@ func TestCachesLoadedCertificate(t *testing.T) {
 	require.Equal(t, cert1, cert2)
 }
 
+func TestErrorWhenFileDoesNotExist(t *testing.T) {
+	manager := NewStaticCertManager("testdata/cert.pem", "testdata/key.pem")
+	cert1, err := manager.GetCertificate(&tls.ClientHelloInfo{})
+	require.ErrorContains(t, err, "no such file or directory")
+	require.Nil(t, cert1)
+}
+
+func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
+	certPath, keyPath, err := prepareTestCertificateFiles()
+	require.NoError(t, err)
+	defer os.Remove(certPath)
+	defer os.Remove(keyPath)
+
+	manager := NewStaticCertManager(keyPath, certPath)
+	cert1, err := manager.GetCertificate(&tls.ClientHelloInfo{})
+	require.ErrorContains(t, err, "failed to find certificate PEM data in certificate input")
+	require.Nil(t, cert1)
+}
+
 func prepareTestCertificateFiles() (string, string, error) {
 	certFile, err := os.CreateTemp("", "example-cert-*.pem")
 	if err != nil {
