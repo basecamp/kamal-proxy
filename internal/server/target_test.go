@@ -237,14 +237,14 @@ func TestTarget_DrainWhenEmpty(t *testing.T) {
 
 func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	n := 3
-	var served int32 = 0
+	var served atomic.Uint32
 
 	var started sync.WaitGroup
 	started.Add(n)
 
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Millisecond * 200)
-		atomic.AddInt32(&served, 1)
+		served.Add(1)
 		started.Done()
 	})
 
@@ -257,7 +257,7 @@ func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 	started.Wait()
 	target.Drain(time.Second * 5)
 
-	require.Equal(t, int32(n), served)
+	require.Equal(t, uint32(n), served.Load())
 }
 
 func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
