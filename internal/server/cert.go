@@ -9,9 +9,11 @@ type CertManager interface {
 	GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
+// StaticCertManager is a certificate manager that loads certificates from disk.
 type StaticCertManager struct {
 	tlsCertificateFilePath string
 	tlsPrivateKeyFilePath  string
+	cert                   *tls.Certificate
 }
 
 func NewStaticCertManager(tlsCertificateFilePath, tlsPrivateKeyFilePath string) *StaticCertManager {
@@ -22,6 +24,10 @@ func NewStaticCertManager(tlsCertificateFilePath, tlsPrivateKeyFilePath string) 
 }
 
 func (m *StaticCertManager) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if m.cert != nil {
+		return m.cert, nil
+	}
+
 	slog.Info(
 		"Loading custom TLS certificate",
 		"tls-certificate-path", m.tlsCertificateFilePath,
@@ -32,6 +38,7 @@ func (m *StaticCertManager) GetCertificate(*tls.ClientHelloInfo) (*tls.Certifica
 	if err != nil {
 		return nil, err
 	}
+	m.cert = &cert
 
-	return &cert, nil
+	return m.cert, nil
 }
