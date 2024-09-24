@@ -54,7 +54,7 @@ func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
 		defaultTargetOptions,
 	)
 
-	require.NotNil(t, service.certManager.(*StaticCertManager))
+	require.IsType(t, &StaticCertManager{}, service.certManager)
 }
 
 func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
