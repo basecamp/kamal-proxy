@@ -42,6 +42,21 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
+	service := testCreateService(
+		t,
+		[]string{"example.com"},
+		ServiceOptions{
+			TLSEnabled:         true,
+			TLSCertificatePath: "cert.pem",
+			TLSPrivateKeyPath:  "key.pem",
+		},
+		defaultTargetOptions,
+	)
+
+	require.NotNil(t, service.certManager.(*StaticCertManager))
+}
+
 func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
 	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
 
