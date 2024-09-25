@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,9 +24,9 @@ var (
 type ServiceMap map[string]*Service
 type HostServiceMap map[string]*Service
 
-func (m *ServiceMap) HostServices() HostServiceMap {
+func (m ServiceMap) HostServices() HostServiceMap {
 	hostServices := HostServiceMap{}
-	for _, service := range *m {
+	for _, service := range m {
 		if len(service.hosts) == 0 {
 			hostServices[""] = service
 			continue
@@ -39,10 +38,11 @@ func (m *ServiceMap) HostServices() HostServiceMap {
 	return hostServices
 }
 
-func (m *ServiceMap) CheckHostAvailability(service *Service, host string) *Service {
-	for _, s := range *m {
-		if s != service && slices.Contains(s.hosts, host) {
-			return s
+func (m HostServiceMap) CheckHostAvailability(name string, hosts []string) *Service {
+	for _, host := range hosts {
+		service := m[host]
+		if service != nil && service.name != name {
+			return service
 		}
 	}
 	return nil
@@ -344,19 +344,17 @@ func (r *Router) setActiveTarget(name string, hosts []string, target *Target, op
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
+	conflict := r.hostServices.CheckHostAvailability(name, hosts)
+	if conflict != nil {
+		slog.Error("Host in use by another service", "service", conflict.name)
+		return ErrorHostInUse
+	}
+
 	service := r.services[name]
 	if service == nil {
 		service = NewService(name, hosts, options)
 	} else {
 		service.UpdateOptions(hosts, options)
-	}
-
-	for _, host := range hosts {
-		conflict := r.services.CheckHostAvailability(service, host)
-		if conflict != nil {
-			slog.Error("Host in use by another service", "service", conflict.name, "host", host)
-			return ErrorHostInUse
-		}
 	}
 
 	r.services[name] = service
