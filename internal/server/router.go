@@ -16,7 +16,7 @@ import (
 var (
 	ErrorServiceNotFound             = errors.New("service not found")
 	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy")
-	ErrorHostInUse                   = errors.New("host is used by another service")
+	ErrorHostInUse                   = errors.New("host settings conflict with another service")
 	ErrorNoServerName                = errors.New("no server name provided")
 	ErrorUnknownServerName           = errors.New("unknown server name")
 )
@@ -39,6 +39,10 @@ func (m ServiceMap) HostServices() HostServiceMap {
 }
 
 func (m HostServiceMap) CheckHostAvailability(name string, hosts []string) *Service {
+	if len(hosts) == 0 {
+		hosts = []string{""}
+	}
+
 	for _, host := range hosts {
 		service := m[host]
 		if service != nil && service.name != name {
@@ -346,7 +350,7 @@ func (r *Router) setActiveTarget(name string, hosts []string, target *Target, op
 
 	conflict := r.hostServices.CheckHostAvailability(name, hosts)
 	if conflict != nil {
-		slog.Error("Host in use by another service", "service", conflict.name)
+		slog.Error("Host settings conflict with another service", "service", conflict.name)
 		return ErrorHostInUse
 	}
 

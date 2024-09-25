@@ -222,10 +222,25 @@ func TestRouter_ReusingHost(t *testing.T) {
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	err := router.SetServiceTarget("service12", []string{"dummy.example.com"}, second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout)
 
-	require.EqualError(t, err, "host is used by another service", "Error message does not match expected one")
+	require.Equal(t, ErrorHostInUse, err)
 
 	statusCode, body := sendGETRequest(router, "http://dummy.example.com/")
 
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+}
+
+func TestRouter_ReusingEmptyHost(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("service1", defaultEmptyHosts, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	err := router.SetServiceTarget("service12", defaultEmptyHosts, second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout)
+
+	require.Equal(t, ErrorHostInUse, err)
+
+	statusCode, body := sendGETRequest(router, "http://anything.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 }
