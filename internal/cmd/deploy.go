@@ -13,7 +13,6 @@ type deployCommand struct {
 	cmd  *cobra.Command
 	args server.DeployArgs
 
-	tls        bool
 	tlsStaging bool
 }
 
@@ -31,7 +30,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetURL, "target", "", "Target host to deploy")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.Hosts, "host", []string{}, "Host(s) to serve this target on (empty for wildcard)")
 
-	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.TLSEnabled, "tls", false, "Configure TLS for this target (requires a non-empty host)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environment for certificate provisioning")
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
@@ -62,13 +61,12 @@ func newDeployCommand() *deployCommand {
 func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
-	if c.tls {
+	if c.args.ServiceOptions.TLSEnabled {
 		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
-		c.args.ServiceOptions.TLSHostnames = c.args.Hosts
-	}
 
-	if c.tlsStaging {
-		c.args.ServiceOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
+		if c.tlsStaging {
+			c.args.ServiceOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
+		}
 	}
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
@@ -91,7 +89,7 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if !cmd.Flags().Changed("forward-headers") {
-		c.args.TargetOptions.ForwardHeaders = !c.tls
+		c.args.TargetOptions.ForwardHeaders = !c.args.ServiceOptions.TLSEnabled
 	}
 
 	return nil

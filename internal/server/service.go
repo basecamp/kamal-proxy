@@ -60,14 +60,10 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	TLSHostnames  []string `json:"tls_hostnames"`
-	ACMEDirectory string   `json:"acme_directory"`
-	ACMECachePath string   `json:"acme_cache_path"`
-	ErrorPagePath string   `json:"error_page_path"`
-}
-
-func (so ServiceOptions) RequireTLS() bool {
-	return len(so.TLSHostnames) > 0
+	TLSEnabled    bool   `json:"tls_enabled"`
+	ACMEDirectory string `json:"acme_directory"`
+	ACMECachePath string `json:"acme_cache_path"`
+	ErrorPagePath string `json:"error_page_path"`
 }
 
 func (so ServiceOptions) ScopedCachePath() string {
@@ -289,14 +285,14 @@ func (s *Service) initialize() {
 }
 
 func (s *Service) createCertManager() *autocert.Manager {
-	if !s.options.RequireTLS() {
+	if !s.options.TLSEnabled {
 		return nil
 	}
 
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(s.options.TLSHostnames...),
+		HostPolicy: autocert.HostWhitelist(s.hosts...),
 		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
 	}
 }
@@ -314,12 +310,12 @@ func (s *Service) createMiddleware() http.Handler {
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
-	if s.options.RequireTLS() && r.TLS == nil {
+	if s.options.TLSEnabled && r.TLS == nil {
 		s.redirectToHTTPS(w, r)
 		return
 	}
 
-	if !s.options.RequireTLS() && r.TLS != nil {
+	if !s.options.TLSEnabled && r.TLS != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return
 	}

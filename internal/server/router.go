@@ -121,7 +121,7 @@ func (r *Router) SetServiceTarget(name string, hosts []string, targetURL string,
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "target", targetURL, "tls", options.RequireTLS())
+	slog.Info("Deploying", "service", name, "hosts", hosts, "target", targetURL, "tls", options.TLSEnabled)
 
 	target, err := NewTarget(targetURL, targetOptions)
 	if err != nil {
@@ -261,7 +261,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 				result[name] = ServiceDescription{
 					Host:   host,
 					Target: service.active.Target(),
-					TLS:    service.options.RequireTLS(),
+					TLS:    service.options.TLSEnabled,
 					State:  service.pauseController.GetState().String(),
 				}
 			}

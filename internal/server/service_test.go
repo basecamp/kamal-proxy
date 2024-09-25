@@ -15,7 +15,7 @@ import (
 )
 
 func TestService_ServeRequest(t *testing.T) {
-	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
+	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
 
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
 	w := httptest.NewRecorder()
@@ -25,9 +25,9 @@ func TestService_ServeRequest(t *testing.T) {
 }
 
 func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
-	service := testCreateService(t, ServiceOptions{TLSHostnames: []string{"example.com"}}, defaultTargetOptions)
+	service := testCreateService(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true}, defaultTargetOptions)
 
-	require.True(t, service.options.RequireTLS())
+	require.True(t, service.options.TLSEnabled)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	w := httptest.NewRecorder()
@@ -43,9 +43,9 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 }
 
 func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
-	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
+	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
 
-	require.False(t, service.options.RequireTLS())
+	require.False(t, service.options.TLSEnabled)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	w := httptest.NewRecorder()
@@ -61,7 +61,7 @@ func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
 }
 
 func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
-	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
+	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
 
 	checkRequest := func(path string) int {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -93,7 +93,7 @@ func TestService_MarshallingState(t *testing.T) {
 		MaxMemoryBufferSize: 123,
 	}
 
-	service := testCreateService(t, defaultServiceOptions, targetOptions)
+	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, targetOptions)
 	require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
 	service.SetTarget(TargetSlotRollout, service.active, time.Millisecond)
 	require.NoError(t, service.SetRolloutSplit(20, []string{"first"}))
@@ -117,7 +117,7 @@ func TestService_MarshallingState(t *testing.T) {
 	assert.Equal(t, []string{"first"}, service2.rolloutController.Allowlist)
 }
 
-func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
+func testCreateService(t *testing.T, hosts []string, options ServiceOptions, targetOptions TargetOptions) *Service {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(server.Close)
 
@@ -127,7 +127,7 @@ func testCreateService(t *testing.T, options ServiceOptions, targetOptions Targe
 	target, err := NewTarget(serverURL.Host, targetOptions)
 	require.NoError(t, err)
 
-	service := NewService("test", []string{""}, options)
+	service := NewService("test", hosts, options)
 	service.active = target
 
 	return service
