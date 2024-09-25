@@ -27,10 +27,8 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 -----END EC PRIVATE KEY-----`
 
 func TestCertificateLoading(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles()
+	certPath, keyPath, err := prepareTestCertificateFiles(t)
 	require.NoError(t, err)
-	defer os.Remove(certPath)
-	defer os.Remove(keyPath)
 
 	manager := NewStaticCertManager(certPath, keyPath)
 	cert, err := manager.GetCertificate(&tls.ClientHelloInfo{})
@@ -39,10 +37,8 @@ func TestCertificateLoading(t *testing.T) {
 }
 
 func TestCertificateLoadingRaceCondition(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles()
+	certPath, keyPath, err := prepareTestCertificateFiles(t)
 	require.NoError(t, err)
-	defer os.Remove(certPath)
-	defer os.Remove(keyPath)
 
 	manager := NewStaticCertManager(certPath, keyPath)
 	go func() {
@@ -54,10 +50,8 @@ func TestCertificateLoadingRaceCondition(t *testing.T) {
 }
 
 func TestCachesLoadedCertificate(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles()
+	certPath, keyPath, err := prepareTestCertificateFiles(t)
 	require.NoError(t, err)
-	defer os.Remove(certPath)
-	defer os.Remove(keyPath)
 
 	manager := NewStaticCertManager(certPath, keyPath)
 	cert1, err := manager.GetCertificate(&tls.ClientHelloInfo{})
@@ -79,10 +73,8 @@ func TestErrorWhenFileDoesNotExist(t *testing.T) {
 }
 
 func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles()
+	certPath, keyPath, err := prepareTestCertificateFiles(t)
 	require.NoError(t, err)
-	defer os.Remove(certPath)
-	defer os.Remove(keyPath)
 
 	manager := NewStaticCertManager(keyPath, certPath)
 	cert1, err := manager.GetCertificate(&tls.ClientHelloInfo{})
@@ -90,13 +82,16 @@ func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
 	require.Nil(t, cert1)
 }
 
-func prepareTestCertificateFiles() (string, string, error) {
+func prepareTestCertificateFiles(t *testing.T) (string, string, error) {
+	t.Helper()
+
 	certFile, err := os.CreateTemp("", "example-cert-*.pem")
 	if err != nil {
 		return "", "", err
 	}
 	defer certFile.Close()
 	certFile.Write([]byte(certPem))
+	t.Cleanup(func() { os.Remove(certFile.Name()) })
 
 	keyFile, err := os.CreateTemp("", "example-key-*.pem")
 	if err != nil {
@@ -104,6 +99,7 @@ func prepareTestCertificateFiles() (string, string, error) {
 	}
 	defer keyFile.Close()
 	keyFile.Write([]byte(keyPem))
+	t.Cleanup(func() { os.Remove(keyFile.Name()) })
 
 	return certFile.Name(), keyFile.Name(), nil
 }
