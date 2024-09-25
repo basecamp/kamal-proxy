@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -26,14 +28,20 @@ type HostServiceMap map[string]*Service
 func (m *ServiceMap) HostServices() HostServiceMap {
 	hostServices := HostServiceMap{}
 	for _, service := range *m {
-		hostServices[service.host] = service
+		if len(service.hosts) == 0 {
+			hostServices[""] = service
+			continue
+		}
+		for _, host := range service.hosts {
+			hostServices[host] = service
+		}
 	}
 	return hostServices
 }
 
 func (m *ServiceMap) CheckHostAvailability(service *Service, host string) *Service {
 	for _, s := range *m {
-		if s.host == host && s != service {
+		if s != service && slices.Contains(s.hosts, host) {
 			return s
 		}
 	}
@@ -245,7 +253,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 
 	r.withReadLock(func() error {
 		for name, service := range r.services {
-			host := service.host
+			host := strings.Join(service.hosts, ",")
 			if host == "" {
 				host = "*"
 			}
@@ -336,11 +344,14 @@ func (r *Router) setActiveTarget(name string, host string, target *Target, optio
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
+	// TODO: allow setting multiple hosts here
+	hosts := []string{host}
+
 	service := r.services[name]
 	if service == nil {
-		service = NewService(name, host, options)
+		service = NewService(name, hosts, options)
 	} else {
-		service.UpdateOptions(host, options)
+		service.UpdateOptions(hosts, options)
 	}
 
 	conflict := r.services.CheckHostAvailability(service, host)

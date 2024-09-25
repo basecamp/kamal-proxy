@@ -85,7 +85,7 @@ func (so ServiceOptions) ScopedCachePath() string {
 
 type Service struct {
 	name    string
-	host    string
+	hosts   []string
 	options ServiceOptions
 
 	active     *Target
@@ -98,10 +98,10 @@ type Service struct {
 	middleware        http.Handler
 }
 
-func NewService(name, host string, options ServiceOptions) *Service {
+func NewService(name string, hosts []string, options ServiceOptions) *Service {
 	service := &Service{
 		name:    name,
-		host:    host,
+		hosts:   hosts,
 		options: options,
 	}
 
@@ -110,8 +110,8 @@ func NewService(name, host string, options ServiceOptions) *Service {
 	return service
 }
 
-func (s *Service) UpdateOptions(host string, options ServiceOptions) {
-	s.host = host
+func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) {
+	s.hosts = hosts
 	s.options = options
 	s.certManager = s.createCertManager()
 	s.middleware = s.createMiddleware()
@@ -195,7 +195,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type marshalledService struct {
 	Name              string             `json:"name"`
-	Host              string             `json:"host"`
+	Hosts             []string           `json:"hosts"`
 	ActiveTarget      string             `json:"active_target"`
 	RolloutTarget     string             `json:"rollout_target"`
 	Options           ServiceOptions     `json:"options"`
@@ -214,7 +214,7 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(marshalledService{
 		Name:              s.name,
-		Host:              s.host,
+		Hosts:             s.hosts,
 		ActiveTarget:      activeTarget,
 		RolloutTarget:     rolloutTarget,
 		Options:           s.options,
@@ -232,7 +232,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	}
 
 	s.name = ms.Name
-	s.host = ms.Host
+	s.hosts = ms.Hosts
 	s.options = ms.Options
 	s.initialize()
 
