@@ -60,14 +60,14 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	TLSHostname   string `json:"tls_hostname"`
-	ACMEDirectory string `json:"acme_directory"`
-	ACMECachePath string `json:"acme_cache_path"`
-	ErrorPagePath string `json:"error_page_path"`
+	TLSHostnames  []string `json:"tls_hostnames"`
+	ACMEDirectory string   `json:"acme_directory"`
+	ACMECachePath string   `json:"acme_cache_path"`
+	ErrorPagePath string   `json:"error_page_path"`
 }
 
 func (so ServiceOptions) RequireTLS() bool {
-	return so.TLSHostname != ""
+	return len(so.TLSHostnames) > 0
 }
 
 func (so ServiceOptions) ScopedCachePath() string {
@@ -289,14 +289,14 @@ func (s *Service) initialize() {
 }
 
 func (s *Service) createCertManager() *autocert.Manager {
-	if s.options.TLSHostname == "" {
+	if !s.options.RequireTLS() {
 		return nil
 	}
 
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(s.options.TLSHostname),
+		HostPolicy: autocert.HostWhitelist(s.options.TLSHostnames...),
 		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
 	}
 }

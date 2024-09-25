@@ -25,7 +25,7 @@ func TestService_ServeRequest(t *testing.T) {
 }
 
 func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
-	service := testCreateService(t, ServiceOptions{TLSHostname: "example.com"}, defaultTargetOptions)
+	service := testCreateService(t, ServiceOptions{TLSHostnames: []string{"example.com"}}, defaultTargetOptions)
 
 	require.True(t, service.options.RequireTLS())
 

@@ -64,7 +64,7 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 
 	if c.tls {
 		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
-		c.args.ServiceOptions.TLSHostname = c.args.Host
+		c.args.ServiceOptions.TLSHostnames = []string{c.args.Host}
 	}
 
 	if c.tlsStaging {

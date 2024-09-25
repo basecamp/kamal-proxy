@@ -124,7 +124,7 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	serviceOptions.TLSHostname = "dummy.example.com"
+	serviceOptions.TLSHostnames = []string{"dummy.example.com"}
 	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
