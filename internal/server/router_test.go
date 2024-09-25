@@ -32,6 +32,21 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 	assert.Equal(t, "first", body)
 }
 
+func TestRouter_Removing(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("service1", "dummy.example.com", target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body := sendGETRequest(router, "http://dummy.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+
+	require.NoError(t, router.RemoveService("service1"))
+	statusCode, _ = sendGETRequest(router, "http://dummy.example.com/")
+	assert.Equal(t, http.StatusNotFound, statusCode)
+}
+
 func TestRouter_ActiveServiceForUnknownHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
