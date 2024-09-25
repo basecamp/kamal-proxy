@@ -129,7 +129,7 @@ func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {
 	return h.router.ResumeService(args.Service)
 }
 
-func (h *CommandHandler) Remove(args DeployArgs, reply *bool) error {
+func (h *CommandHandler) Remove(args RemoveArgs, reply *bool) error {
 	return h.router.RemoveService(args.Service)
 }
 
