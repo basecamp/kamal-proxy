@@ -115,13 +115,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) SetServiceTarget(name string, host string, targetURL string,
+func (r *Router) SetServiceTarget(name string, hosts []string, targetURL string,
 	options ServiceOptions, targetOptions TargetOptions,
 	deployTimeout time.Duration, drainTimeout time.Duration,
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "host", host, "target", targetURL, "tls", options.RequireTLS())
+	slog.Info("Deploying", "service", name, "hosts", hosts, "target", targetURL, "tls", options.RequireTLS())
 
 	target, err := NewTarget(targetURL, targetOptions)
 	if err != nil {
@@ -130,16 +130,16 @@ func (r *Router) SetServiceTarget(name string, host string, targetURL string,
 
 	becameHealthy := target.WaitUntilHealthy(deployTimeout)
 	if !becameHealthy {
-		slog.Info("Target failed to become healthy", "host", host, "target", targetURL)
+		slog.Info("Target failed to become healthy", "hosts", hosts, "target", targetURL)
 		return ErrorTargetFailedToBecomeHealthy
 	}
 
-	err = r.setActiveTarget(name, host, target, options, drainTimeout)
+	err = r.setActiveTarget(name, hosts, target, options, drainTimeout)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deployed", "service", name, "host", host, "target", targetURL)
+	slog.Info("Deployed", "service", name, "hosts", hosts, "target", targetURL)
 	return nil
 }
 
@@ -340,12 +340,9 @@ func (r *Router) serviceForHost(host string) *Service {
 	return service
 }
 
-func (r *Router) setActiveTarget(name string, host string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
+func (r *Router) setActiveTarget(name string, hosts []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
-
-	// TODO: allow setting multiple hosts here
-	hosts := []string{host}
 
 	service := r.services[name]
 	if service == nil {
@@ -354,11 +351,14 @@ func (r *Router) setActiveTarget(name string, host string, target *Target, optio
 		service.UpdateOptions(hosts, options)
 	}
 
-	conflict := r.services.CheckHostAvailability(service, host)
-	if conflict != nil {
-		slog.Error("Host in use by another service", "service", conflict.name, "host", host)
-		return ErrorHostInUse
+	for _, host := range hosts {
+		conflict := r.services.CheckHostAvailability(service, host)
+		if conflict != nil {
+			slog.Error("Host in use by another service", "service", conflict.name, "host", host)
+			return ErrorHostInUse
+		}
 	}
+
 	r.services[name] = service
 	r.hostServices = r.services.HostServices()
 

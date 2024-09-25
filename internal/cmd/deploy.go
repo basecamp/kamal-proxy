@@ -29,7 +29,7 @@ func newDeployCommand() *deployCommand {
 	}
 
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetURL, "target", "", "Target host to deploy")
-	deployCommand.cmd.Flags().StringVar(&deployCommand.args.Host, "host", "", "Host to serve this target on (empty for wildcard)")
+	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.Hosts, "host", []string{}, "Host(s) to serve this target on (empty for wildcard)")
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tls, "tls", false, "Configure TLS for this target (requires a non-empty host)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environment for certificate provisioning")
@@ -64,7 +64,7 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 
 	if c.tls {
 		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
-		c.args.ServiceOptions.TLSHostnames = []string{c.args.Host}
+		c.args.ServiceOptions.TLSHostnames = c.args.Hosts
 	}
 
 	if c.tlsStaging {
