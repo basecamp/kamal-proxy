@@ -65,6 +65,26 @@ func TestRouter_ActiveServiceForMultipleHosts(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, statusCode)
 }
 
+func TestRouter_UpdatingHostsOfActiveService(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("service1", []string{"1.example.com", "2.example.com"}, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	require.NoError(t, router.SetServiceTarget("service1", []string{"3.example.com", "2.example.com"}, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, _ := sendGETRequest(router, "http://1.example.com/")
+	assert.Equal(t, http.StatusNotFound, statusCode)
+
+	statusCode, body := sendGETRequest(router, "http://2.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+
+	statusCode, body = sendGETRequest(router, "http://3.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+}
+
 func TestRouter_ActiveServiceForUnknownHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
