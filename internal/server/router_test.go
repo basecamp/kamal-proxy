@@ -112,7 +112,7 @@ func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", []string{""}, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", defaultEmptyHosts, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://dummy.example.com/")
 
@@ -268,7 +268,7 @@ func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
 	_, second := testBackend(t, "second", http.StatusOK)
 
 	require.NoError(t, router.SetServiceTarget("service1", []string{"s1.example.com"}, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("default", []string{""}, second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("default", defaultEmptyHosts, second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://s1.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
@@ -300,7 +300,7 @@ func TestRouter_EnablingRollout(t *testing.T) {
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
 
-	require.NoError(t, router.SetServiceTarget("service1", []string{""}, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", defaultEmptyHosts, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	require.NoError(t, router.SetRolloutTarget("service1", second, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	checkResponse := func(expected string) {
@@ -330,7 +330,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	_, second := testBackend(t, "second", http.StatusOK)
 
 	router := NewRouter(statePath)
-	require.NoError(t, router.SetServiceTarget("default", []string{""}, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("default", defaultEmptyHosts, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	require.NoError(t, router.SetServiceTarget("other", []string{"other.example.com"}, second, ServiceOptions{TLSEnabled: true}, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://something.example.com")
