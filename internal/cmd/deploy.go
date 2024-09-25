@@ -10,9 +10,8 @@ import (
 )
 
 type deployCommand struct {
-	cmd  *cobra.Command
-	args server.DeployArgs
-
+	cmd        *cobra.Command
+	args       server.DeployArgs
 	tlsStaging bool
 }
 
