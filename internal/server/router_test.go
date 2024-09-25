@@ -296,15 +296,14 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 
 	router := NewRouter(statePath)
 	require.NoError(t, router.SetServiceTarget("default", []string{""}, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("other", []string{"other.example.com"}, second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("other", []string{"other.example.com"}, second, ServiceOptions{TLSEnabled: true}, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://something.example.com")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	statusCode, body = sendGETRequest(router, "http://other.example.com/")
-	assert.Equal(t, http.StatusOK, statusCode)
-	assert.Equal(t, "second", body)
+	statusCode, _ = sendGETRequest(router, "http://other.example.com/")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 
 	router = NewRouter(statePath)
 	router.RestoreLastSavedState()
@@ -313,9 +312,8 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
-	statusCode, body = sendGETRequest(router, "http://other.example.com/")
-	assert.Equal(t, http.StatusOK, statusCode)
-	assert.Equal(t, "second", body)
+	statusCode, _ = sendGETRequest(router, "http://other.example.com/")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 }
 
 // Helpers
