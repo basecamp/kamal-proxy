@@ -86,7 +86,7 @@ func (s *Server) startHTTPServers() error {
 	s.httpListener = l
 	s.httpServer = &http.Server{
 		Addr:    httpAddr,
-		Handler: handler,
+		Handler: s.router.WithHttp01Challenge(handler),
 	}
 
 	l, err = net.Listen("tcp", httpsAddr)

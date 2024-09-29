@@ -276,6 +276,37 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 	return result
 }
 
+func (r *Router) WithHttp01Challenge(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if !strings.HasPrefix(req.URL.Path, "/.well-known/acme-challenge/") {
+			next.ServeHTTP(w, req)
+			return
+		}
+
+		if req.Host == "" {
+			slog.Debug("ACME: Unable to get certificate (no server name)")
+			next.ServeHTTP(w, req)
+			return
+		}
+
+		service := r.serviceForHost(req.Host)
+		if service == nil {
+			slog.Debug("ACME: Unable to get certificate (unknown server name)")
+			next.ServeHTTP(w, req)
+			return
+		}
+
+		if service.certManager == nil {
+			slog.Debug("ACME: Unable to get certificate (service does not support TLS)")
+			next.ServeHTTP(w, req)
+			return
+		}
+
+		http01 := service.certManager.HTTPHandler(next)
+		http01.ServeHTTP(w, req)
+	})
+}
+
 func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	host := hello.ServerName
 	if host == "" {

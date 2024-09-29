@@ -9,7 +9,9 @@ import (
 )
 
 func TestServer_Deploying(t *testing.T) {
-	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 	server, addr := testServer(t)
 
 	testDeployTarget(t, target, server)
