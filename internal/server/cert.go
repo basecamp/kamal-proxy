@@ -3,11 +3,13 @@ package server
 import (
 	"crypto/tls"
 	"log/slog"
+	"net/http"
 	"sync"
 )
 
 type CertManager interface {
 	GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
+	HTTPHandler(handler http.Handler) http.Handler
 }
 
 // StaticCertManager is a certificate manager that loads certificates from disk.
@@ -52,4 +54,8 @@ func (m *StaticCertManager) GetCertificate(*tls.ClientHelloInfo) (*tls.Certifica
 	m.cert = &cert
 
 	return m.cert, nil
+}
+
+func (m *StaticCertManager) HTTPHandler(handler http.Handler) http.Handler {
+	return handler
 }
