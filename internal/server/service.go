@@ -298,13 +298,20 @@ func (s *Service) createCertManager() *autocert.Manager {
 }
 
 func (s *Service) createMiddleware() http.Handler {
+	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
+
 	if s.options.ErrorPagePath != "" {
 		slog.Debug("Using custom error pages", "service", s.name, "path", s.options.ErrorPagePath)
 		errorPageFS := os.DirFS(s.options.ErrorPagePath)
-		return WithErrorPageMiddleware(errorPageFS, false, http.HandlerFunc(s.serviceRequestWithTarget))
+		handler = WithErrorPageMiddleware(errorPageFS, false, handler)
 	}
 
-	return http.HandlerFunc(s.serviceRequestWithTarget)
+	if s.certManager != nil {
+		slog.Debug("Using ACME handler", "service", s.name)
+		handler = s.certManager.HTTPHandler(handler)
+	}
+
+	return handler
 }
 
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
