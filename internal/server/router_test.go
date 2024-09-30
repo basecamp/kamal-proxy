@@ -203,7 +203,8 @@ func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {
 	_, target := testBackend(t, "first", http.StatusOK)
 
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	router.PauseService("service1", time.Second, time.Millisecond*10)
+	err := router.PauseService("service1", time.Second, time.Millisecond*10)
+	require.NoError(t, err)
 
 	statusCode, _ := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
@@ -213,7 +214,8 @@ func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {
 	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
 
-	router.ResumeService("service1")
+	err = router.ResumeService("service1")
+	require.NoError(t, err)
 
 	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusOK, statusCode)
@@ -369,7 +371,8 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 
 	router = NewRouter(statePath)
-	router.RestoreLastSavedState()
+	err := router.RestoreLastSavedState()
+	require.NoError(t, err)
 
 	statusCode, body = sendGETRequest(router, "http://something.example.com")
 	assert.Equal(t, http.StatusOK, statusCode)

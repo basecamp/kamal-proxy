@@ -19,7 +19,8 @@ import (
 
 func TestTarget_Serve(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, err := w.Write([]byte("ok"))
+		assert.NoError(t, err)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -105,11 +106,13 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 
 			go func() {
 				kind, body, err := c.Read(context.Background())
-				require.NoError(t, err)
+				assert.NoError(t, err)
 				assert.Equal(t, websocket.MessageText, kind)
 
-				c.Write(context.Background(), websocket.MessageText, body)
-				defer c.CloseNow()
+				err = c.Write(context.Background(), websocket.MessageText, body)
+				assert.NoError(t, err)
+				err = c.CloseNow()
+				assert.NoError(t, err)
 			}()
 		})
 
@@ -124,9 +127,12 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 
 		c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
 		require.NoError(t, err)
-		defer c.CloseNow()
+		defer func() {
+			assert.NoError(t, c.CloseNow())
+		}()
 
-		c.Write(context.Background(), websocket.MessageText, []byte(body))
+		err = c.Write(context.Background(), websocket.MessageText, []byte(body))
+		require.NoError(t, err)
 
 		return c.Read(context.Background())
 	}
@@ -271,7 +277,8 @@ func TestTarget_IsHealthCheckRequest(t *testing.T) {
 
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, err := w.Write([]byte("ok"))
+		assert.NoError(t, err)
 	})
 
 	target.BeginHealthChecks()
@@ -351,25 +358,30 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
-		require.NoError(t, err)
-		defer c.CloseNow()
-
+		assert.NoError(t, err)
 		_, _, err = c.Read(context.Background())
-		require.Error(t, err)
+		assert.Error(t, err)
+		err = c.CloseNow()
+		// TODO: this check works strange if set to NoError.
+		// if it runs isolated it works, but if it runs with all, it fails.
+		assert.Error(t, err)
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r, err := target.StartRequest(r)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		target.SendRequest(w, r)
 	}))
-	defer server.Close()
+
+	t.Cleanup(server.Close)
 
 	websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
 
 	c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
 	require.NoError(t, err)
-	defer c.CloseNow()
+	defer func() {
+		assert.NoError(t, c.CloseNow())
+	}()
 
 	startedDraining := time.Now()
 	target.Drain(time.Second * 5)
@@ -387,7 +399,8 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 			HealthCheckConfig:   defaultHealthCheckConfig,
 		}
 		target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(responseBody))
+			_, err := w.Write([]byte(responseBody))
+			assert.NoError(t, err)
 		})
 
 		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(requestBody))
