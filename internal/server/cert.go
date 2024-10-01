@@ -2,8 +2,12 @@ package server
 
 import (
 	"crypto/tls"
+	"errors"
+	"log/slog"
 	"net/http"
 )
+
+var ErrorUnableToLoadCertificate = errors.New("unable to load certificate")
 
 type CertManager interface {
 	GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
@@ -18,7 +22,8 @@ type StaticCertManager struct {
 func NewStaticCertManager(tlsCertificateFilePath, tlsPrivateKeyFilePath string) (*StaticCertManager, error) {
 	cert, err := tls.LoadX509KeyPair(tlsCertificateFilePath, tlsPrivateKeyFilePath)
 	if err != nil {
-		return nil, err
+		slog.Error("Error loading TLS certificate", "error", err)
+		return nil, ErrorUnableToLoadCertificate
 	}
 
 	return &StaticCertManager{

@@ -56,14 +56,14 @@ func TestCertificateLoadingRaceCondition(t *testing.T) {
 
 func TestErrorWhenFileDoesNotExist(t *testing.T) {
 	_, err := NewStaticCertManager("testdata/cert.pem", "testdata/key.pem")
-	require.ErrorContains(t, err, "no such file or directory")
+	require.ErrorContains(t, err, "unable to load certificate")
 }
 
 func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
 	certPath, keyPath := prepareTestCertificateFiles(t)
 
 	_, err := NewStaticCertManager(keyPath, certPath)
-	require.ErrorContains(t, err, "failed to find certificate PEM data in certificate input")
+	require.ErrorContains(t, err, "unable to load certificate")
 }
 
 func prepareTestCertificateFiles(t *testing.T) (string, string) {
