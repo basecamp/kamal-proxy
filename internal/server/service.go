@@ -280,15 +280,22 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize() {
+func (s *Service) initialize() error {
+	certManager, err := s.createCertManager()
+	if err != nil {
+		return err
+	}
+
 	s.pauseController = NewPauseController()
-	s.certManager = s.createCertManager()
+	s.certManager = certManager
 	s.middleware = s.createMiddleware()
+
+	return nil
 }
 
-func (s *Service) createCertManager() CertManager {
+func (s *Service) createCertManager() (CertManager, error) {
 	if !s.options.TLSEnabled {
-		return nil
+		return nil, nil
 	}
 
 	if s.options.TLSCertificatePath != "" && s.options.TLSPrivateKeyPath != "" {
@@ -300,7 +307,7 @@ func (s *Service) createCertManager() CertManager {
 		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
 		HostPolicy: autocert.HostWhitelist(s.hosts...),
 		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
-	}
+	}, nil
 }
 
 func (s *Service) createMiddleware() http.Handler {
