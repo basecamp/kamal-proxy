@@ -96,24 +96,22 @@ type Service struct {
 	middleware        http.Handler
 }
 
-func NewService(name string, hosts []string, options ServiceOptions) *Service {
+func NewService(name string, hosts []string, options ServiceOptions) (*Service, error) {
 	service := &Service{
 		name:            name,
-		hosts:           hosts,
-		options:         options,
 		pauseController: NewPauseController(),
 	}
 
-	service.initialize()
+	err := service.initialize(hosts, options)
+	if err != nil {
+		return nil, err
+	}
 
-	return service
+	return service, nil
 }
 
 func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) error {
-	s.hosts = hosts
-	s.options = options
-
-	return s.initialize()
+	return s.initialize(hosts, options)
 }
 
 func (s *Service) ActiveTarget() *Target {
@@ -231,12 +229,10 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	}
 
 	s.name = ms.Name
-	s.hosts = ms.Hosts
-	s.options = ms.Options
-	s.initialize()
-
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
+
+	s.initialize(ms.Hosts, ms.Options)
 	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
 	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
 
@@ -281,47 +277,51 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize() error {
-	certManager, err := s.createCertManager()
+func (s *Service) initialize(hosts []string, options ServiceOptions) error {
+	certManager, err := s.createCertManager(hosts, options)
 	if err != nil {
 		return err
 	}
 
+	middleware := s.createMiddleware(options, certManager)
+
+	s.hosts = hosts
+	s.options = options
 	s.certManager = certManager
-	s.middleware = s.createMiddleware()
+	s.middleware = middleware
 
 	return nil
 }
 
-func (s *Service) createCertManager() (CertManager, error) {
-	if !s.options.TLSEnabled {
+func (s *Service) createCertManager(hosts []string, options ServiceOptions) (CertManager, error) {
+	if !options.TLSEnabled {
 		return nil, nil
 	}
 
-	if s.options.TLSCertificatePath != "" && s.options.TLSPrivateKeyPath != "" {
-		return NewStaticCertManager(s.options.TLSCertificatePath, s.options.TLSPrivateKeyPath)
+	if options.TLSCertificatePath != "" && options.TLSPrivateKeyPath != "" {
+		return NewStaticCertManager(options.TLSCertificatePath, options.TLSPrivateKeyPath)
 	}
 
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
-		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(s.hosts...),
-		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
+		Cache:      autocert.DirCache(options.ScopedCachePath()),
+		HostPolicy: autocert.HostWhitelist(hosts...),
+		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
 	}, nil
 }
 
-func (s *Service) createMiddleware() http.Handler {
+func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) http.Handler {
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
 
-	if s.options.ErrorPagePath != "" {
-		slog.Debug("Using custom error pages", "service", s.name, "path", s.options.ErrorPagePath)
-		errorPageFS := os.DirFS(s.options.ErrorPagePath)
+	if options.ErrorPagePath != "" {
+		slog.Debug("Using custom error pages", "service", s.name, "path", options.ErrorPagePath)
+		errorPageFS := os.DirFS(options.ErrorPagePath)
 		handler = WithErrorPageMiddleware(errorPageFS, false, handler)
 	}
 
-	if s.certManager != nil {
+	if certManager != nil {
 		slog.Debug("Using ACME handler", "service", s.name)
-		handler = s.certManager.HTTPHandler(handler)
+		handler = certManager.HTTPHandler(handler)
 	}
 
 	return handler

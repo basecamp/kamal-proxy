@@ -170,6 +170,32 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 	assert.Empty(t, body)
 }
 
+func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	targetOptions := defaultTargetOptions
+
+	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSCertificatePath = "not valid"
+	serviceOptions.TLSPrivateKeyPath = "not valid"
+	targetOptions.BufferRequests = true
+	targetOptions.MaxRequestBodySize = 10
+
+	require.Error(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+}
+
 func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
