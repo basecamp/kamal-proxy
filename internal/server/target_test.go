@@ -45,7 +45,8 @@ func TestTarget_ServeSSE(t *testing.T) {
 
 		target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
-			w.Write([]byte("data: hello\n\n"))
+			_, err := w.Write([]byte("data: hello\n\n"))
+			assert.NoError(t, err)
 			w.(http.Flusher).Flush()
 
 			// Don't return until the client has finished reading. Fail the test if this takes too long.

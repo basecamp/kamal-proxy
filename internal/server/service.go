@@ -235,9 +235,19 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
 
-	s.initialize(ms.Hosts, ms.Options)
-	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
-	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
+	err = s.initialize(ms.Hosts, ms.Options)
+	if err != nil {
+		return err
+	}
+	err = s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
+	if err != nil {
+		return err
+	}
+
+	err = s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

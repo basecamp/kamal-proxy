@@ -57,11 +57,11 @@ func (p *PauseController) UnmarshalJSON(data []byte) error {
 
 	switch p.State {
 	case PauseStateRunning:
-		p.Resume()
+		return p.Resume()
 	case PauseStatePaused:
-		p.Pause(p.FailAfter)
+		return p.Pause(p.FailAfter)
 	case PauseStateStopped:
-		p.Stop(p.StopMessage)
+		return p.Stop(p.StopMessage)
 	}
 
 	return nil

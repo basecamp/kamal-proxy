@@ -35,10 +35,13 @@ func (c *runCommand) run(cmd *cobra.Command, args []string) error {
 	c.setLogger()
 
 	router := server.NewRouter(globalConfig.StatePath())
-	router.RestoreLastSavedState()
+	err := router.RestoreLastSavedState()
+	if err != nil {
+		return err
+	}
 
 	s := server.NewServer(&globalConfig, router)
-	err := s.Start()
+	err = s.Start()
 	if err != nil {
 		return err
 	}
