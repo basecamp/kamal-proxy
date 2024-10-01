@@ -177,20 +177,21 @@ func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
 	serviceOptions := defaultServiceOptions
 	targetOptions := defaultTargetOptions
 
-	targetOptions.BufferRequests = true
-	targetOptions.MaxRequestBodySize = 10
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, _ := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
-	assert.Equal(t, http.StatusRequestEntityTooLarge, statusCode)
+	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
 
 	serviceOptions.TLSEnabled = true
 	serviceOptions.TLSCertificatePath = "not valid"
 	serviceOptions.TLSPrivateKeyPath = "not valid"
+	targetOptions.BufferRequests = true
+	targetOptions.MaxRequestBodySize = 10
 
 	require.Error(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 }
