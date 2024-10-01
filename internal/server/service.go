@@ -96,7 +96,7 @@ type Service struct {
 	middleware        http.Handler
 }
 
-func NewService(name string, hosts []string, options ServiceOptions) *Service {
+func NewService(name string, hosts []string, options ServiceOptions) (*Service, error) {
 	service := &Service{
 		name:            name,
 		hosts:           hosts,
@@ -104,9 +104,12 @@ func NewService(name string, hosts []string, options ServiceOptions) *Service {
 		pauseController: NewPauseController(),
 	}
 
-	service.initialize()
+	err := service.initialize()
+	if err != nil {
+		return nil, err
+	}
 
-	return service
+	return service, nil
 }
 
 func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) error {

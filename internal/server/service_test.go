@@ -144,7 +144,8 @@ func testCreateService(t *testing.T, hosts []string, options ServiceOptions, tar
 	target, err := NewTarget(serverURL.Host, targetOptions)
 	require.NoError(t, err)
 
-	service := NewService("test", hosts, options)
+	service, err := NewService("test", hosts, options)
+	require.NoError(t, err)
 	service.active = target
 
 	return service

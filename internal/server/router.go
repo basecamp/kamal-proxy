@@ -21,8 +21,10 @@ var (
 	ErrorUnknownServerName           = errors.New("unknown server name")
 )
 
-type ServiceMap map[string]*Service
-type HostServiceMap map[string]*Service
+type (
+	ServiceMap     map[string]*Service
+	HostServiceMap map[string]*Service
+)
 
 func (m ServiceMap) HostServices() HostServiceMap {
 	hostServices := HostServiceMap{}
@@ -354,11 +356,15 @@ func (r *Router) setActiveTarget(name string, hosts []string, target *Target, op
 		return ErrorHostInUse
 	}
 
+	var err error
 	service := r.services[name]
 	if service == nil {
-		service = NewService(name, hosts, options)
+		service, err = NewService(name, hosts, options)
 	} else {
-		service.UpdateOptions(hosts, options)
+		err = service.UpdateOptions(hosts, options)
+	}
+	if err != nil {
+		return err
 	}
 
 	r.services[name] = service
