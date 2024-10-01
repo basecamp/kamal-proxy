@@ -98,9 +98,10 @@ type Service struct {
 
 func NewService(name string, hosts []string, options ServiceOptions) *Service {
 	service := &Service{
-		name:    name,
-		hosts:   hosts,
-		options: options,
+		name:            name,
+		hosts:           hosts,
+		options:         options,
+		pauseController: NewPauseController(),
 	}
 
 	service.initialize()
@@ -108,11 +109,11 @@ func NewService(name string, hosts []string, options ServiceOptions) *Service {
 	return service
 }
 
-func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) {
+func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) error {
 	s.hosts = hosts
 	s.options = options
-	s.certManager = s.createCertManager()
-	s.middleware = s.createMiddleware()
+
+	return s.initialize()
 }
 
 func (s *Service) ActiveTarget() *Target {
@@ -286,7 +287,6 @@ func (s *Service) initialize() error {
 		return err
 	}
 
-	s.pauseController = NewPauseController()
 	s.certManager = certManager
 	s.middleware = s.createMiddleware()
 
