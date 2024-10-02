@@ -1,19 +1,22 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/basecamp/kamal-proxy/internal/pages"
 )
 
 func TestErrorPageMiddleware(t *testing.T) {
 	check := func(handler http.HandlerFunc) (int, string, string) {
-		middleware := WithErrorPageMiddleware(pages.DefaultErrorPages, true, handler)
+		middleware, err := WithErrorPageMiddleware(pages.DefaultErrorPages, true, handler)
+		require.NoError(t, err)
 
 		req := httptest.NewRequest("GET", "http://example.com", nil)
 		resp := httptest.NewRecorder()
@@ -71,8 +74,8 @@ func TestErrorPageMiddleware_Nesting(t *testing.T) {
 			"404.html": {Data: []byte("<body>Custom 404</body>")},
 		})
 
-		middleware := WithErrorPageMiddleware(customPages, false, handler)
-		middleware = WithErrorPageMiddleware(pages.DefaultErrorPages, true, middleware)
+		middleware, _ := WithErrorPageMiddleware(customPages, false, handler)
+		middleware, _ = WithErrorPageMiddleware(pages.DefaultErrorPages, true, middleware)
 
 		req := httptest.NewRequest("GET", "http://example.com", nil)
 		resp := httptest.NewRecorder()
@@ -111,5 +114,26 @@ func TestErrorPageMiddleware_Nesting(t *testing.T) {
 		assert.Equal(t, http.StatusTeapot, status)
 		assert.Equal(t, "text/html; charset=utf-8", contentType)
 		assert.Regexp(t, "I'm a teapot", body)
+	})
+}
+
+func TestErrorPageMiddleware_WithInvalidArguments(t *testing.T) {
+	ensureFailed := func(pages fs.FS) {
+		handler := func(w http.ResponseWriter, r *http.Request) {}
+		_, err := WithErrorPageMiddleware(pages, false, http.HandlerFunc(handler))
+
+		assert.Equal(t, ErrorUnableToLoadErrorPages, err)
+	}
+
+	t.Run("With templates that cannot be compiled", func(t *testing.T) {
+		pages := fstest.MapFS(map[string]*fstest.MapFile{
+			"404.html": {Data: []byte("<body>{{ {{</body>")},
+		})
+		ensureFailed(pages)
+	})
+
+	t.Run("With a filesystem that has no templates", func(t *testing.T) {
+		pages := fstest.MapFS(map[string]*fstest.MapFile{})
+		ensureFailed(pages)
 	})
 }

@@ -44,7 +44,10 @@ const (
 	DefaultStopMessage = ""
 )
 
-var ErrorRolloutTargetNotSet = errors.New("rollout target not set")
+var (
+	ErrorRolloutTargetNotSet    = errors.New("rollout target not set")
+	ErrorUnableToLoadErrorPages = errors.New("unable to load error pages")
+)
 
 type TargetSlot int
 
@@ -283,7 +286,10 @@ func (s *Service) initialize(hosts []string, options ServiceOptions) error {
 		return err
 	}
 
-	middleware := s.createMiddleware(options, certManager)
+	middleware, err := s.createMiddleware(options, certManager)
+	if err != nil {
+		return err
+	}
 
 	s.hosts = hosts
 	s.options = options
@@ -310,13 +316,18 @@ func (s *Service) createCertManager(hosts []string, options ServiceOptions) (Cer
 	}, nil
 }
 
-func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) http.Handler {
+func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
+	var err error
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
 
 	if options.ErrorPagePath != "" {
 		slog.Debug("Using custom error pages", "service", s.name, "path", options.ErrorPagePath)
 		errorPageFS := os.DirFS(options.ErrorPagePath)
-		handler = WithErrorPageMiddleware(errorPageFS, false, handler)
+		handler, err = WithErrorPageMiddleware(errorPageFS, false, handler)
+		if err != nil {
+			slog.Error("Unable to parse custom error pages", "service", s.name, "path", options.ErrorPagePath, "error", err)
+			return nil, ErrorUnableToLoadErrorPages
+		}
 	}
 
 	if certManager != nil {
@@ -324,7 +335,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 		handler = certManager.HTTPHandler(handler)
 	}
 
-	return handler
+	return handler, nil
 }
 
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {

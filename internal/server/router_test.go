@@ -174,26 +174,28 @@ func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
-	serviceOptions := defaultServiceOptions
-	targetOptions := defaultTargetOptions
+	ensureServiceIsHealthy := func() {
+		statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader("Hello")))
+		assert.Equal(t, http.StatusOK, statusCode)
+		assert.Equal(t, "first", body)
+	}
 
-	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	ensureServiceIsHealthy()
 
-	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
-	assert.Equal(t, http.StatusOK, statusCode)
-	assert.Equal(t, "first", body)
+	t.Run("custom TLS that is not valid", func(t *testing.T) {
+		serviceOptions := ServiceOptions{TLSEnabled: true, TLSCertificatePath: "not valid", TLSPrivateKeyPath: "not valid"}
+		require.Error(t, router.SetServiceTarget("service1", []string{"example.com"}, target, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	serviceOptions.TLSEnabled = true
-	serviceOptions.TLSCertificatePath = "not valid"
-	serviceOptions.TLSPrivateKeyPath = "not valid"
-	targetOptions.BufferRequests = true
-	targetOptions.MaxRequestBodySize = 10
+		ensureServiceIsHealthy()
+	})
 
-	require.Error(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	t.Run("custom error pages that are not valid", func(t *testing.T) {
+		serviceOptions := ServiceOptions{ErrorPagePath: "not valid"}
+		require.Error(t, router.SetServiceTarget("service1", []string{"example.com"}, target, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
-	assert.Equal(t, http.StatusOK, statusCode)
-	assert.Equal(t, "first", body)
+		ensureServiceIsHealthy()
+	})
 }
 
 func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {

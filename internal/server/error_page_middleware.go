@@ -33,18 +33,18 @@ func SetErrorResponse(w http.ResponseWriter, r *http.Request, statusCode int, te
 	}
 }
 
-func WithErrorPageMiddleware(pages fs.FS, root bool, next http.Handler) http.Handler {
+func WithErrorPageMiddleware(pages fs.FS, root bool, next http.Handler) (http.Handler, error) {
 	template, err := template.ParseFS(pages, "*.html")
 	if err != nil {
 		slog.Error("Failed to parse error page templates", "error", err)
-		template = nil
+		return nil, ErrorUnableToLoadErrorPages
 	}
 
 	return &ErrorPageMiddleware{
 		template: template,
 		root:     root,
 		next:     next,
-	}
+	}, nil
 }
 
 func (h *ErrorPageMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
