@@ -151,3 +151,10 @@ func (r *loggerResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 	return con, rw, err
 }
+
+func (r *loggerResponseWriter) Flush() {
+	flusher, ok := r.ResponseWriter.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+}

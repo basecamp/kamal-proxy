@@ -386,3 +386,10 @@ func (r *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	r.inflightRequest.hijacked = true
 	return hijacker.Hijack()
 }
+
+func (r *targetResponseWriter) Flush() {
+	flusher, ok := r.ResponseWriter.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+}

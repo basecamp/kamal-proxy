@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"net/http"
@@ -28,6 +29,63 @@ func TestTarget_Serve(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
+}
+
+func TestTarget_ServeSSE(t *testing.T) {
+	receiveSSEMessage := func(bufferRequests, bufferResponses bool) (string, error) {
+		finishedReading := make(chan struct{})
+
+		targetOptions := TargetOptions{
+			BufferRequests:      bufferRequests,
+			BufferResponses:     bufferResponses,
+			MaxMemoryBufferSize: DefaultMaxMemoryBufferSize,
+			HealthCheckConfig:   defaultHealthCheckConfig,
+		}
+
+		target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Write([]byte("data: hello\n\n"))
+			w.(http.Flusher).Flush()
+
+			// Don't return until the client has finished reading. Fail the test if this takes too long.
+			select {
+			case <-finishedReading:
+				break
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for client to finish reading")
+			}
+		})
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r, err := target.StartRequest(r)
+			require.NoError(t, err)
+			target.SendRequest(w, r)
+		}))
+		defer server.Close()
+		defer close(finishedReading)
+
+		resp, err := http.Get(server.URL)
+		require.NoError(t, err)
+
+		scanner := bufio.NewScanner(resp.Body)
+		if !scanner.Scan() {
+			return "", scanner.Err()
+		}
+
+		return scanner.Text(), nil
+	}
+
+	t.Run("without buffering", func(t *testing.T) {
+		message, err := receiveSSEMessage(false, false)
+		require.NoError(t, err)
+		assert.Equal(t, "data: hello", message)
+	})
+
+	t.Run("with buffering", func(t *testing.T) {
+		message, err := receiveSSEMessage(true, true)
+		require.NoError(t, err)
+		assert.Equal(t, "data: hello", message)
+	})
 }
 
 func TestTarget_ServeWebSocket(t *testing.T) {
