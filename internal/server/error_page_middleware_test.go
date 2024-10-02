@@ -14,6 +14,8 @@ import (
 )
 
 func TestErrorPageMiddleware(t *testing.T) {
+	t.Parallel()
+
 	check := func(handler http.HandlerFunc) (int, string, string) {
 		middleware, err := WithErrorPageMiddleware(pages.DefaultErrorPages, true, handler)
 		require.NoError(t, err)
@@ -27,6 +29,8 @@ func TestErrorPageMiddleware(t *testing.T) {
 	}
 
 	t.Run("when setting a custom error response", func(t *testing.T) {
+		t.Parallel()
+
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			SetErrorResponse(w, r, http.StatusNotFound, nil)
 		})
@@ -37,6 +41,8 @@ func TestErrorPageMiddleware(t *testing.T) {
 	})
 
 	t.Run("when including template arguments in a custom error response", func(t *testing.T) {
+		t.Parallel()
+
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			SetErrorResponse(w, r, http.StatusServiceUnavailable, struct{ Message string }{"Gone to lunch"})
 		})
@@ -48,6 +54,8 @@ func TestErrorPageMiddleware(t *testing.T) {
 	})
 
 	t.Run("when trying to set an error that we don't have a template for", func(t *testing.T) {
+		t.Parallel()
+
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			SetErrorResponse(w, r, http.StatusTeapot, nil)
 		})
@@ -58,6 +66,8 @@ func TestErrorPageMiddleware(t *testing.T) {
 	})
 
 	t.Run("when the backend returns an error normally", func(t *testing.T) {
+		t.Parallel()
+
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(http.StatusTeapot), http.StatusTeapot)
 		})
@@ -69,6 +79,8 @@ func TestErrorPageMiddleware(t *testing.T) {
 }
 
 func TestErrorPageMiddleware_Nesting(t *testing.T) {
+	t.Parallel()
+
 	check := func(handler http.HandlerFunc) (int, string, string) {
 		customPages := fstest.MapFS(map[string]*fstest.MapFile{
 			"404.html": {Data: []byte("<body>Custom 404</body>")},
@@ -86,6 +98,8 @@ func TestErrorPageMiddleware_Nesting(t *testing.T) {
 	}
 
 	t.Run("with an error in the inner FS", func(t *testing.T) {
+		t.Parallel()
+
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			SetErrorResponse(w, r, http.StatusNotFound, nil)
 		})
@@ -96,6 +110,8 @@ func TestErrorPageMiddleware_Nesting(t *testing.T) {
 	})
 
 	t.Run("with an error not in the inner FS", func(t *testing.T) {
+		t.Parallel()
+
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			SetErrorResponse(w, r, http.StatusServiceUnavailable, struct{ Message string }{"Gone to lunch"})
 		})
@@ -107,6 +123,8 @@ func TestErrorPageMiddleware_Nesting(t *testing.T) {
 	})
 
 	t.Run("with an error not in any FS", func(t *testing.T) {
+		t.Parallel()
+
 		status, contentType, body := check(func(w http.ResponseWriter, r *http.Request) {
 			SetErrorResponse(w, r, http.StatusTeapot, nil)
 		})
@@ -118,6 +136,8 @@ func TestErrorPageMiddleware_Nesting(t *testing.T) {
 }
 
 func TestErrorPageMiddleware_WithInvalidArguments(t *testing.T) {
+	t.Parallel()
+
 	ensureFailed := func(pages fs.FS) {
 		handler := func(w http.ResponseWriter, r *http.Request) {}
 		_, err := WithErrorPageMiddleware(pages, false, http.HandlerFunc(handler))
@@ -126,6 +146,8 @@ func TestErrorPageMiddleware_WithInvalidArguments(t *testing.T) {
 	}
 
 	t.Run("with templates that cannot be compiled", func(t *testing.T) {
+		t.Parallel()
+
 		pages := fstest.MapFS(map[string]*fstest.MapFile{
 			"404.html": {Data: []byte("<body>{{ {{</body>")},
 		})
@@ -133,6 +155,8 @@ func TestErrorPageMiddleware_WithInvalidArguments(t *testing.T) {
 	})
 
 	t.Run("with a filesystem that has no templates", func(t *testing.T) {
+		t.Parallel()
+
 		pages := fstest.MapFS(map[string]*fstest.MapFile{})
 		ensureFailed(pages)
 	})

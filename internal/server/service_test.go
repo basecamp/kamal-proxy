@@ -15,6 +15,8 @@ import (
 )
 
 func TestService_ServeRequest(t *testing.T) {
+	t.Parallel()
+
 	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
 
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
@@ -25,6 +27,8 @@ func TestService_ServeRequest(t *testing.T) {
 }
 
 func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
+	t.Parallel()
+
 	service := testCreateService(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true}, defaultTargetOptions)
 
 	require.True(t, service.options.TLSEnabled)
@@ -43,6 +47,8 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 }
 
 func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
+	t.Parallel()
+
 	certPath, keyPath := prepareTestCertificateFiles(t)
 
 	service := testCreateService(
@@ -60,6 +66,8 @@ func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
 }
 
 func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
+	t.Parallel()
+
 	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
 
 	require.False(t, service.options.TLSEnabled)
@@ -78,6 +86,8 @@ func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
 }
 
 func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
+	t.Parallel()
+
 	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
 
 	checkRequest := func(path string) int {
@@ -104,6 +114,8 @@ func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 }
 
 func TestService_MarshallingState(t *testing.T) {
+	t.Parallel()
+
 	targetOptions := TargetOptions{
 		HealthCheckConfig:   HealthCheckConfig{Path: "/health", Interval: 1, Timeout: 2},
 		BufferRequests:      true,

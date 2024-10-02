@@ -15,6 +15,7 @@ import (
 )
 
 func TestMiddleware_LoggingMiddleware(t *testing.T) {
+	t.Parallel()
 	out := &strings.Builder{}
 	logger := slog.New(slog.NewJSONHandler(out, nil))
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

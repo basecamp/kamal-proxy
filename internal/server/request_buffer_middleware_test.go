@@ -10,6 +10,8 @@ import (
 )
 
 func TestRequestBufferMiddleware(t *testing.T) {
+	t.Parallel()
+
 	sendRequest := func(requestBody, responseBody string) *httptest.ResponseRecorder {
 		middleware := WithRequestBufferMiddleware(4, 8, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(responseBody))
@@ -23,6 +25,8 @@ func TestRequestBufferMiddleware(t *testing.T) {
 	}
 
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
 		w := sendRequest("hello", "ok")
 
 		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -30,6 +34,8 @@ func TestRequestBufferMiddleware(t *testing.T) {
 	})
 
 	t.Run("request body too large", func(t *testing.T) {
+		t.Parallel()
+
 		w := sendRequest("this request body is much too large", "ok")
 
 		assert.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
