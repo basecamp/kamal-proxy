@@ -89,6 +89,15 @@ applications. To enable this, add the `--tls` flag when deploying an instance:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls
 
 
+### Custom TLS certificate
+
+When you obtained your TLS certificate manually, manage your own certificate authority,
+or need to install Cloudflare origin certificate, you can manually specify path to
+your certificate file and the corresponding private key:
+
+    kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
+
+
 ## Specifying `run` options with environment variables
 
 In some environments, like when running a Docker container, it can be convenient
