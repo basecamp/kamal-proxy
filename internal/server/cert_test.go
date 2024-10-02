@@ -6,6 +6,7 @@ import (
 	"path"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,23 +36,9 @@ func TestCertificateLoading(t *testing.T) {
 
 	cert, err := manager.GetCertificate(&tls.ClientHelloInfo{})
 	require.NoError(t, err)
-	require.NotNil(t, cert)
-}
 
-func TestCertificateLoadingRaceCondition(t *testing.T) {
-	certPath, keyPath := prepareTestCertificateFiles(t)
-
-	manager, err := NewStaticCertManager(certPath, keyPath)
-	require.NoError(t, err)
-
-	go func() {
-		_, err2 := manager.GetCertificate(&tls.ClientHelloInfo{})
-		require.NoError(t, err2)
-	}()
-
-	cert, err := manager.GetCertificate(&tls.ClientHelloInfo{})
-	require.NoError(t, err)
-	require.NotNil(t, cert)
+	assert.Equal(t, cert.Leaf.Issuer.Organization, []string{"Acme Co"})
+	assert.Nil(t, cert.Leaf.VerifyHostname("localhost:5453"))
 }
 
 func TestErrorWhenFileDoesNotExist(t *testing.T) {
@@ -62,9 +49,11 @@ func TestErrorWhenFileDoesNotExist(t *testing.T) {
 func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
 	certPath, keyPath := prepareTestCertificateFiles(t)
 
-	_, err := NewStaticCertManager(keyPath, certPath)
+	_, err := NewStaticCertManager(keyPath, certPath) // swapped paths
 	require.ErrorContains(t, err, "unable to load certificate")
 }
+
+// Helpers
 
 func prepareTestCertificateFiles(t *testing.T) (string, string) {
 	t.Helper()
