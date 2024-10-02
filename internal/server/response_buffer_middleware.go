@@ -47,6 +47,7 @@ type bufferedResponseWriter struct {
 	buffer        *Buffer
 	hijacked      bool
 	headerWritten bool
+	bypass        bool
 }
 
 func (w *bufferedResponseWriter) Send() error {
@@ -61,6 +62,7 @@ func (w *bufferedResponseWriter) Send() error {
 	if w.headerWritten {
 		w.ResponseWriter.WriteHeader(w.statusCode)
 	}
+
 	return w.buffer.Send(w.ResponseWriter)
 }
 
@@ -72,10 +74,27 @@ func (w *bufferedResponseWriter) WriteHeader(statusCode int) {
 	if !w.headerWritten {
 		w.statusCode = statusCode
 		w.headerWritten = true
+
+		if w.ShouldSwitchToUnbuffered() {
+			w.SwitchToUnbuffered()
+		}
 	}
 }
 
+func (w *bufferedResponseWriter) ShouldSwitchToUnbuffered() bool {
+	return w.Header().Get("Content-Type") == "text/event-stream"
+}
+
+func (w *bufferedResponseWriter) SwitchToUnbuffered() {
+	w.bypass = true
+	_ = w.Send()
+}
+
 func (w *bufferedResponseWriter) Write(data []byte) (int, error) {
+	if w.bypass {
+		return w.ResponseWriter.Write(data)
+	}
+
 	n, err := w.buffer.Write(data)
 	if err == ErrMaximumSizeExceeded {
 		// Returning an error here will cause the ReverseProxy to panic. If the
