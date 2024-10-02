@@ -2,10 +2,12 @@ package server
 
 import (
 	"crypto/tls"
+	"errors"
 	"log/slog"
 	"net/http"
-	"sync"
 )
+
+var ErrorUnableToLoadCertificate = errors.New("unable to load certificate")
 
 type CertManager interface {
 	GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
@@ -14,45 +16,22 @@ type CertManager interface {
 
 // StaticCertManager is a certificate manager that loads certificates from disk.
 type StaticCertManager struct {
-	tlsCertificateFilePath string
-	tlsPrivateKeyFilePath  string
-	cert                   *tls.Certificate
-	lock                   sync.RWMutex
+	cert *tls.Certificate
 }
 
-func NewStaticCertManager(tlsCertificateFilePath, tlsPrivateKeyFilePath string) *StaticCertManager {
-	return &StaticCertManager{
-		tlsCertificateFilePath: tlsCertificateFilePath,
-		tlsPrivateKeyFilePath:  tlsPrivateKeyFilePath,
+func NewStaticCertManager(tlsCertificateFilePath, tlsPrivateKeyFilePath string) (*StaticCertManager, error) {
+	cert, err := tls.LoadX509KeyPair(tlsCertificateFilePath, tlsPrivateKeyFilePath)
+	if err != nil {
+		slog.Error("Error loading TLS certificate", "error", err)
+		return nil, ErrorUnableToLoadCertificate
 	}
+
+	return &StaticCertManager{
+		cert: &cert,
+	}, nil
 }
 
 func (m *StaticCertManager) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-	m.lock.RLock()
-	if m.cert != nil {
-		defer m.lock.RUnlock()
-		return m.cert, nil
-	}
-	m.lock.RUnlock()
-
-	m.lock.Lock()
-	defer m.lock.Unlock()
-	if m.cert != nil { // Double-check locking
-		return m.cert, nil
-	}
-
-	slog.Info(
-		"Loading custom TLS certificate",
-		"tls-certificate-path", m.tlsCertificateFilePath,
-		"tls-private-key-path", m.tlsPrivateKeyFilePath,
-	)
-
-	cert, err := tls.LoadX509KeyPair(m.tlsCertificateFilePath, m.tlsPrivateKeyFilePath)
-	if err != nil {
-		return nil, err
-	}
-	m.cert = &cert
-
 	return m.cert, nil
 }
 

@@ -98,9 +98,10 @@ type Service struct {
 
 func NewService(name string, hosts []string, options ServiceOptions) *Service {
 	service := &Service{
-		name:    name,
-		hosts:   hosts,
-		options: options,
+		name:            name,
+		hosts:           hosts,
+		options:         options,
+		pauseController: NewPauseController(),
 	}
 
 	service.initialize()
@@ -108,11 +109,11 @@ func NewService(name string, hosts []string, options ServiceOptions) *Service {
 	return service
 }
 
-func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) {
+func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) error {
 	s.hosts = hosts
 	s.options = options
-	s.certManager = s.createCertManager()
-	s.middleware = s.createMiddleware()
+
+	return s.initialize()
 }
 
 func (s *Service) ActiveTarget() *Target {
@@ -280,15 +281,21 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize() {
-	s.pauseController = NewPauseController()
-	s.certManager = s.createCertManager()
+func (s *Service) initialize() error {
+	certManager, err := s.createCertManager()
+	if err != nil {
+		return err
+	}
+
+	s.certManager = certManager
 	s.middleware = s.createMiddleware()
+
+	return nil
 }
 
-func (s *Service) createCertManager() CertManager {
+func (s *Service) createCertManager() (CertManager, error) {
 	if !s.options.TLSEnabled {
-		return nil
+		return nil, nil
 	}
 
 	if s.options.TLSCertificatePath != "" && s.options.TLSPrivateKeyPath != "" {
@@ -300,7 +307,7 @@ func (s *Service) createCertManager() CertManager {
 		Cache:      autocert.DirCache(s.options.ScopedCachePath()),
 		HostPolicy: autocert.HostWhitelist(s.hosts...),
 		Client:     &acme.Client{DirectoryURL: s.options.ACMEDirectory},
-	}
+	}, nil
 }
 
 func (s *Service) createMiddleware() http.Handler {

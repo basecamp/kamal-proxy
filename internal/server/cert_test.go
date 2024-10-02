@@ -28,78 +28,53 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 -----END EC PRIVATE KEY-----`
 
 func TestCertificateLoading(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles(t)
+	certPath, keyPath := prepareTestCertificateFiles(t)
+
+	manager, err := NewStaticCertManager(certPath, keyPath)
 	require.NoError(t, err)
 
-	manager := NewStaticCertManager(certPath, keyPath)
 	cert, err := manager.GetCertificate(&tls.ClientHelloInfo{})
 	require.NoError(t, err)
 	require.NotNil(t, cert)
 }
 
 func TestCertificateLoadingRaceCondition(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles(t)
+	certPath, keyPath := prepareTestCertificateFiles(t)
+
+	manager, err := NewStaticCertManager(certPath, keyPath)
 	require.NoError(t, err)
 
-	manager := NewStaticCertManager(certPath, keyPath)
 	go func() {
 		_, err2 := manager.GetCertificate(&tls.ClientHelloInfo{})
 		require.NoError(t, err2)
 	}()
+
 	cert, err := manager.GetCertificate(&tls.ClientHelloInfo{})
 	require.NoError(t, err)
 	require.NotNil(t, cert)
 }
 
-func TestCachesLoadedCertificate(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles(t)
-	require.NoError(t, err)
-
-	manager := NewStaticCertManager(certPath, keyPath)
-	cert1, err := manager.GetCertificate(&tls.ClientHelloInfo{})
-	require.NoError(t, err)
-	require.NotNil(t, cert1)
-
-	require.Nil(t, os.Remove(certPath))
-	require.Nil(t, os.Remove(keyPath))
-
-	cert2, err := manager.GetCertificate(&tls.ClientHelloInfo{})
-	require.Equal(t, cert1, cert2)
-}
-
 func TestErrorWhenFileDoesNotExist(t *testing.T) {
-	manager := NewStaticCertManager("testdata/cert.pem", "testdata/key.pem")
-	cert1, err := manager.GetCertificate(&tls.ClientHelloInfo{})
-	require.ErrorContains(t, err, "no such file or directory")
-	require.Nil(t, cert1)
+	_, err := NewStaticCertManager("testdata/cert.pem", "testdata/key.pem")
+	require.ErrorContains(t, err, "unable to load certificate")
 }
 
 func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
-	certPath, keyPath, err := prepareTestCertificateFiles(t)
-	require.NoError(t, err)
+	certPath, keyPath := prepareTestCertificateFiles(t)
 
-	manager := NewStaticCertManager(keyPath, certPath)
-	cert1, err := manager.GetCertificate(&tls.ClientHelloInfo{})
-	require.ErrorContains(t, err, "failed to find certificate PEM data in certificate input")
-	require.Nil(t, cert1)
+	_, err := NewStaticCertManager(keyPath, certPath)
+	require.ErrorContains(t, err, "unable to load certificate")
 }
 
-func prepareTestCertificateFiles(t *testing.T) (string, string, error) {
+func prepareTestCertificateFiles(t *testing.T) (string, string) {
 	t.Helper()
 
 	dir := t.TempDir()
 	certFile := path.Join(dir, "example-cert.pem")
 	keyFile := path.Join(dir, "example-key.pem")
 
-	err := os.WriteFile(certFile, []byte(certPem), 0644)
-	if err != nil {
-		return "", "", err
-	}
+	require.NoError(t, os.WriteFile(certFile, []byte(certPem), 0644))
+	require.NoError(t, os.WriteFile(keyFile, []byte(keyPem), 0644))
 
-	err = os.WriteFile(keyFile, []byte(keyPem), 0644)
-	if err != nil {
-		return "", "", err
-	}
-
-	return certFile, keyFile, nil
+	return certFile, keyFile
 }

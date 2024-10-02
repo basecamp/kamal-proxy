@@ -43,13 +43,15 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 }
 
 func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
+	certPath, keyPath := prepareTestCertificateFiles(t)
+
 	service := testCreateService(
 		t,
 		[]string{"example.com"},
 		ServiceOptions{
 			TLSEnabled:         true,
-			TLSCertificatePath: "cert.pem",
-			TLSPrivateKeyPath:  "key.pem",
+			TLSCertificatePath: certPath,
+			TLSPrivateKeyPath:  keyPath,
 		},
 		defaultTargetOptions,
 	)
