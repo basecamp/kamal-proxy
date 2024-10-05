@@ -311,6 +311,37 @@ func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
 	assert.Equal(t, "second", body)
 }
 
+func TestRouter_TargetsAllowWildcardSubdomains(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+	_, fallback := testBackend(t, "fallback", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("first", []string{"*.first.example.com"}, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("second", []string{"*.second.example.com"}, second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("fallback", defaultEmptyHosts, fallback, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body := sendGETRequest(router, "http://app.first.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+
+	statusCode, body = sendGETRequest(router, "http://api.second.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "second", body)
+
+	statusCode, body = sendGETRequest(router, "http://something-else.example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "fallback", body)
+}
+
+func TestRouter_WildcardDomainsCannotBeUsedWithAutomaticTLS(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+
+	err := router.SetServiceTarget("first", []string{"first.example.com", "*.first.example.com"}, first, ServiceOptions{TLSEnabled: true}, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout)
+	require.Equal(t, ErrorAutomaticTLSDoesNotSupportWildcards, err)
+}
+
 func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "", http.StatusInternalServerError)
@@ -377,6 +408,56 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 
 	statusCode, _ = sendGETRequest(router, "http://other.example.com/")
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
+}
+
+func TestHostServiceMap_ServiceForHost(t *testing.T) {
+	hsm := HostServiceMap{
+		"example.com":     &Service{name: "1"},
+		"app.example.com": &Service{name: "2"},
+		"api.example.com": &Service{name: "3"},
+		"*.example.com":   &Service{name: "4"},
+		"":                &Service{name: "5"},
+	}
+
+	assert.Equal(t, "1", hsm.ServiceForHost("example.com").name)
+	assert.Equal(t, "2", hsm.ServiceForHost("app.example.com").name)
+	assert.Equal(t, "3", hsm.ServiceForHost("api.example.com").name)
+	assert.Equal(t, "4", hsm.ServiceForHost("anything.example.com").name)
+
+	assert.Equal(t, "5", hsm.ServiceForHost("extra.level.example.com").name)
+	assert.Equal(t, "5", hsm.ServiceForHost("other.com").name)
+
+	hsm = HostServiceMap{
+		"example.com": &Service{name: "1"},
+	}
+
+	assert.Nil(t, hsm.ServiceForHost("app.example.com"))
+}
+
+func BenchmarkHostServiceMap_WilcardRouting(b *testing.B) {
+	hsm := HostServiceMap{
+		"one.example.com":   &Service{},
+		"*.two.example.com": &Service{},
+		"":                  &Service{},
+	}
+
+	b.Run("exact match", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hsm.ServiceForHost("one.example.com")
+		}
+	})
+
+	b.Run("wildcard match", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hsm.ServiceForHost("anything.two.example.com")
+		}
+	})
+
+	b.Run("default match", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = hsm.ServiceForHost("missing.example.com")
+		}
+	})
 }
 
 // Helpers

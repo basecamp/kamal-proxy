@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,8 +46,9 @@ const (
 )
 
 var (
-	ErrorRolloutTargetNotSet    = errors.New("rollout target not set")
-	ErrorUnableToLoadErrorPages = errors.New("unable to load error pages")
+	ErrorRolloutTargetNotSet                 = errors.New("rollout target not set")
+	ErrorUnableToLoadErrorPages              = errors.New("unable to load error pages")
+	ErrorAutomaticTLSDoesNotSupportWildcards = errors.New("automatic TLS does not support wildcards")
 )
 
 type TargetSlot int
@@ -306,6 +308,14 @@ func (s *Service) createCertManager(hosts []string, options ServiceOptions) (Cer
 
 	if options.TLSCertificatePath != "" && options.TLSPrivateKeyPath != "" {
 		return NewStaticCertManager(options.TLSCertificatePath, options.TLSPrivateKeyPath)
+	}
+
+	// Ensure we're not trying to use Let's Encrypt to fetch a wildcard domain,
+	// as that is not supported with the challenge types that we use.
+	for _, host := range hosts {
+		if strings.Contains(host, "*") {
+			return nil, ErrorAutomaticTLSDoesNotSupportWildcards
+		}
 	}
 
 	return &autocert.Manager{
