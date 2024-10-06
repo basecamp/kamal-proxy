@@ -54,6 +54,23 @@ func (m HostServiceMap) CheckHostAvailability(name string, hosts []string) *Serv
 	return nil
 }
 
+func (m HostServiceMap) ServiceForHost(host string) *Service {
+	service, ok := m[host]
+	if ok {
+		return service
+	}
+
+	sep := strings.Index(host, ".")
+	if sep > 0 {
+		service, ok := m["*"+host[sep:]]
+		if ok {
+			return service
+		}
+	}
+
+	return m[""]
+}
+
 type Router struct {
 	statePath    string
 	services     ServiceMap
@@ -338,12 +355,7 @@ func (r *Router) serviceForHost(host string) *Service {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	service, ok := r.hostServices[host]
-	if !ok {
-		service = r.hostServices[""]
-	}
-
-	return service
+	return r.hostServices.ServiceForHost(host)
 }
 
 func (r *Router) setActiveTarget(name string, hosts []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
