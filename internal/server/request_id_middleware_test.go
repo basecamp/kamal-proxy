@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRequestIDMiddleware_adds_an_id_when_not_present(t *testing.T) {
+func TestRequestIDMiddleware_AddsAnIDWhenNotPresent(t *testing.T) {
 	handler := WithRequestIDMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
 		assert.NotEmpty(t, id)
@@ -21,7 +21,7 @@ func TestRequestIDMiddleware_adds_an_id_when_not_present(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestRequestIDMiddleware_preserves_existing_header_when_present(t *testing.T) {
+func TestRequestIDMiddleware_PreservesExistingHeaderWhenPresent(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
 		assert.Equal(t, "1234", id)
