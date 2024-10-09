@@ -35,3 +35,23 @@ func TestResponseBufferMiddleware(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
 	})
 }
+
+func TestResponseBufferMiddleware_BufferedResponsesIgnoreFlushes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/somepath", nil)
+	rec := httptest.NewRecorder()
+
+	middleware := WithResponseBufferMiddleware(1024, 1024, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://example.com", http.StatusFound)
+
+		// Ensure this flush does not bypass the buffered response
+		w.(http.Flusher).Flush()
+
+		assert.False(t, rec.Flushed)
+	}))
+
+	middleware.ServeHTTP(rec, req)
+
+	// Ensure the buffered response is what we received
+	assert.Equal(t, http.StatusFound, rec.Result().StatusCode)
+	assert.Contains(t, rec.Body.String(), "http://example.com")
+}
