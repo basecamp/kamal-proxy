@@ -52,3 +52,23 @@ func TestResponseBufferMiddleware_BufferedResponsesIgnoreFlushes(t *testing.T) {
 	assert.Equal(t, http.StatusFound, rec.Result().StatusCode)
 	assert.Contains(t, rec.Body.String(), "http://example.com")
 }
+
+func TestResponseBufferMiddleware_SSEResponsesBypassBufferAndAreFlushable(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/somepath", nil)
+	rec := httptest.NewRecorder()
+
+	middleware := WithResponseBufferMiddleware(1024, 1024, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		w.Write([]byte("data: hello\n\n"))
+		w.(http.Flusher).Flush()
+
+		assert.True(t, rec.Flushed)
+	}))
+
+	middleware.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Result().StatusCode)
+	assert.Contains(t, rec.Body.String(), "data: hello")
+}
