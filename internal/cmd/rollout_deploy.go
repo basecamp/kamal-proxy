@@ -26,6 +26,7 @@ func newRolloutDeployCommand() *rolloutDeployCommand {
 	rolloutDeployCommand.cmd.Flags().DurationVar(&rolloutDeployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	rolloutDeployCommand.cmd.Flags().DurationVar(&rolloutDeployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
 
+	//nolint:errcheck
 	rolloutDeployCommand.cmd.MarkFlagRequired("target")
 
 	return rolloutDeployCommand

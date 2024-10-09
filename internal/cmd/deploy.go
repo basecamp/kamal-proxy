@@ -54,6 +54,7 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.ForwardHeaders, "forward-headers", false, "Forward X-Forwarded headers to target (default false if TLS enabled; otherwise true)")
 
+	//nolint:errcheck
 	deployCommand.cmd.MarkFlagRequired("target")
 	deployCommand.cmd.MarkFlagsRequiredTogether("tls-certificate-path", "tls-private-key-path")
 

@@ -134,9 +134,10 @@ func (h *CommandHandler) Remove(args RemoveArgs, reply *bool) error {
 }
 
 func (h *CommandHandler) List(args bool, reply *ListResponse) error {
-	reply.Targets = h.router.ListActiveServices()
+	var err error
+	reply.Targets, err = h.router.ListActiveServices()
 
-	return nil
+	return err
 }
 
 func (h *CommandHandler) RolloutDeploy(args RolloutDeployArgs, reply *bool) error {

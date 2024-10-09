@@ -90,15 +90,18 @@ func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 	assert.Equal(t, http.StatusOK, checkRequest("/up"))
 	assert.Equal(t, http.StatusOK, checkRequest("/other"))
 
-	service.Pause(time.Second, time.Millisecond)
+	err := service.Pause(time.Second, time.Millisecond)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, checkRequest("/up"))
 	assert.Equal(t, http.StatusGatewayTimeout, checkRequest("/other"))
 
-	service.Stop(time.Second, DefaultStopMessage)
+	err = service.Stop(time.Second, DefaultStopMessage)
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, checkRequest("/up"))
 	assert.Equal(t, http.StatusServiceUnavailable, checkRequest("/other"))
 
-	service.Resume()
+	err = service.Resume()
+	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, checkRequest("/up"))
 	assert.Equal(t, http.StatusOK, checkRequest("/other"))
 }

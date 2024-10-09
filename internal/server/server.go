@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -58,7 +59,10 @@ func (s *Server) Stop() {
 	defer cancel()
 
 	s.commandHandler.Close()
-	s.httpServer.Shutdown(ctx)
+	err := s.httpServer.Shutdown(ctx)
+	if err != nil {
+		slog.Warn("Server shutdown error exit", "error", err)
+	}
 
 	slog.Info("Server stopped")
 }
@@ -103,8 +107,19 @@ func (s *Server) startHTTPServers() error {
 		},
 	}
 
-	go s.httpServer.Serve(s.httpListener)
-	go s.httpsServer.ServeTLS(s.httpsListener, "", "")
+	go func() {
+		err := s.httpServer.Serve(s.httpListener)
+		if !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("Error while serving http endpoint", "error", err)
+		}
+	}()
+
+	go func() {
+		err := s.httpsServer.ServeTLS(s.httpsListener, "", "")
+		if !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("Error while serving https endpoint", "error", err)
+		}
+	}()
 
 	return nil
 }

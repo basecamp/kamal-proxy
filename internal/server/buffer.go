@@ -86,7 +86,10 @@ func (b *Buffer) Write(p []byte) (int, error) {
 }
 
 func (b *Buffer) Read(p []byte) (n int, err error) {
-	b.setReader()
+	err = b.setReader()
+	if err != nil {
+		return 0, err
+	}
 	return b.reader.Read(p)
 }
 
@@ -95,8 +98,11 @@ func (b *Buffer) Overflowed() bool {
 }
 
 func (b *Buffer) Send(w io.Writer) error {
-	b.setReader()
-	_, err := io.Copy(w, b.reader)
+	err := b.setReader()
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(w, b.reader)
 	return err
 }
 
@@ -120,15 +126,19 @@ func (b *Buffer) writeToDisk(p []byte) (int, error) {
 	return n, err
 }
 
-func (b *Buffer) setReader() {
+func (b *Buffer) setReader() error {
 	if b.reader == nil {
 		if b.diskBuffer != nil {
-			b.diskBuffer.Seek(0, 0)
+			_, err := b.diskBuffer.Seek(0, 0)
+			if err != nil {
+				return err
+			}
 			b.reader = io.MultiReader(&b.memoryBuffer, b.diskBuffer)
 		} else {
 			b.reader = &b.memoryBuffer
 		}
 	}
+	return nil
 }
 
 func (b *Buffer) createSpill() error {

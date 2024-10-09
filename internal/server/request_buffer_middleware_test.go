@@ -12,7 +12,8 @@ import (
 func TestRequestBufferMiddleware(t *testing.T) {
 	sendRequest := func(requestBody, responseBody string) *httptest.ResponseRecorder {
 		middleware := WithRequestBufferMiddleware(4, 8, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(responseBody))
+			_, err := w.Write([]byte(responseBody))
+			assert.NoError(t, err)
 		}))
 
 		req := httptest.NewRequest("POST", "http://app.example.com/somepath", strings.NewReader(requestBody))
