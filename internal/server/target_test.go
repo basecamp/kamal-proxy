@@ -18,6 +18,8 @@ import (
 )
 
 func TestTarget_Serve(t *testing.T) {
+	t.Parallel()
+
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
@@ -89,6 +91,8 @@ func TestTarget_ServeSSE(t *testing.T) {
 }
 
 func TestTarget_ServeWebSocket(t *testing.T) {
+	t.Parallel()
+
 	sendWebsocketMessage := func(bufferRequests, bufferResponses bool, body string) (websocket.MessageType, []byte, error) {
 		targetOptions := TargetOptions{
 			BufferRequests:      bufferRequests,
@@ -132,6 +136,8 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 	}
 
 	t.Run("without buffering", func(t *testing.T) {
+		t.Parallel()
+
 		kind, body, err := sendWebsocketMessage(false, false, "hello")
 		require.NoError(t, err)
 		assert.Equal(t, websocket.MessageText, kind)
@@ -139,6 +145,8 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 	})
 
 	t.Run("with buffering", func(t *testing.T) {
+		t.Parallel()
+
 		kind, body, err := sendWebsocketMessage(true, true, "world")
 		require.NoError(t, err)
 		assert.Equal(t, websocket.MessageText, kind)
@@ -147,6 +155,8 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 }
 
 func TestTarget_PreserveTargetHeader(t *testing.T) {
+	t.Parallel()
+
 	var requestTarget string
 
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +173,8 @@ func TestTarget_PreserveTargetHeader(t *testing.T) {
 }
 
 func TestTarget_XForwardedHeadersPopulatedByDefault(t *testing.T) {
+	t.Parallel()
+
 	var (
 		xForwardedFor   string
 		xForwardedProto string
@@ -202,6 +214,8 @@ func TestTarget_XForwardedHeadersPopulatedByDefault(t *testing.T) {
 }
 
 func TestTarget_XForwardedHeadersCanBeForwarded(t *testing.T) {
+	t.Parallel()
+
 	var (
 		xForwardedFor   string
 		xForwardedProto string
@@ -248,6 +262,8 @@ func TestTarget_XForwardedHeadersCanBeForwarded(t *testing.T) {
 }
 
 func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
+	t.Parallel()
+
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "p1=a;b;c&p2=%x&p3=ok", r.URL.RawQuery)
 	})
@@ -260,6 +276,8 @@ func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
 }
 
 func TestTarget_IsHealthCheckRequest(t *testing.T) {
+	t.Parallel()
+
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	assert.True(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up", nil)))
@@ -270,6 +288,8 @@ func TestTarget_IsHealthCheckRequest(t *testing.T) {
 }
 
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
+	t.Parallel()
+
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
@@ -288,12 +308,16 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 }
 
 func TestTarget_DrainWhenEmpty(t *testing.T) {
+	t.Parallel()
+
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	target.Drain(time.Second)
 }
 
 func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
+	t.Parallel()
+
 	n := 3
 	var served atomic.Uint32
 
@@ -319,6 +343,8 @@ func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 }
 
 func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
+	t.Parallel()
+
 	n := 20
 	served := 0
 
@@ -349,6 +375,8 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 }
 
 func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
+	t.Parallel()
+
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 		require.NoError(t, err)
@@ -377,6 +405,8 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 }
 
 func TestTarget_EnforceMaxBodySizes(t *testing.T) {
+	t.Parallel()
+
 	sendRequest := func(bufferRequests, bufferResponses bool, maxMemorySize, maxBodySize int64, requestBody, responseBody string) *httptest.ResponseRecorder {
 		targetOptions := TargetOptions{
 			BufferRequests:      bufferRequests,
@@ -398,7 +428,11 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	}
 
 	t.Run("without buffering", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("within limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(false, false, 1, 10, "hello", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -406,6 +440,8 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("request too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(false, false, 1, 10, "request limits are not enforced when not buffering", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -413,6 +449,8 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("response too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(false, false, 1, 10, "hello", "response limits are not enforced when not buffering")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -421,7 +459,11 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	})
 
 	t.Run("with buffering but no additional disk limit", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("within limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 10, 10, "hello", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -429,12 +471,16 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("request too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 10, 10, "this one is too large", "ok")
 
 			require.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
 		})
 
 		t.Run("response too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 10, 10, "hello", "this response is too large")
 
 			require.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
@@ -442,7 +488,11 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	})
 
 	t.Run("with buffering and a separate disk limit", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("within limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 5, 20, "hello", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -450,6 +500,8 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("request too large for memory but within the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 5, 20, "hello hello", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -457,11 +509,15 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("request too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 5, 20, "hello hello hello hello hello", "ok")
 
 			require.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
 		})
 		t.Run("response too large for memory but within the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 5, 20, "hello", "hello hello")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -469,6 +525,8 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("response too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, true, 5, 20, "hello", "this is even longer than the disk limit")
 
 			require.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
@@ -476,7 +534,11 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	})
 
 	t.Run("when buffering requests but not responses", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("within limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, false, 10, 10, "hello", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -484,12 +546,16 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("request too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, false, 10, 10, "this one is too large", "ok")
 
 			require.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
 		})
 
 		t.Run("response too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(true, false, 10, 10, "hello", "this response is very large")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -498,7 +564,11 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	})
 
 	t.Run("when buffering responses but not requests", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("within limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(false, true, 10, 10, "hello", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -506,6 +576,8 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("request too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(false, true, 10, 10, "this one is too large", "ok")
 
 			require.Equal(t, http.StatusOK, w.Result().StatusCode)
@@ -513,6 +585,8 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 		})
 
 		t.Run("response too large for the limit", func(t *testing.T) {
+			t.Parallel()
+
 			w := sendRequest(false, true, 10, 10, "hello", "this response is very large")
 
 			require.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)

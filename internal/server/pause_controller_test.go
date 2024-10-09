@@ -10,6 +10,8 @@ import (
 )
 
 func TestPauseController_RunningByDefault(t *testing.T) {
+	t.Parallel()
+
 	p := NewPauseController()
 
 	assert.Equal(t, PauseStateRunning, p.GetState())
@@ -19,6 +21,8 @@ func TestPauseController_RunningByDefault(t *testing.T) {
 }
 
 func TestPauseController_WaitBlocksWhenPaused(t *testing.T) {
+	t.Parallel()
+
 	p := NewPauseController()
 	var wg sync.WaitGroup
 
@@ -38,6 +42,8 @@ func TestPauseController_WaitBlocksWhenPaused(t *testing.T) {
 }
 
 func TestPauseController_PausedWaitsCanTimeout(t *testing.T) {
+	t.Parallel()
+
 	p := NewPauseController()
 
 	require.NoError(t, p.Pause(time.Millisecond))
@@ -49,6 +55,8 @@ func TestPauseController_PausedWaitsCanTimeout(t *testing.T) {
 }
 
 func TestPauseController_Stopped(t *testing.T) {
+	t.Parallel()
+
 	p := NewPauseController()
 
 	require.NoError(t, p.Stop(DefaultStopMessage))
@@ -60,6 +68,8 @@ func TestPauseController_Stopped(t *testing.T) {
 }
 
 func TestPauseController_StoppingPausedRequestsFailsThemImmediately(t *testing.T) {
+	t.Parallel()
+
 	p := NewPauseController()
 	var wg sync.WaitGroup
 

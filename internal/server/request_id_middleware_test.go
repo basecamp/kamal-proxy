@@ -9,6 +9,8 @@ import (
 )
 
 func TestRequestIDMiddleware_AddsAnIDWhenNotPresent(t *testing.T) {
+	t.Parallel()
+
 	handler := WithRequestIDMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
 		assert.NotEmpty(t, id)
@@ -22,6 +24,8 @@ func TestRequestIDMiddleware_AddsAnIDWhenNotPresent(t *testing.T) {
 }
 
 func TestRequestIDMiddleware_PreservesExistingHeaderWhenPresent(t *testing.T) {
+	t.Parallel()
+
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
 		assert.Equal(t, "1234", id)

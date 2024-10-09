@@ -9,6 +9,8 @@ import (
 )
 
 func TestServer_Deploying(t *testing.T) {
+	t.Parallel()
+
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 	server, addr := testServer(t)
 

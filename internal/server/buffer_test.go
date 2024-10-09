@@ -10,6 +10,8 @@ import (
 )
 
 func TestBufferedReadCloser(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]struct {
 		maxBytes       int64
 		maxMemBytes    int64
@@ -24,6 +26,7 @@ func TestBufferedReadCloser(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			r := io.NopCloser(strings.NewReader("Hello, World!"))
 			brc, err := NewBufferedReadCloser(r, tc.maxBytes, tc.maxMemBytes)
 
@@ -41,6 +44,7 @@ func TestBufferedReadCloser(t *testing.T) {
 }
 
 func TestBufferedReadCloser_EmptyReader(t *testing.T) {
+	t.Parallel()
 	r := io.NopCloser(strings.NewReader(""))
 	brc, err := NewBufferedReadCloser(r, 2048, 1024)
 
@@ -52,6 +56,8 @@ func TestBufferedReadCloser_EmptyReader(t *testing.T) {
 }
 
 func TestBufferedWriteCloser(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]struct {
 		maxBytes       int64
 		maxMemBytes    int64
@@ -66,6 +72,7 @@ func TestBufferedWriteCloser(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			bwc := NewBufferedWriteCloser(tc.maxBytes, tc.maxMemBytes)
 			_, err := bwc.Write([]byte("Hello, World!"))
 
@@ -84,6 +91,7 @@ func TestBufferedWriteCloser(t *testing.T) {
 }
 
 func TestBufferedWriteCloser_NothingWritten(t *testing.T) {
+	t.Parallel()
 	bwc := NewBufferedWriteCloser(2048, 1024)
 
 	var result strings.Builder

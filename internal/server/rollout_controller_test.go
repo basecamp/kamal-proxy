@@ -9,6 +9,8 @@ import (
 )
 
 func TestRolloutController_MatchesAllowlistItems(t *testing.T) {
+	t.Parallel()
+
 	rc := NewRolloutController(0, []string{"1", "2"})
 
 	assert.True(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=1"}}}))
@@ -19,6 +21,8 @@ func TestRolloutController_MatchesAllowlistItems(t *testing.T) {
 }
 
 func TestRolloutController_PercentageSplit(t *testing.T) {
+	t.Parallel()
+
 	rc := NewRolloutController(60, []string{})
 
 	usedRolloutGroup := 0
@@ -35,6 +39,8 @@ func TestRolloutController_PercentageSplit(t *testing.T) {
 }
 
 func TestRolloutController_AllowListAndPercentageTogether(t *testing.T) {
+	t.Parallel()
+
 	rc := NewRolloutController(10, []string{"00001", "00002"})
 
 	usedRolloutGroup := 0

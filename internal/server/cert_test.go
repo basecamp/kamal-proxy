@@ -29,6 +29,7 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 -----END EC PRIVATE KEY-----`
 
 func TestCertificateLoading(t *testing.T) {
+	t.Parallel()
 	certPath, keyPath := prepareTestCertificateFiles(t)
 
 	manager, err := NewStaticCertManager(certPath, keyPath)
@@ -42,11 +43,13 @@ func TestCertificateLoading(t *testing.T) {
 }
 
 func TestErrorWhenFileDoesNotExist(t *testing.T) {
+	t.Parallel()
 	_, err := NewStaticCertManager("testdata/cert.pem", "testdata/key.pem")
 	require.ErrorContains(t, err, "unable to load certificate")
 }
 
 func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
+	t.Parallel()
 	certPath, keyPath := prepareTestCertificateFiles(t)
 
 	_, err := NewStaticCertManager(keyPath, certPath) // swapped paths

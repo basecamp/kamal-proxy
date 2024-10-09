@@ -13,6 +13,8 @@ import (
 )
 
 func TestRouter_Empty(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 
 	statusCode, _ := sendGETRequest(router, "http://example.com/")
@@ -21,6 +23,8 @@ func TestRouter_Empty(t *testing.T) {
 }
 
 func TestRouter_ActiveServiceForHost(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -33,6 +37,8 @@ func TestRouter_ActiveServiceForHost(t *testing.T) {
 }
 
 func TestRouter_Removing(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -48,6 +54,8 @@ func TestRouter_Removing(t *testing.T) {
 }
 
 func TestRouter_ActiveServiceForMultipleHosts(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -66,6 +74,8 @@ func TestRouter_ActiveServiceForMultipleHosts(t *testing.T) {
 }
 
 func TestRouter_UpdatingHostsOfActiveService(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -86,6 +96,8 @@ func TestRouter_UpdatingHostsOfActiveService(t *testing.T) {
 }
 
 func TestRouter_ActiveServiceForUnknownHost(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -97,6 +109,8 @@ func TestRouter_ActiveServiceForUnknownHost(t *testing.T) {
 }
 
 func TestRouter_ActiveServiceForHostContainingPort(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -109,6 +123,8 @@ func TestRouter_ActiveServiceForHostContainingPort(t *testing.T) {
 }
 
 func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -121,6 +137,8 @@ func TestRouter_ActiveServiceWithoutHost(t *testing.T) {
 }
 
 func TestRouter_ReplacingActiveService(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
@@ -141,6 +159,8 @@ func TestRouter_ReplacingActiveService(t *testing.T) {
 }
 
 func TestRouter_UpdatingOptions(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -171,6 +191,8 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 }
 
 func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -184,6 +206,8 @@ func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
 	ensureServiceIsHealthy()
 
 	t.Run("custom TLS that is not valid", func(t *testing.T) {
+		t.Parallel()
+
 		serviceOptions := ServiceOptions{TLSEnabled: true, TLSCertificatePath: "not valid", TLSPrivateKeyPath: "not valid"}
 		require.Error(t, router.SetServiceTarget("service1", []string{"example.com"}, target, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
@@ -191,6 +215,8 @@ func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
 	})
 
 	t.Run("custom error pages that are not valid", func(t *testing.T) {
+		t.Parallel()
+
 		serviceOptions := ServiceOptions{ErrorPagePath: "not valid"}
 		require.Error(t, router.SetServiceTarget("service1", []string{"example.com"}, target, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
@@ -199,6 +225,8 @@ func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
 }
 
 func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -220,6 +248,8 @@ func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {
 }
 
 func TestRouter_ChangingHostForService(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
@@ -243,6 +273,8 @@ func TestRouter_ChangingHostForService(t *testing.T) {
 }
 
 func TestRouter_ReusingHost(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
@@ -259,6 +291,8 @@ func TestRouter_ReusingHost(t *testing.T) {
 }
 
 func TestRouter_ReusingEmptyHost(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
@@ -274,6 +308,8 @@ func TestRouter_ReusingEmptyHost(t *testing.T) {
 }
 
 func TestRouter_RoutingMultipleHosts(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
@@ -291,6 +327,8 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 }
 
 func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
@@ -343,6 +381,8 @@ func TestRouter_WildcardDomainsCannotBeUsedWithAutomaticTLS(t *testing.T) {
 }
 
 func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, target := testBackend(t, "", http.StatusInternalServerError)
 
@@ -355,6 +395,8 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 }
 
 func TestRouter_EnablingRollout(t *testing.T) {
+	t.Parallel()
+
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
@@ -383,6 +425,8 @@ func TestRouter_EnablingRollout(t *testing.T) {
 }
 
 func TestRouter_RestoreLastSavedState(t *testing.T) {
+	t.Parallel()
+
 	statePath := filepath.Join(t.TempDir(), "state.json")
 
 	_, first := testBackend(t, "first", http.StatusOK)
