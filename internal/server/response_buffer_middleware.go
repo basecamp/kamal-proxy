@@ -91,6 +91,9 @@ func (w *bufferedResponseWriter) SwitchToUnbuffered() {
 }
 
 func (w *bufferedResponseWriter) Write(data []byte) (int, error) {
+	// Ensure headers have been written, if they weren't already
+	w.WriteHeader(http.StatusOK)
+
 	if w.bypass {
 		return w.ResponseWriter.Write(data)
 	}

@@ -59,8 +59,6 @@ func TestResponseBufferMiddleware_SSEResponsesBypassBufferAndAreFlushable(t *tes
 
 	middleware := WithResponseBufferMiddleware(1024, 1024, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-
 		w.Write([]byte("data: hello\n\n"))
 		w.(http.Flusher).Flush()
 
