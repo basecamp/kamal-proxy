@@ -116,8 +116,10 @@ func (w *bufferedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 func (w *bufferedResponseWriter) Flush() {
-	flusher, ok := w.ResponseWriter.(http.Flusher)
-	if ok {
-		flusher.Flush()
+	if w.bypass {
+		flusher, ok := w.ResponseWriter.(http.Flusher)
+		if ok {
+			flusher.Flush()
+		}
 	}
 }
