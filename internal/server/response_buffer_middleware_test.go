@@ -57,21 +57,27 @@ func TestResponseBufferMiddleware_BufferedResponsesIgnoreFlushes(t *testing.T) {
 }
 
 func TestResponseBufferMiddleware_SSEResponsesBypassBufferAndAreFlushable(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/somepath", nil)
-	rec := httptest.NewRecorder()
+	checkContentType := func(contentType string, shouldFlush bool) {
+		req := httptest.NewRequest(http.MethodGet, "http://app.example.com/somepath", nil)
+		rec := httptest.NewRecorder()
 
-	middleware := WithResponseBufferMiddleware(1024, 1024, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
+		middleware := WithResponseBufferMiddleware(1024, 1024, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", contentType)
+			w.WriteHeader(http.StatusOK)
 
-		w.Write([]byte("data: hello\n\n"))
-		w.(http.Flusher).Flush()
+			w.Write([]byte("data: hello\n\n"))
+			w.(http.Flusher).Flush()
 
-		assert.True(t, rec.Flushed)
-	}))
+			assert.Equal(t, shouldFlush, rec.Flushed)
+		}))
 
-	middleware.ServeHTTP(rec, req)
+		middleware.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Result().StatusCode)
-	assert.Contains(t, rec.Body.String(), "data: hello")
+		assert.Equal(t, http.StatusOK, rec.Result().StatusCode)
+		assert.Contains(t, rec.Body.String(), "data: hello")
+	}
+
+	checkContentType("text/event-stream", true)
+	checkContentType("text/event-stream; charset=utf-8", true)
+	checkContentType("text/plain", false)
 }

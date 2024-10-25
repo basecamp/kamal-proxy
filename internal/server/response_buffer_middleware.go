@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 )
 
 type ResponseBufferMiddleware struct {
@@ -82,7 +83,8 @@ func (w *bufferedResponseWriter) WriteHeader(statusCode int) {
 }
 
 func (w *bufferedResponseWriter) ShouldSwitchToUnbuffered() bool {
-	return w.Header().Get("Content-Type") == "text/event-stream"
+	contentType, _, _ := strings.Cut(w.Header().Get("Content-Type"), ";")
+	return contentType == "text/event-stream"
 }
 
 func (w *bufferedResponseWriter) SwitchToUnbuffered() {
