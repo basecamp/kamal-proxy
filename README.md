@@ -135,7 +135,7 @@ In addition of the automatic TLS functionality, Kamal Proxy can also dynamically
 from any host allowed by an external API endpoint of your choice.
 This avoids hard-coding hosts in the configuration, especially when you don't know the hosts at the startup.
 
-    kamal-proxy deploy service1 --target web-1:3000 --host "" --tls --tls-on-demand-url=localhost:4567/check
+    kamal-proxy deploy service1 --target web-1:3000 --host "" --tls --tls-on-demand-url="http://localhost:4567/check"
 
 The On-demand URL endpoint will have to answer a 200 HTTP status code. 
 Kamal Proxy will call the on-demand URL with a query string of `?host=` containing the host received by Kamal Proxy.
