@@ -129,6 +129,20 @@ root path. Services deployed to other paths on the same host will use the same
 TLS settings as those specified for the root path.
 
 
+## On-demand TLS
+
+In addition of the automatic TLS functionality, Kamal Proxy can also dynamically obtain a TLS certificate 
+from any host allowed by an external API endpoint of your choice.
+This avoids hard-coding hosts in the configuration, especially when you don't know the hosts at the startup.
+
+    kamal-proxy deploy service1 --target web-1:3000 --host "" --tls --tls-on-demand-url=localhost:4567/check
+
+The On-demand URL endpoint will have to answer a 200 HTTP status code. 
+Kamal Proxy will call the on-demand URL with a query string of `?host=` containing the host received by Kamal Proxy.
+
+It also must respond as fast as possible, a couple of milliseconds top.
+
+
 ### Custom TLS certificate
 
 When you obtained your TLS certificate manually, manage your own certificate authority,
