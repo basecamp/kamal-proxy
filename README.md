@@ -129,7 +129,7 @@ root path. Services deployed to other paths on the same host will use the same
 TLS settings as those specified for the root path.
 
 
-## On-demand TLS
+### On-demand TLS
 
 In addition of the automatic TLS functionality, Kamal Proxy can also dynamically obtain a TLS certificate 
 from any host allowed by an external API endpoint of your choice.
