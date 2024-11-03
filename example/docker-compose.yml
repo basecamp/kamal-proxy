@@ -11,3 +11,6 @@ services:
     deploy:
       replicas: 4
     restart: unless-stopped
+  maintenance:
+    build: ./maintenance
+    restart: unless-stopped
