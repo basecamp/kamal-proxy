@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+const (
+	HTTP_STATUS_CLIENT_DISCONNECTED = 499
+)
+
 var (
 	ErrorInvalidHostPattern = errors.New("invalid host pattern")
 	ErrorDraining           = errors.New("target is draining")
@@ -43,7 +47,7 @@ func (ts TargetState) String() string {
 }
 
 type inflightRequest struct {
-	cancel   context.CancelFunc
+	cancel   context.CancelCauseFunc
 	hijacked bool
 }
 
@@ -124,7 +128,7 @@ func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
 		return nil, ErrorDraining
 	}
 
-	ctx, cancel := context.WithCancel(req.Context())
+	ctx, cancel := context.WithCancelCause(req.Context())
 	req = req.WithContext(ctx)
 
 	inflightRequest := &inflightRequest{cancel: cancel}
@@ -162,7 +166,7 @@ func (t *Target) Drain(timeout time.Duration) {
 	// Cancel any hijacked requests immediately, as they may be long-running.
 	for _, inflight := range toCancel {
 		if inflight.hijacked {
-			inflight.cancel()
+			inflight.cancel(ErrorDraining)
 		}
 	}
 
@@ -177,7 +181,7 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 
 	// Cancel any remaining requests.
 	for _, inflight := range toCancel {
-		inflight.cancel()
+		inflight.cancel(ErrorDraining)
 	}
 }
 
@@ -299,6 +303,19 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 		return
 	}
 
+	if t.isClientCancellation(err) {
+		// The client has disconnected so will not see the response, but we
+		// still want to set it for the sake of the logs.
+		w.WriteHeader(HTTP_STATUS_CLIENT_DISCONNECTED)
+		return
+	}
+
+	if t.isDraining(err) {
+		slog.Info("Request cancelled due to draining", "target", t.Target(), "path", r.URL.Path)
+		SetErrorResponse(w, r, http.StatusBadGateway, nil)
+		return
+	}
+
 	slog.Error("Error while proxying", "target", t.Target(), "path", r.URL.Path, "error", err)
 	SetErrorResponse(w, r, http.StatusBadGateway, nil)
 }
@@ -314,6 +331,14 @@ func (t *Target) isGatewayTimeout(err error) bool {
 		return netErr.Timeout()
 	}
 	return false
+}
+
+func (t *Target) isClientCancellation(err error) bool {
+	return errors.Is(err, context.Canceled)
+}
+
+func (t *Target) isDraining(err error) bool {
+	return errors.Is(err, ErrorDraining)
 }
 
 func (t *Target) updateState(state TargetState) TargetState {
@@ -339,7 +364,7 @@ func (t *Target) endInflightRequest(req *http.Request) {
 
 	inflightRequest, ok := t.inflight[req]
 	if ok {
-		inflightRequest.cancel()
+		inflightRequest.cancel(nil)
 		delete(t.inflight, req)
 	}
 }
