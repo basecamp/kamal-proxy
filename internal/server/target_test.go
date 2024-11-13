@@ -461,6 +461,7 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 
 			require.Equal(t, http.StatusRequestEntityTooLarge, w.Result().StatusCode)
 		})
+
 		t.Run("response too large for memory but within the limit", func(t *testing.T) {
 			w := sendRequest(true, true, 5, 20, "hello", "hello hello")
 
