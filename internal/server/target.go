@@ -312,7 +312,7 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 
 	if t.isDraining(err) {
 		slog.Info("Request cancelled due to draining", "target", t.Target(), "path", r.URL.Path)
-		SetErrorResponse(w, r, http.StatusBadGateway, nil)
+		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
 		return
 	}
 

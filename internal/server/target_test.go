@@ -356,7 +356,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 		w := httptest.NewRecorder()
 		go func() {
 			testServeRequestWithTarget(t, target, w, req)
-			assert.Equal(t, http.StatusBadGateway, w.Result().StatusCode)
+			assert.Equal(t, http.StatusGatewayTimeout, w.Result().StatusCode)
 		}()
 	}
 
