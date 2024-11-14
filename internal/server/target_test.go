@@ -146,6 +146,21 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 	})
 }
 
+func TestTarget_CancelledRequestsHaveStatus499(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+	})
+
+	testServeRequestWithTarget(t, target, w, req)
+
+	require.Equal(t, 499, w.Result().StatusCode)
+	require.Empty(t, string(w.Body.String()))
+}
+
 func TestTarget_PreserveTargetHeader(t *testing.T) {
 	var requestTarget string
 
@@ -339,7 +354,10 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 	for i := 0; i < n; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
-		go testServeRequestWithTarget(t, target, w, req)
+		go func() {
+			testServeRequestWithTarget(t, target, w, req)
+			assert.Equal(t, http.StatusGatewayTimeout, w.Result().StatusCode)
+		}()
 	}
 
 	started.Wait()
