@@ -119,10 +119,12 @@ func (s *Server) startCommandHandler() error {
 func (s *Server) buildHandler() http.Handler {
 	var handler http.Handler
 
+	// Note: handlers are executed in the inverse order.
 	handler = s.router
 	handler, _ = WithErrorPageMiddleware(pages.DefaultErrorPages, true, handler)
 	handler = WithLoggingMiddleware(slog.Default(), s.config.HttpPort, s.config.HttpsPort, handler)
 	handler = WithRequestIDMiddleware(handler)
+	handler = WithRequestStartMiddleware(handler)
 
 	return handler
 }
