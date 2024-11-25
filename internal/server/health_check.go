@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	healthCheckUserAgent = "kamal-proxy"
+)
+
 type HealthCheckConsumer interface {
 	HealthCheckCompleted(success bool)
 }
@@ -68,6 +72,8 @@ func (hc *HealthCheck) check() {
 		hc.consumer.HealthCheckCompleted(false)
 		return
 	}
+
+	req.Header.Set("User-Agent", healthCheckUserAgent)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
