@@ -347,7 +347,7 @@ func TestRouter_ServiceFailingToBecomeHealthy(t *testing.T) {
 	_, target := testBackend(t, "", http.StatusInternalServerError)
 
 	err := router.SetServiceTarget("example", []string{"example.com"}, target, defaultServiceOptions, defaultTargetOptions, time.Millisecond*20, DefaultDrainTimeout)
-	assert.Equal(t, ErrorTargetFailedToBecomeHealthy, err)
+	assert.ErrorIs(t, err, ErrorTargetFailedToBecomeHealthy)
 
 	statusCode, _ := sendGETRequest(router, "http://example.com/")
 

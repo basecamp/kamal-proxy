@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 
 var (
 	ErrorServiceNotFound             = errors.New("service not found")
-	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy")
+	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy within configured timeout")
 	ErrorHostInUse                   = errors.New("host settings conflict with another service")
 	ErrorNoServerName                = errors.New("no server name provided")
 	ErrorUnknownServerName           = errors.New("unknown server name")
@@ -146,15 +147,9 @@ func (r *Router) SetServiceTarget(name string, hosts []string, targetURL string,
 
 	slog.Info("Deploying", "service", name, "hosts", hosts, "target", targetURL, "tls", options.TLSEnabled)
 
-	target, err := NewTarget(targetURL, targetOptions)
+	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
 	if err != nil {
 		return err
-	}
-
-	becameHealthy := target.WaitUntilHealthy(deployTimeout)
-	if !becameHealthy {
-		slog.Info("Target failed to become healthy", "hosts", hosts, "target", targetURL)
-		return ErrorTargetFailedToBecomeHealthy
 	}
 
 	err = r.setActiveTarget(name, hosts, target, options, drainTimeout)
@@ -177,15 +172,9 @@ func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout t
 	}
 	targetOptions := service.ActiveTarget().options
 
-	target, err := NewTarget(targetURL, targetOptions)
+	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
 	if err != nil {
 		return err
-	}
-
-	becameHealthy := target.WaitUntilHealthy(deployTimeout)
-	if !becameHealthy {
-		slog.Info("Rollout target failed to become healthy", "service", service, "target", targetURL)
-		return ErrorTargetFailedToBecomeHealthy
 	}
 
 	service.SetTarget(TargetSlotRollout, target, drainTimeout)
@@ -317,6 +306,21 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 }
 
 // Private
+
+func (r *Router) deployNewTargetWithOptions(targetURL string, targetOptions TargetOptions, deployTimeout time.Duration) (*Target, error) {
+	target, err := NewTarget(targetURL, targetOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	becameHealthy := target.WaitUntilHealthy(deployTimeout)
+	if !becameHealthy {
+		slog.Info("Target failed to become healthy", "target", targetURL)
+		return nil, fmt.Errorf("%w (%s)", ErrorTargetFailedToBecomeHealthy, deployTimeout)
+	}
+
+	return target, nil
+}
 
 func (r *Router) saveStateSnapshot() error {
 	services := []*Service{}
