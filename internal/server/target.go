@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	HTTP_STATUS_CLIENT_DISCONNECTED = 499
+	StatusClientClosedRequest = 499
 )
 
 var (
@@ -306,7 +306,7 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 	if t.isClientCancellation(err) {
 		// The client has disconnected so will not see the response, but we
 		// still want to set it for the sake of the logs.
-		w.WriteHeader(HTTP_STATUS_CLIENT_DISCONNECTED)
+		w.WriteHeader(StatusClientClosedRequest)
 		return
 	}
 
