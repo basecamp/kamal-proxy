@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -11,6 +12,8 @@ import (
 const (
 	healthCheckUserAgent = "kamal-proxy"
 )
+
+var ErrorHealthCheckRequestTimedOut = errors.New("Healthcheck request timed out")
 
 type HealthCheckConsumer interface {
 	HealthCheckCompleted(success bool)
@@ -53,11 +56,16 @@ func (hc *HealthCheck) run() {
 
 	for {
 		select {
-		case <-ticker.C:
-			hc.check()
-
 		case <-hc.shutdown:
 			return
+		case <-ticker.C:
+			select {
+			case <-hc.shutdown: // Prioritize shutdown over check
+				return
+			default:
+				hc.check()
+			}
+
 		}
 	}
 }
@@ -68,8 +76,7 @@ func (hc *HealthCheck) check() {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, hc.endpoint.String(), nil)
 	if err != nil {
-		slog.Error("Unable to create healthcheck request", "error", err)
-		hc.consumer.HealthCheckCompleted(false)
+		hc.reportResult(false, 0, err)
 		return
 	}
 
@@ -77,18 +84,35 @@ func (hc *HealthCheck) check() {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		slog.Info("Healthcheck failed", "error", err)
-		hc.consumer.HealthCheckCompleted(false)
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = ErrorHealthCheckRequestTimedOut
+		}
+		hc.reportResult(false, 0, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		slog.Info("Healthcheck failed", "status", resp.StatusCode)
-		hc.consumer.HealthCheckCompleted(false)
+		hc.reportResult(false, resp.StatusCode, nil)
 		return
 	}
 
-	slog.Info("Healthcheck succeeded", "status", resp.StatusCode)
-	hc.consumer.HealthCheckCompleted(true)
+	hc.reportResult(true, resp.StatusCode, nil)
+}
+
+func (hc *HealthCheck) reportResult(success bool, statusCode int, err error) {
+	select {
+	case <-hc.shutdown:
+		return // Ignore late results after close
+	default:
+		if success {
+			slog.Info("Healthcheck succeeded")
+		} else if err != nil {
+			slog.Info("Healthcheck failed", "error", err)
+		} else {
+			slog.Info("Healthcheck failed", "status", statusCode)
+		}
+
+		hc.consumer.HealthCheckCompleted(success)
+	}
 }
