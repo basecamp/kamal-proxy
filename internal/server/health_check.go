@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -10,6 +12,11 @@ import (
 
 const (
 	healthCheckUserAgent = "kamal-proxy"
+)
+
+var (
+	ErrorHealthCheckRequestTimedOut  = errors.New("Request timed out")
+	ErrorHealthCheckUnexpectedStatus = errors.New("Unexpected status")
 )
 
 type HealthCheckConsumer interface {
@@ -53,11 +60,16 @@ func (hc *HealthCheck) run() {
 
 	for {
 		select {
-		case <-ticker.C:
-			hc.check()
-
 		case <-hc.shutdown:
 			return
+		case <-ticker.C:
+			select {
+			case <-hc.shutdown: // Prioritize shutdown over check
+				return
+			default:
+				hc.check()
+			}
+
 		}
 	}
 }
@@ -68,8 +80,7 @@ func (hc *HealthCheck) check() {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, hc.endpoint.String(), nil)
 	if err != nil {
-		slog.Error("Unable to create healthcheck request", "error", err)
-		hc.consumer.HealthCheckCompleted(false)
+		hc.reportResult(false, err)
 		return
 	}
 
@@ -77,18 +88,33 @@ func (hc *HealthCheck) check() {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		slog.Info("Healthcheck failed", "error", err)
-		hc.consumer.HealthCheckCompleted(false)
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = ErrorHealthCheckRequestTimedOut
+		}
+		hc.reportResult(false, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		slog.Info("Healthcheck failed", "status", resp.StatusCode)
-		hc.consumer.HealthCheckCompleted(false)
+		hc.reportResult(false, fmt.Errorf("%w (%d)", ErrorHealthCheckUnexpectedStatus, resp.StatusCode))
 		return
 	}
 
-	slog.Info("Healthcheck succeeded", "status", resp.StatusCode)
-	hc.consumer.HealthCheckCompleted(true)
+	hc.reportResult(true, nil)
+}
+
+func (hc *HealthCheck) reportResult(success bool, err error) {
+	select {
+	case <-hc.shutdown:
+		return // Ignore late results after close
+	default:
+		if success {
+			slog.Info("Healthcheck succeeded")
+		} else {
+			slog.Info("Healthcheck failed", "error", err)
+		}
+
+		hc.consumer.HealthCheckCompleted(success)
+	}
 }
