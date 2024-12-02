@@ -95,11 +95,9 @@ func (hc *HealthCheck) check() {
 		hc.reportResult(false, err)
 		return
 	}
+	defer resp.Body.Close()
 
-	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		hc.reportResult(false, fmt.Errorf("%w (%d)", ErrorHealthCheckUnexpectedStatus, resp.StatusCode))
