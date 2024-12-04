@@ -5,10 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +17,8 @@ var (
 	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
 )
 
-func testTarget(t *testing.T, handler http.HandlerFunc) *Target {
+func testTarget(t testing.TB, handler http.HandlerFunc) *Target {
+	t.Helper()
 	_, targetURL := testBackendWithHandler(t, handler)
 
 	target, err := NewTarget(targetURL, defaultTargetOptions)
@@ -27,7 +26,8 @@ func testTarget(t *testing.T, handler http.HandlerFunc) *Target {
 	return target
 }
 
-func testTargetWithOptions(t *testing.T, targetOptions TargetOptions, handler http.HandlerFunc) *Target {
+func testTargetWithOptions(t testing.TB, targetOptions TargetOptions, handler http.HandlerFunc) *Target {
+	t.Helper()
 	_, targetURL := testBackendWithHandler(t, handler)
 
 	target, err := NewTarget(targetURL, targetOptions)
@@ -35,14 +35,16 @@ func testTargetWithOptions(t *testing.T, targetOptions TargetOptions, handler ht
 	return target
 }
 
-func testBackend(t *testing.T, body string, statusCode int) (*httptest.Server, string) {
+func testBackend(t testing.TB, body string, statusCode int) (*httptest.Server, string) {
+	t.Helper()
 	return testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(statusCode)
 		w.Write([]byte(body))
 	})
 }
 
-func testBackendWithHandler(t *testing.T, handler http.HandlerFunc) (*httptest.Server, string) {
+func testBackendWithHandler(t testing.TB, handler http.HandlerFunc) (*httptest.Server, string) {
+	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
@@ -52,31 +54,22 @@ func testBackendWithHandler(t *testing.T, handler http.HandlerFunc) (*httptest.S
 	return server, serverURL.Host
 }
 
-func testServer(t *testing.T) (*Server, string) {
+func testServer(t testing.TB) (*Server, string) {
+	t.Helper()
 	config := &Config{
 		Bind:               "127.0.0.1",
 		HttpPort:           0,
 		HttpsPort:          0,
-		AlternateConfigDir: shortTmpDir(t),
+		AlternateConfigDir: t.TempDir(),
 	}
 	router := NewRouter(config.StatePath())
 	server := NewServer(config, router)
-	server.Start()
+	err := server.Start()
+	require.NoError(t, err)
 
 	t.Cleanup(server.Stop)
 
 	addr := fmt.Sprintf("http://localhost:%d", server.HttpPort())
 
 	return server, addr
-}
-
-func shortTmpDir(t *testing.T) string {
-	path := "/tmp/" + uuid.New().String()
-	os.Mkdir(path, 0755)
-
-	t.Cleanup(func() {
-		os.RemoveAll(path)
-	})
-
-	return path
 }
