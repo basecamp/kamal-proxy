@@ -58,6 +58,11 @@ Because traffic is only routed to a new instance once it's healthy, and traffic
 is drained completely from old instances before they are removed, deployments
 take place with zero downtime.
 
+### Health check path
+
+For the applications that require a specific health check path, you can change it with the `--health-check-path` flag:
+    
+    kamal-proxy deploy service1 --target web-1:3000 --health-check-path web/index.html
 
 ### Host-based routing
 
