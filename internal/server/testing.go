@@ -19,6 +19,7 @@ var (
 
 func testTarget(t testing.TB, handler http.HandlerFunc) *Target {
 	t.Helper()
+
 	_, targetURL := testBackendWithHandler(t, handler)
 
 	target, err := NewTarget(targetURL, defaultTargetOptions)
@@ -28,6 +29,7 @@ func testTarget(t testing.TB, handler http.HandlerFunc) *Target {
 
 func testTargetWithOptions(t testing.TB, targetOptions TargetOptions, handler http.HandlerFunc) *Target {
 	t.Helper()
+
 	_, targetURL := testBackendWithHandler(t, handler)
 
 	target, err := NewTarget(targetURL, targetOptions)
@@ -37,6 +39,7 @@ func testTargetWithOptions(t testing.TB, targetOptions TargetOptions, handler ht
 
 func testBackend(t testing.TB, body string, statusCode int) (*httptest.Server, string) {
 	t.Helper()
+
 	return testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(statusCode)
 		w.Write([]byte(body))
@@ -45,6 +48,7 @@ func testBackend(t testing.TB, body string, statusCode int) (*httptest.Server, s
 
 func testBackendWithHandler(t testing.TB, handler http.HandlerFunc) (*httptest.Server, string) {
 	t.Helper()
+
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
@@ -56,6 +60,7 @@ func testBackendWithHandler(t testing.TB, handler http.HandlerFunc) (*httptest.S
 
 func testServer(t testing.TB) (*Server, string) {
 	t.Helper()
+
 	config := &Config{
 		Bind:               "127.0.0.1",
 		HttpPort:           0,

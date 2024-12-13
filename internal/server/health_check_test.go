@@ -23,7 +23,7 @@ func TestHealthCheck(t *testing.T) {
 		serverURL.Path = path
 
 		hc := NewHealthCheck(consumer, serverURL, shortTimeout, shortTimeout)
-		defer hc.Close()
+		t.Cleanup(hc.Close)
 
 		for _, exp := range expected {
 			result := <-consumer
@@ -76,9 +76,9 @@ func testHealthCheckTarget(t testing.TB) *url.URL {
 			}
 		case "/slow":
 			time.Sleep(longTimeout)
-		default:
-			w.WriteHeader(http.StatusOK)
 		}
+
+		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(server.Close)
 
