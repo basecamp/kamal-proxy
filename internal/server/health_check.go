@@ -30,17 +30,21 @@ type HealthCheck struct {
 	interval time.Duration
 	timeout  time.Duration
 
-	shutdown chan (bool)
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func NewHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval time.Duration, timeout time.Duration) *HealthCheck {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	hc := &HealthCheck{
 		consumer: consumer,
 		endpoint: endpoint,
 		interval: interval,
 		timeout:  timeout,
 
-		shutdown: make(chan bool),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	go hc.run()
@@ -48,7 +52,7 @@ func NewHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval ti
 }
 
 func (hc *HealthCheck) Close() {
-	close(hc.shutdown)
+	hc.cancel()
 }
 
 // Private
@@ -61,22 +65,16 @@ func (hc *HealthCheck) run() {
 
 	for {
 		select {
-		case <-hc.shutdown:
+		case <-hc.ctx.Done():
 			return
 		case <-ticker.C:
-			select {
-			case <-hc.shutdown: // Prioritize shutdown over check
-				return
-			default:
-				hc.check()
-			}
-
+			hc.check()
 		}
 	}
 }
 
 func (hc *HealthCheck) check() {
-	ctx, cancel := context.WithTimeout(context.Background(), hc.timeout)
+	ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, hc.endpoint.String(), nil)
@@ -89,6 +87,9 @@ func (hc *HealthCheck) check() {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = ErrorHealthCheckRequestTimedOut
 		}
@@ -108,16 +109,11 @@ func (hc *HealthCheck) check() {
 }
 
 func (hc *HealthCheck) reportResult(success bool, err error) {
-	select {
-	case <-hc.shutdown:
-		return // Ignore late results after close
-	default:
-		if success {
-			slog.Info("Healthcheck succeeded")
-		} else {
-			slog.Info("Healthcheck failed", "error", err)
-		}
-
-		hc.consumer.HealthCheckCompleted(success)
+	if success {
+		slog.Info("Healthcheck succeeded")
+	} else {
+		slog.Info("Healthcheck failed", "error", err)
 	}
+
+	hc.consumer.HealthCheckCompleted(success)
 }
