@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -58,8 +59,27 @@ func (s *Server) Stop() {
 	defer cancel()
 
 	s.commandHandler.Close()
-	s.httpServer.Shutdown(ctx)
 
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		err := s.httpServer.Shutdown(ctx)
+		if err != nil {
+			slog.Warn("Error while stopping http server", "error", err)
+		}
+		slog.Debug("Server http stopped")
+		wg.Done()
+	}()
+	go func() {
+		err := s.httpsServer.Shutdown(ctx)
+		if err != nil {
+			slog.Warn("Error while stopping https server", "error", err)
+		}
+		slog.Debug("Server https stopped")
+		wg.Done()
+	}()
+
+	wg.Wait()
 	slog.Info("Server stopped")
 }
 
