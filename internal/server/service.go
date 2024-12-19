@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -66,6 +69,7 @@ type HealthCheckConfig struct {
 
 type ServiceOptions struct {
 	TLSEnabled         bool   `json:"tls_enabled"`
+	TLSOnDemandUrl     string `json:"tls_on_demand_url"`
 	TLSCertificatePath string `json:"tls_certificate_path"`
 	TLSPrivateKeyPath  string `json:"tls_private_key_path"`
 	ACMEDirectory      string `json:"acme_directory"`
@@ -318,11 +322,46 @@ func (s *Service) createCertManager(hosts []string, options ServiceOptions) (Cer
 		}
 	}
 
+	hostPolicy, err := s.createAutoCertHostPolicy(hosts, options)
+	if err != nil {
+		return nil, err
+	}
+
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		Cache:      autocert.DirCache(options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(hosts...),
+		HostPolicy: hostPolicy,
 		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
+	}, nil
+}
+
+func (s *Service) createAutoCertHostPolicy(hosts []string, options ServiceOptions) (autocert.HostPolicy, error) {
+	if options.TLSOnDemandUrl == "" {
+		return autocert.HostWhitelist(hosts...), nil
+	}
+
+	_, err := url.ParseRequestURI(options.TLSOnDemandUrl)
+	if err != nil {
+		slog.Error("Unable to parse the tls_on_demand_url URL")
+		return nil, err
+	}
+
+	slog.Info("Will use the tls_on_demand_url URL", "url", options.TLSOnDemandUrl)
+
+	return func(ctx context.Context, host string) error {
+		slog.Info("Get a certificate", "host", host)
+
+		resp, err := http.Get(fmt.Sprintf("%s?host=%s", options.TLSOnDemandUrl, url.QueryEscape(host)))
+		if err != nil {
+			slog.Error("Unable to reach the TLS on demand URL", host, err)
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("%s is not allowed to get a certificate", host)
+		}
+
+		return nil
 	}, nil
 }
 
