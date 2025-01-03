@@ -57,8 +57,11 @@ func (s *Server) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
-	s.commandHandler.Close()
-	s.httpServer.Shutdown(ctx)
+	PerformConcurrently(
+		func() { _ = s.commandHandler.Close() },
+		func() { _ = s.httpServer.Shutdown(ctx) },
+		func() { _ = s.httpsServer.Shutdown(ctx) },
+	)
 
 	slog.Info("Server stopped")
 }
