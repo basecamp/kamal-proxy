@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -57,8 +58,11 @@ func (s *Server) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
-	s.commandHandler.Close()
-	s.httpServer.Shutdown(ctx)
+	PerformConcurrently(
+		func() { _ = s.commandHandler.Close() },
+		func() { s.stopHTTPServer(ctx, s.httpServer) },
+		func() { s.stopHTTPServer(ctx, s.httpsServer) },
+	)
 
 	slog.Info("Server stopped")
 }
@@ -127,4 +131,15 @@ func (s *Server) buildHandler() http.Handler {
 	handler = WithRequestStartMiddleware(handler)
 
 	return handler
+}
+
+func (s *Server) stopHTTPServer(ctx context.Context, server *http.Server) {
+	err := server.Shutdown(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			slog.Warn("Closing active connections")
+		} else {
+			slog.Error("Error while attempting to stop server", "error", err)
+		}
+	}
 }
