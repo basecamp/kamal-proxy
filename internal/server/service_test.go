@@ -43,6 +43,24 @@ func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
+	service := testCreateService(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true, TLSDisableRedirect: true}, defaultTargetOptions)
+
+	require.True(t, service.options.TLSEnabled)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	req = httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+	w = httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
 func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
 	certPath, keyPath := prepareTestCertificateFiles(t)
 

@@ -68,6 +68,7 @@ type ServiceOptions struct {
 	TLSEnabled         bool   `json:"tls_enabled"`
 	TLSCertificatePath string `json:"tls_certificate_path"`
 	TLSPrivateKeyPath  string `json:"tls_private_key_path"`
+	TLSDisableRedirect bool   `json:"tls_disable_redirect"`
 	ACMEDirectory      string `json:"acme_directory"`
 	ACMECachePath      string `json:"acme_cache_path"`
 	ErrorPagePath      string `json:"error_page_path"`
@@ -351,7 +352,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
-	if s.options.TLSEnabled && r.TLS == nil {
+	if s.shouldRedirectToHTTPS(r) {
 		s.redirectToHTTPS(w, r)
 		return
 	}
@@ -372,6 +373,10 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 	}
 
 	target.SendRequest(w, req)
+}
+
+func (s *Service) shouldRedirectToHTTPS(r *http.Request) bool {
+	return s.options.TLSEnabled && !s.options.TLSDisableRedirect && r.TLS == nil
 }
 
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
