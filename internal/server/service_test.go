@@ -24,7 +24,7 @@ func TestService_ServeRequest(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
-func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
+func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 	service := testCreateService(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true}, defaultTargetOptions)
 
 	require.True(t, service.options.TLSEnabled)
@@ -34,6 +34,7 @@ func TestService_RedirectToHTTPWhenTLSRequired(t *testing.T) {
 	service.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
+	require.Equal(t, "https://example.com/", w.Result().Header.Get("Location"))
 
 	req = httptest.NewRequest(http.MethodGet, "https://example.com", nil)
 	w = httptest.NewRecorder()
