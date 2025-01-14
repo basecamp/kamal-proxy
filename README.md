@@ -81,6 +81,22 @@ Only one service at a time can route a specific host:
     kamal-proxy deploy service2 --target web-2:3000 --host app1.example.com # succeeds
 
 
+### Path-based routing
+
+Path-based routing allows you to route traffic to different services based on the URL path prefix. This is useful when you want to run multiple applications under the same domain but different paths.
+
+When deploying an instance, you can specify a path prefix that it should handle:
+
+    kamal-proxy deploy service1 --target web-1:3000 --prefix-path /api
+    kamal-proxy deploy service2 --target web-2:3000 --prefix-path /admin
+
+The prefix path is stripped before forwarding the request to the target service
+
+You can combine path-based routing with host-based routing:
+
+    kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --prefix-path /api
+
+
 ### Automatic TLS
 
 Kamal Proxy can automatically obtain and renew TLS certificates for your

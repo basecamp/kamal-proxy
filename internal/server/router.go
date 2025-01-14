@@ -18,6 +18,7 @@ var (
 	ErrorServiceNotFound             = errors.New("service not found")
 	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy within configured timeout")
 	ErrorHostInUse                   = errors.New("host settings conflict with another service")
+	ErrorPathInUse                   = errors.New("path settings conflict with another service")
 	ErrorNoServerName                = errors.New("no server name provided")
 	ErrorUnknownServerName           = errors.New("unknown server name")
 )
@@ -29,25 +30,37 @@ type (
 
 func (m ServiceMap) HostServices() HostServiceMap {
 	hostServices := HostServiceMap{}
+
 	for _, service := range m {
 		if len(service.hosts) == 0 {
-			hostServices[""] = service
+			if service.prefixPath != "" {
+				hostServices[service.prefixPath] = service
+			} else {
+				hostServices[""] = service
+			}
 			continue
 		}
+
 		for _, host := range service.hosts {
-			hostServices[host] = service
+			if service.prefixPath != "" {
+				hostServices[host+service.prefixPath] = service
+			} else {
+				hostServices[host] = service
+			}
 		}
 	}
+
 	return hostServices
 }
 
-func (m HostServiceMap) CheckHostAvailability(name string, hosts []string) *Service {
+func (m HostServiceMap) CheckHostAvailability(name string, hosts []string, prefixPath string) *Service {
 	if len(hosts) == 0 {
 		hosts = []string{""}
 	}
 
 	for _, host := range hosts {
-		service := m[host]
+		service := m[host+prefixPath]
+
 		if service != nil && service.name != name {
 			return service
 		}
@@ -70,6 +83,26 @@ func (m HostServiceMap) ServiceForHost(host string) *Service {
 	}
 
 	return m[""]
+}
+
+func (m HostServiceMap) ServiceForRoute(host string, path string) *Service {
+	if path != "" {
+		if service, ok := m[host+path]; ok {
+			return service
+		}
+	}
+
+	if service := m.ServiceForHost(host); service != nil {
+		return service
+	}
+
+	if path != "" {
+		if service, ok := m[path]; ok {
+			return service
+		}
+	}
+
+	return nil
 }
 
 type Router struct {
@@ -139,25 +172,25 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) SetServiceTarget(name string, hosts []string, targetURL string,
+func (r *Router) SetServiceTarget(name string, hosts []string, prefixPath string, targetURL string,
 	options ServiceOptions, targetOptions TargetOptions,
 	deployTimeout time.Duration, drainTimeout time.Duration,
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "target", targetURL, "tls", options.TLSEnabled)
+	slog.Info("Deploying", "service", name, "hosts", hosts, "prefix_path", prefixPath, "target", targetURL, "tls", options.TLSEnabled)
 
 	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
 	if err != nil {
 		return err
 	}
 
-	err = r.setActiveTarget(name, hosts, target, options, drainTimeout)
+	err = r.setActiveTarget(name, hosts, prefixPath, target, options, drainTimeout)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deployed", "service", name, "hosts", hosts, "target", targetURL)
+	slog.Info("Deployed", "service", name, "hosts", hosts, "prefix_path", prefixPath, "target", targetURL)
 	return nil
 }
 
@@ -352,7 +385,23 @@ func (r *Router) serviceForRequest(req *http.Request) *Service {
 		host = req.Host
 	}
 
-	return r.serviceForHost(host)
+	path := getFirstPathSegment(req.URL.Path)
+	return r.hostServices.ServiceForRoute(host, path)
+}
+
+func getFirstPathSegment(path string) string {
+	if path == "" || path == "/" {
+		return ""
+	}
+
+	segments := strings.Split(path, "/")
+	for _, segment := range segments {
+		if segment != "" {
+			return "/" + segment
+		}
+	}
+
+	return ""
 }
 
 func (r *Router) serviceForHost(host string) *Service {
@@ -362,12 +411,18 @@ func (r *Router) serviceForHost(host string) *Service {
 	return r.hostServices.ServiceForHost(host)
 }
 
-func (r *Router) setActiveTarget(name string, hosts []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
+func (r *Router) setActiveTarget(name string, hosts []string, prefixPath string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	conflict := r.hostServices.CheckHostAvailability(name, hosts)
+	conflict := r.hostServices.CheckHostAvailability(name, hosts, prefixPath)
+
 	if conflict != nil {
+		if prefixPath != "" && prefixPath == conflict.prefixPath {
+			slog.Error("Path settings conflict with another service", "service", conflict.name)
+			return ErrorPathInUse
+		}
+
 		slog.Error("Host settings conflict with another service", "service", conflict.name)
 		return ErrorHostInUse
 	}
@@ -375,9 +430,9 @@ func (r *Router) setActiveTarget(name string, hosts []string, target *Target, op
 	var err error
 	service := r.services[name]
 	if service == nil {
-		service, err = NewService(name, hosts, options)
+		service, err = NewService(name, hosts, prefixPath, options)
 	} else {
-		err = service.UpdateOptions(hosts, options)
+		err = service.UpdateOptions(hosts, prefixPath, options)
 	}
 	if err != nil {
 		return err
