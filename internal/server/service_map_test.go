@@ -6,52 +6,64 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHostServiceMap_ServiceForHost(t *testing.T) {
-	hsm := HostServiceMap{
-		"example.com":     &Service{name: "1"},
-		"app.example.com": &Service{name: "2"},
-		"api.example.com": &Service{name: "3"},
-		"*.example.com":   &Service{name: "4"},
-		"":                &Service{name: "5"},
-	}
+func TestServiceMap_ServiceForHost(t *testing.T) {
+	sm := NewServiceMap()
+	sm.Set(&Service{name: "1", hosts: []string{"example.com"}})
+	sm.Set(&Service{name: "2", hosts: []string{"app.example.com"}})
+	sm.Set(&Service{name: "3", hosts: []string{"api.example.com"}})
+	sm.Set(&Service{name: "4", hosts: []string{"*.example.com"}})
+	sm.Set(&Service{name: "5"})
 
-	assert.Equal(t, "1", hsm.ServiceForHost("example.com").name)
-	assert.Equal(t, "2", hsm.ServiceForHost("app.example.com").name)
-	assert.Equal(t, "3", hsm.ServiceForHost("api.example.com").name)
-	assert.Equal(t, "4", hsm.ServiceForHost("anything.example.com").name)
+	assert.Equal(t, "1", sm.ServiceForHost("example.com").name)
+	assert.Equal(t, "2", sm.ServiceForHost("app.example.com").name)
+	assert.Equal(t, "3", sm.ServiceForHost("api.example.com").name)
+	assert.Equal(t, "4", sm.ServiceForHost("anything.example.com").name)
 
-	assert.Equal(t, "5", hsm.ServiceForHost("extra.level.example.com").name)
-	assert.Equal(t, "5", hsm.ServiceForHost("other.com").name)
+	assert.Equal(t, "5", sm.ServiceForHost("extra.level.example.com").name)
+	assert.Equal(t, "5", sm.ServiceForHost("other.com").name)
 
-	hsm = HostServiceMap{
-		"example.com": &Service{name: "1"},
-	}
+	sm = NewServiceMap()
+	sm.Set(&Service{name: "1", hosts: []string{"example.com"}})
 
-	assert.Nil(t, hsm.ServiceForHost("app.example.com"))
+	assert.Nil(t, sm.ServiceForHost("app.example.com"))
 }
 
-func BenchmarkHostServiceMap_WilcardRouting(b *testing.B) {
-	hsm := HostServiceMap{
-		"one.example.com":   &Service{},
-		"*.two.example.com": &Service{},
-		"":                  &Service{},
-	}
+func TestServiceMap_CheckHostAvailability(t *testing.T) {
+	sm := NewServiceMap()
+	sm.Set(&Service{name: "1", hosts: []string{"example.com"}})
+	sm.Set(&Service{name: "2", hosts: []string{"app.example.com"}})
+
+	assert.Nil(t, sm.CheckHostAvailability("2", []string{"app.example.com"}))
+	assert.Nil(t, sm.CheckHostAvailability("3", []string{"api.example.com"}))
+	assert.Nil(t, sm.CheckHostAvailability("4", []string{""}))
+
+	assert.Equal(t, "2", sm.CheckHostAvailability("3", []string{"app.example.com"}).name)
+
+	sm.Set(&Service{name: "3", hosts: []string{}})
+	assert.Equal(t, "3", sm.CheckHostAvailability("4", []string{""}).name)
+}
+
+func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
+	sm := NewServiceMap()
+	sm.Set(&Service{name: "1", hosts: []string{"one.example.com"}})
+	sm.Set(&Service{name: "2", hosts: []string{"*.two.example.com"}})
+	sm.Set(&Service{name: "3"})
 
 	b.Run("exact match", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = hsm.ServiceForHost("one.example.com")
+			_ = sm.ServiceForHost("one.example.com")
 		}
 	})
 
 	b.Run("wildcard match", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = hsm.ServiceForHost("anything.two.example.com")
+			_ = sm.ServiceForHost("anything.two.example.com")
 		}
 	})
 
 	b.Run("default match", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = hsm.ServiceForHost("missing.example.com")
+			_ = sm.ServiceForHost("missing.example.com")
 		}
 	})
 }
