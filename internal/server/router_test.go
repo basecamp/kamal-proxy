@@ -151,21 +151,21 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 	targetOptions.MaxRequestBodySize = 10
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, _ := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	statusCode, _ := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com/", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusRequestEntityTooLarge, statusCode)
 
 	targetOptions.BufferRequests = false
 	targetOptions.MaxRequestBodySize = 0
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com/", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
 	serviceOptions.TLSEnabled = true
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com/", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 	assert.Empty(t, body)
 }
@@ -175,7 +175,7 @@ func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
 	_, target := testBackend(t, "first", http.StatusOK)
 
 	ensureServiceIsHealthy := func() {
-		statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://example.com", strings.NewReader("Hello")))
+		statusCode, body := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("Hello")))
 		assert.Equal(t, http.StatusOK, statusCode)
 		assert.Equal(t, "first", body)
 	}
@@ -205,17 +205,17 @@ func TestRouter_UpdatingPauseStateIndependentlyOfDeployments(t *testing.T) {
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	router.PauseService("service1", time.Second, time.Millisecond*10)
 
-	statusCode, _ := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	statusCode, _ := sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com/", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
 
 	require.NoError(t, router.SetServiceTarget("service1", []string{"dummy.example.com"}, target, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com/", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
 
 	router.ResumeService("service1")
 
-	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com", strings.NewReader("Something longer than 10")))
+	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://dummy.example.com/", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusOK, statusCode)
 }
 
@@ -392,7 +392,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	require.NoError(t, router.SetServiceTarget("default", defaultEmptyHosts, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	require.NoError(t, router.SetServiceTarget("other", []string{"other.example.com"}, second, ServiceOptions{TLSEnabled: true}, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
-	statusCode, body := sendGETRequest(router, "http://something.example.com")
+	statusCode, body := sendGETRequest(router, "http://something.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
@@ -402,7 +402,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	router = NewRouter(statePath)
 	router.RestoreLastSavedState()
 
-	statusCode, body = sendGETRequest(router, "http://something.example.com")
+	statusCode, body = sendGETRequest(router, "http://something.example.com/")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
 
