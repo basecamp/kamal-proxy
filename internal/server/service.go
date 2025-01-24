@@ -90,6 +90,7 @@ func (so ServiceOptions) ScopedCachePath() string {
 type Service struct {
 	name    string
 	hosts   []string
+	paths   []string
 	options ServiceOptions
 
 	active     *Target

@@ -4,18 +4,30 @@ import (
 	"iter"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 )
 
+const (
+	rootPath = "/"
+)
+
+type pathBinding struct {
+	path    string
+	service *Service
+}
+
+type requestServiceMap map[string][]*pathBinding
+
 type ServiceMap struct {
-	services       map[string]*Service
-	hostServiceMap map[string]*Service
+	services          map[string]*Service
+	requestServiceMap requestServiceMap
 }
 
 func NewServiceMap() *ServiceMap {
 	return &ServiceMap{
-		services:       map[string]*Service{},
-		hostServiceMap: map[string]*Service{},
+		services:          map[string]*Service{},
+		requestServiceMap: requestServiceMap{},
 	}
 }
 
@@ -25,12 +37,12 @@ func (m *ServiceMap) Get(name string) *Service {
 
 func (m *ServiceMap) Set(service *Service) {
 	m.services[service.name] = service
-	m.updateHostMappings()
+	m.updateRequestServiceMap()
 }
 
 func (m *ServiceMap) Remove(name string) {
 	delete(m.services, name)
-	m.updateHostMappings()
+	m.updateRequestServiceMap()
 }
 
 func (m *ServiceMap) All() iter.Seq2[string, *Service] {
@@ -43,35 +55,21 @@ func (m *ServiceMap) All() iter.Seq2[string, *Service] {
 	}
 }
 
-func (m *ServiceMap) CheckHostAvailability(name string, hosts []string) *Service {
-	if len(hosts) == 0 {
-		hosts = []string{""}
-	}
-
-	for _, host := range hosts {
-		service := m.hostServiceMap[host]
-		if service != nil && service.name != name {
-			return service
+func (m *ServiceMap) CheckAvailability(name string, hosts, paths []string) *Service {
+	paths = m.normalizePaths(paths)
+	for _, host := range m.normalizeHosts(hosts) {
+		bindings := m.requestServiceMap[host]
+		for _, binding := range bindings {
+			if slices.Contains(paths, binding.path) && binding.service.name != name {
+				return binding.service
+			}
 		}
 	}
 	return nil
 }
 
 func (m *ServiceMap) ServiceForHost(host string) *Service {
-	service, ok := m.hostServiceMap[host]
-	if ok {
-		return service
-	}
-
-	sep := strings.Index(host, ".")
-	if sep > 0 {
-		service, ok := m.hostServiceMap["*"+host[sep:]]
-		if ok {
-			return service
-		}
-	}
-
-	return m.hostServiceMap[""]
+	return m.serviceFor(host, rootPath)
 }
 
 func (m *ServiceMap) ServiceForRequest(req *http.Request) *Service {
@@ -80,23 +78,85 @@ func (m *ServiceMap) ServiceForRequest(req *http.Request) *Service {
 		host = req.Host
 	}
 
-	return m.ServiceForHost(host)
+	return m.serviceFor(host, req.URL.Path)
 }
 
 // Private
 
-func (m *ServiceMap) updateHostMappings() {
-	hostServices := map[string]*Service{}
+func (m *ServiceMap) serviceFor(host, path string) *Service {
+	bindings := m.bindingsForHost(host)
+	if bindings == nil {
+		return nil
+	}
 
-	for _, service := range m.services {
-		if len(service.hosts) == 0 {
-			hostServices[""] = service
-			continue
-		}
-		for _, host := range service.hosts {
-			hostServices[host] = service
+	for _, binding := range bindings {
+		if strings.HasPrefix(path, binding.path) {
+			return binding.service
 		}
 	}
 
-	m.hostServiceMap = hostServices
+	return nil
+}
+
+func (m *ServiceMap) bindingsForHost(host string) []*pathBinding {
+	bindings, ok := m.requestServiceMap[host]
+	if ok {
+		return bindings
+	}
+
+	sep := strings.Index(host, ".")
+	if sep > 0 {
+		bindings, ok = m.requestServiceMap["*"+host[sep:]]
+		if ok {
+			return bindings
+		}
+	}
+
+	return m.requestServiceMap[""]
+}
+
+func (m *ServiceMap) updateRequestServiceMap() {
+	requestServiceMap := requestServiceMap{}
+
+	for _, service := range m.services {
+		for _, host := range m.normalizeHosts(service.hosts) {
+			for _, path := range m.normalizePaths(service.paths) {
+				bindings := requestServiceMap[host]
+				if bindings == nil {
+					bindings = []*pathBinding{}
+				}
+				bindings = append(bindings, &pathBinding{path: path, service: service})
+				requestServiceMap[host] = bindings
+			}
+		}
+
+		for _, bindings := range requestServiceMap {
+			slices.SortFunc(bindings, func(a, b *pathBinding) int { return len(b.path) - len(a.path) })
+		}
+	}
+
+	m.requestServiceMap = requestServiceMap
+}
+
+func (m *ServiceMap) normalizeHosts(hosts []string) []string {
+	if len(hosts) == 0 {
+		return []string{""}
+	}
+	return hosts
+}
+
+func (m *ServiceMap) normalizePaths(paths []string) []string {
+	if len(paths) == 0 {
+		return []string{rootPath}
+	}
+
+	result := []string{}
+	for _, path := range paths {
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		result = append(result, path)
+	}
+
+	return result
 }
