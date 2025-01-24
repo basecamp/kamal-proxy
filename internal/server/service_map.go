@@ -75,9 +75,13 @@ func (m *ServiceMap) ServiceForHost(host string) *Service {
 }
 
 func (m *ServiceMap) ServiceForRequest(req *http.Request) *Service {
-	host, _, err := net.SplitHostPort(req.Host)
-	if err != nil {
-		host = req.Host
+	host := req.Host
+
+	if strings.Index(host, ":") > 0 {
+		splitHost, _, err := net.SplitHostPort(host)
+		if err == nil {
+			host = splitHost
+		}
 	}
 
 	return m.ServiceForHost(host)
