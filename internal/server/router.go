@@ -29,6 +29,7 @@ type Router struct {
 
 type ServiceDescription struct {
 	Host   string `json:"host"`
+	Path   string `json:"path"`
 	TLS    bool   `json:"tls"`
 	Target string `json:"target"`
 	State  string `json:"state"`
@@ -85,20 +86,20 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) SetServiceTarget(name string, hosts []string, targetURL string,
+func (r *Router) SetServiceTarget(name string, hosts []string, pathPrefix string, targetURL string,
 	options ServiceOptions, targetOptions TargetOptions,
 	deployTimeout time.Duration, drainTimeout time.Duration,
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "target", targetURL, "tls", options.TLSEnabled)
+	slog.Info("Deploying", "service", name, "hosts", hosts, "path", pathPrefix, "target", targetURL, "tls", options.TLSEnabled, "strip", targetOptions.StripPrefix)
 
 	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
 	if err != nil {
 		return err
 	}
 
-	err = r.setActiveTarget(name, hosts, target, options, drainTimeout)
+	err = r.setActiveTarget(name, hosts, pathPrefix, target, options, drainTimeout)
 	if err != nil {
 		return err
 	}
@@ -217,6 +218,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 			if service.active != nil {
 				result[name] = ServiceDescription{
 					Host:   host,
+					Path:   service.pathPrefix,
 					Target: service.active.Target(),
 					TLS:    service.options.TLSEnabled,
 					State:  service.pauseController.GetState().String(),
@@ -305,11 +307,11 @@ func (r *Router) serviceForHost(host string) *Service {
 	return r.services.ServiceForHost(host)
 }
 
-func (r *Router) setActiveTarget(name string, hosts []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
+func (r *Router) setActiveTarget(name string, hosts []string, pathPrefix string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	conflict := r.services.CheckHostAvailability(name, hosts)
+	conflict := r.services.CheckAvailability(name, hosts, pathPrefix)
 	if conflict != nil {
 		slog.Error("Host settings conflict with another service", "service", conflict.name)
 		return ErrorHostInUse
@@ -318,9 +320,9 @@ func (r *Router) setActiveTarget(name string, hosts []string, target *Target, op
 	var err error
 	service := r.services.Get(name)
 	if service == nil {
-		service, err = NewService(name, hosts, options)
+		service, err = NewService(name, hosts, pathPrefix, options)
 	} else {
-		err = service.UpdateOptions(hosts, options)
+		err = service.UpdateOptions(hosts, pathPrefix, options)
 	}
 	if err != nil {
 		return err

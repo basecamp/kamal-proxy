@@ -177,7 +177,7 @@ func testCreateServiceWithHandler(t *testing.T, hosts []string, options ServiceO
 	target, err := NewTarget(serverURL.Host, targetOptions)
 	require.NoError(t, err)
 
-	service, err := NewService("test", hosts, options)
+	service, err := NewService("test", hosts, "", options)
 	require.NoError(t, err)
 	service.active = target
 

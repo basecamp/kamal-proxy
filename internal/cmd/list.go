@@ -43,7 +43,7 @@ func (c *listCommand) run(cmd *cobra.Command, args []string) error {
 
 func (c *listCommand) displayResponse(response server.ListResponse) {
 	table := NewTable()
-	table.AddRow([]string{"Service", "Host", "Target", "State", "TLS"})
+	table.AddRow([]string{"Service", "Host", "Path", "Target", "State", "TLS"})
 
 	sortedKeys := slices.Sorted(maps.Keys(response.Targets))
 	for _, name := range sortedKeys {
@@ -53,7 +53,7 @@ func (c *listCommand) displayResponse(response server.ListResponse) {
 			tls = "yes"
 		}
 
-		table.AddRow([]string{name, service.Host, service.Target, service.State, tls})
+		table.AddRow([]string{name, service.Host, service.Path, service.Target, service.State, tls})
 	}
 
 	table.Print()
