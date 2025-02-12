@@ -442,19 +442,19 @@ func BenchmarkHostServiceMap_WilcardRouting(b *testing.B) {
 	}
 
 	b.Run("exact match", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = hsm.ServiceForHost("one.example.com")
 		}
 	})
 
 	b.Run("wildcard match", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = hsm.ServiceForHost("anything.two.example.com")
 		}
 	})
 
 	b.Run("default match", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = hsm.ServiceForHost("missing.example.com")
 		}
 	})
