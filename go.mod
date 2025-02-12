@@ -1,6 +1,6 @@
 module github.com/basecamp/kamal-proxy
 
-go 1.23.5
+go 1.23.6
 
 require (
 	github.com/spf13/cobra v1.8.0
