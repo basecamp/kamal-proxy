@@ -85,20 +85,20 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) SetServiceTarget(name string, hosts []string, targetURL string,
+func (r *Router) SetServiceTarget(name string, hosts []string, pathPrefix string, targetURL string,
 	options ServiceOptions, targetOptions TargetOptions,
 	deployTimeout time.Duration, drainTimeout time.Duration,
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "target", targetURL, "tls", options.TLSEnabled)
+	slog.Info("Deploying", "service", name, "hosts", hosts, "path", pathPrefix, "target", targetURL, "tls", options.TLSEnabled)
 
 	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
 	if err != nil {
 		return err
 	}
 
-	err = r.setActiveTarget(name, hosts, target, options, drainTimeout)
+	err = r.setActiveTarget(name, hosts, pathPrefix, target, options, drainTimeout)
 	if err != nil {
 		return err
 	}
@@ -305,11 +305,11 @@ func (r *Router) serviceForHost(host string) *Service {
 	return r.services.ServiceForHost(host)
 }
 
-func (r *Router) setActiveTarget(name string, hosts []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
+func (r *Router) setActiveTarget(name string, hosts []string, pathPrefix string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	conflict := r.services.CheckAvailability(name, hosts, rootPath) //TODO
+	conflict := r.services.CheckAvailability(name, hosts, pathPrefix)
 	if conflict != nil {
 		slog.Error("Host settings conflict with another service", "service", conflict.name)
 		return ErrorHostInUse
@@ -318,9 +318,9 @@ func (r *Router) setActiveTarget(name string, hosts []string, target *Target, op
 	var err error
 	service := r.services.Get(name)
 	if service == nil {
-		service, err = NewService(name, hosts, options)
+		service, err = NewService(name, hosts, pathPrefix, options)
 	} else {
-		err = service.UpdateOptions(hosts, options)
+		err = service.UpdateOptions(hosts, pathPrefix, options)
 	}
 	if err != nil {
 		return err
