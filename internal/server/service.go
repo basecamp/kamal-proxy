@@ -88,9 +88,10 @@ func (so ServiceOptions) ScopedCachePath() string {
 }
 
 type Service struct {
-	name    string
-	hosts   []string
-	options ServiceOptions
+	name       string
+	hosts      []string
+	prefixPath string
+	options    ServiceOptions
 
 	active     *Target
 	rollout    *Target
@@ -102,9 +103,10 @@ type Service struct {
 	middleware        http.Handler
 }
 
-func NewService(name string, hosts []string, options ServiceOptions) (*Service, error) {
+func NewService(name string, hosts []string, prefixPath string, options ServiceOptions) (*Service, error) {
 	service := &Service{
 		name:            name,
+		prefixPath:      prefixPath,
 		pauseController: NewPauseController(),
 	}
 
@@ -116,7 +118,8 @@ func NewService(name string, hosts []string, options ServiceOptions) (*Service, 
 	return service, nil
 }
 
-func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) error {
+func (s *Service) UpdateOptions(hosts []string, prefixPath string, options ServiceOptions) error {
+	s.prefixPath = prefixPath
 	return s.initialize(hosts, options)
 }
 
@@ -199,6 +202,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type marshalledService struct {
 	Name              string             `json:"name"`
 	Hosts             []string           `json:"hosts"`
+	PrefixPath        string             `json:"prefix_path"`
 	ActiveTarget      string             `json:"active_target"`
 	RolloutTarget     string             `json:"rollout_target"`
 	Options           ServiceOptions     `json:"options"`
@@ -218,6 +222,7 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalledService{
 		Name:              s.name,
 		Hosts:             s.hosts,
+		PrefixPath:        s.prefixPath,
 		ActiveTarget:      activeTarget,
 		RolloutTarget:     rolloutTarget,
 		Options:           s.options,
@@ -235,10 +240,12 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	}
 
 	s.name = ms.Name
+	s.prefixPath = ms.PrefixPath
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
 
 	s.initialize(ms.Hosts, ms.Options)
+
 	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
 	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
 
