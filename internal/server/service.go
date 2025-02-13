@@ -88,10 +88,10 @@ func (so ServiceOptions) ScopedCachePath() string {
 }
 
 type Service struct {
-	name    string
-	hosts   []string
-	paths   []string
-	options ServiceOptions
+	name       string
+	hosts      []string
+	pathPrefix string
+	options    ServiceOptions
 
 	active     *Target
 	rollout    *Target

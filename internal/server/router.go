@@ -309,7 +309,7 @@ func (r *Router) setActiveTarget(name string, hosts []string, target *Target, op
 	r.serviceLock.Lock()
 	defer r.serviceLock.Unlock()
 
-	conflict := r.services.CheckAvailability(name, hosts, []string{rootPath})
+	conflict := r.services.CheckAvailability(name, hosts, rootPath) //TODO
 	if conflict != nil {
 		slog.Error("Host settings conflict with another service", "service", conflict.name)
 		return ErrorHostInUse

@@ -32,11 +32,11 @@ func TestServiceMap_ServiceForHost(t *testing.T) {
 
 func TestServiceMap_ServiceForRequest(t *testing.T) {
 	sm := NewServiceMap()
-	sm.Set(&Service{name: "1", hosts: []string{"example.com"}, paths: []string{}})
-	sm.Set(&Service{name: "2", hosts: []string{"example.com"}, paths: []string{"/api"}})
-	sm.Set(&Service{name: "3", hosts: []string{"example.com"}, paths: []string{"/api/special"}})
-	sm.Set(&Service{name: "4", hosts: []string{"other.example.com"}, paths: []string{"/api"}})
-	sm.Set(&Service{name: "5", paths: []string{"/api"}})
+	sm.Set(&Service{name: "1", hosts: []string{"example.com"}})
+	sm.Set(&Service{name: "2", hosts: []string{"example.com"}, pathPrefix: "/api"})
+	sm.Set(&Service{name: "3", hosts: []string{"example.com"}, pathPrefix: "/api/special"})
+	sm.Set(&Service{name: "4", hosts: []string{"other.example.com"}, pathPrefix: "/api"})
+	sm.Set(&Service{name: "5", pathPrefix: "/api"})
 	sm.Set(&Service{name: "6"})
 
 	assert.Equal(t, "1", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://example.com/", nil)).name)
@@ -53,18 +53,18 @@ func TestServiceMap_CheckAvailability(t *testing.T) {
 	sm.Set(&Service{name: "1", hosts: []string{"example.com"}})
 	sm.Set(&Service{name: "2", hosts: []string{"app.example.com"}})
 
-	assert.Nil(t, sm.CheckAvailability("2", []string{"app.example.com"}, []string{}))
-	assert.Nil(t, sm.CheckAvailability("3", []string{"api.example.com"}, []string{}))
-	assert.Nil(t, sm.CheckAvailability("4", []string{""}, []string{}))
+	assert.Nil(t, sm.CheckAvailability("2", []string{"app.example.com"}, ""))
+	assert.Nil(t, sm.CheckAvailability("3", []string{"api.example.com"}, ""))
+	assert.Nil(t, sm.CheckAvailability("4", []string{""}, ""))
 
-	assert.Equal(t, "2", sm.CheckAvailability("3", []string{"app.example.com"}, []string{}).name)
+	assert.Equal(t, "2", sm.CheckAvailability("3", []string{"app.example.com"}, "").name)
 }
 
 func TestServiceMap_CheckHostAvailability_EmptyHostsFirst(t *testing.T) {
 	sm := NewServiceMap()
 	sm.Set(&Service{name: "1", hosts: []string{}})
 
-	assert.Nil(t, sm.CheckAvailability("2", []string{"app.example.com"}, []string{}))
+	assert.Nil(t, sm.CheckAvailability("2", []string{"app.example.com"}, ""))
 }
 
 func BenchmarkServiceMap_SingleServiceRouting(b *testing.B) {
@@ -117,9 +117,9 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 
 func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 	sm := NewServiceMap()
-	sm.Set(&Service{name: "1", hosts: []string{"one.example.com"}, paths: []string{"/api", "/app"}})
+	sm.Set(&Service{name: "1", hosts: []string{"one.example.com"}, pathPrefix: "/api"})
 	sm.Set(&Service{name: "2", hosts: []string{"one.example.com"}})
-	sm.Set(&Service{name: "3", paths: []string{"/api", "/app"}})
+	sm.Set(&Service{name: "3", pathPrefix: "/app"})
 	sm.Set(&Service{name: "4"})
 
 	b.Run("host and path match", func(b *testing.B) {
@@ -141,7 +141,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 	})
 
 	b.Run("path match", func(b *testing.B) {
-		req := httptest.NewRequest(http.MethodGet, "https://example.com/api", nil)
+		req := httptest.NewRequest(http.MethodGet, "https://example.com/app", nil)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {

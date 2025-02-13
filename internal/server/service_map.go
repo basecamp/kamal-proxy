@@ -13,8 +13,8 @@ const (
 )
 
 type pathBinding struct {
-	path    string
-	service *Service
+	pathPrefix string
+	service    *Service
 }
 
 type requestServiceMap map[string][]*pathBinding
@@ -55,12 +55,13 @@ func (m *ServiceMap) All() iter.Seq2[string, *Service] {
 	}
 }
 
-func (m *ServiceMap) CheckAvailability(name string, hosts, paths []string) *Service {
-	paths = m.normalizePaths(paths)
+func (m *ServiceMap) CheckAvailability(name string, hosts []string, pathPrefix string) *Service {
+	pathPrefix = m.normalizePath(pathPrefix)
+
 	for _, host := range m.normalizeHosts(hosts) {
 		bindings := m.requestServiceMap[host]
 		for _, binding := range bindings {
-			if slices.Contains(paths, binding.path) && binding.service.name != name {
+			if pathPrefix == binding.pathPrefix && binding.service.name != name {
 				return binding.service
 			}
 		}
@@ -94,7 +95,7 @@ func (m *ServiceMap) serviceFor(host, path string) *Service {
 	}
 
 	for _, binding := range bindings {
-		if strings.HasPrefix(path, binding.path) {
+		if strings.HasPrefix(path, binding.pathPrefix) {
 			return binding.service
 		}
 	}
@@ -123,19 +124,18 @@ func (m *ServiceMap) updateRequestServiceMap() {
 	requestServiceMap := requestServiceMap{}
 
 	for _, service := range m.services {
+		pathPrefix := m.normalizePath(service.pathPrefix)
 		for _, host := range m.normalizeHosts(service.hosts) {
-			for _, path := range m.normalizePaths(service.paths) {
-				bindings := requestServiceMap[host]
-				if bindings == nil {
-					bindings = []*pathBinding{}
-				}
-				bindings = append(bindings, &pathBinding{path: path, service: service})
-				requestServiceMap[host] = bindings
+			bindings := requestServiceMap[host]
+			if bindings == nil {
+				bindings = []*pathBinding{}
 			}
+			bindings = append(bindings, &pathBinding{pathPrefix: pathPrefix, service: service})
+			requestServiceMap[host] = bindings
 		}
 
 		for _, bindings := range requestServiceMap {
-			slices.SortFunc(bindings, func(a, b *pathBinding) int { return len(b.path) - len(a.path) })
+			slices.SortFunc(bindings, func(a, b *pathBinding) int { return len(b.pathPrefix) - len(a.pathPrefix) })
 		}
 	}
 
@@ -149,18 +149,10 @@ func (m *ServiceMap) normalizeHosts(hosts []string) []string {
 	return hosts
 }
 
-func (m *ServiceMap) normalizePaths(paths []string) []string {
-	if len(paths) == 0 {
-		return []string{rootPath}
+func (m *ServiceMap) normalizePath(path string) string {
+	if !strings.HasPrefix(path, "/") {
+		return "/" + path
 	}
 
-	result := []string{}
-	for _, path := range paths {
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		result = append(result, path)
-	}
-
-	return result
+	return path
 }
