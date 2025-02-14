@@ -313,6 +313,32 @@ func TestRouter_PathBasedRouting(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, statusCode)
 }
 
+func TestRouter_PathBasedRoutingWithDefaultHost(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+	_, third := testBackend(t, "third", http.StatusOK)
+
+	require.NoError(t, router.SetServiceTarget("service1", defaultEmptyHosts, "/first", first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service2", defaultEmptyHosts, "/second", second, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service3", []string{"third.example.com"}, "/second", third, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body := sendGETRequest(router, "http://example.com/first")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+
+	statusCode, body = sendGETRequest(router, "http://example.com/second")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "second", body)
+
+	statusCode, body = sendGETRequest(router, "http://third.example.com/second/path")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "third", body)
+
+	statusCode, body = sendGETRequest(router, "http://example.com/")
+	assert.Equal(t, http.StatusNotFound, statusCode)
+}
+
 func TestRouter_TargetWithoutHostActsAsWildcard(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)

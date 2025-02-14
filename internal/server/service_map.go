@@ -153,6 +153,9 @@ func (m *ServiceMap) normalizePath(path string) string {
 	if !strings.HasPrefix(path, "/") {
 		return "/" + path
 	}
+	if strings.HasSuffix(path, "/") {
+		return path[:len(path)-1]
+	}
 
 	return path
 }
