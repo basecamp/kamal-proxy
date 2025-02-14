@@ -29,6 +29,7 @@ type Router struct {
 
 type ServiceDescription struct {
 	Host   string `json:"host"`
+	Path   string `json:"path"`
 	TLS    bool   `json:"tls"`
 	Target string `json:"target"`
 	State  string `json:"state"`
@@ -214,9 +215,14 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 			if host == "" {
 				host = "*"
 			}
+			path := service.pathPrefix
+			if path == "" {
+				path = "/"
+			}
 			if service.active != nil {
 				result[name] = ServiceDescription{
 					Host:   host,
+					Path:   path,
 					Target: service.active.Target(),
 					TLS:    service.options.TLSEnabled,
 					State:  service.pauseController.GetState().String(),
