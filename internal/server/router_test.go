@@ -290,7 +290,30 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 	assert.Equal(t, "second", body)
 }
 
-func TestRouter_PathBasedRouting(t *testing.T) {
+func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.URL.Path))
+	})
+
+	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, "/app", backend, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, "/api/internal", backend, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, "", backend, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body := sendGETRequest(router, "http://example.com/app/show")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/show", body)
+
+	statusCode, body = sendGETRequest(router, "http://example.com/api/internal/something?a=b")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/something?a=b", body)
+
+	statusCode, body = sendGETRequest(router, "http://example.com/api/external/something")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/api/external/something", body)
+}
+
+func TestRouter_PathBasedRoutingWithHosts(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
 	_, second := testBackend(t, "second", http.StatusOK)
