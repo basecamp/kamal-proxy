@@ -91,7 +91,7 @@ func (r *Router) SetServiceTarget(name string, hosts []string, pathPrefix string
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "path", pathPrefix, "target", targetURL, "tls", options.TLSEnabled)
+	slog.Info("Deploying", "service", name, "hosts", hosts, "path", pathPrefix, "target", targetURL, "tls", options.TLSEnabled, "strip", targetOptions.StripPrefix)
 
 	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
 	if err != nil {

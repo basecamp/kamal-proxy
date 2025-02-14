@@ -105,6 +105,10 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if c.args.PathPrefix != "" {
+		c.args.TargetOptions.StripPrefix = c.args.PathPrefix
+	}
+
 	return nil
 }
 

@@ -293,12 +293,17 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
 	router := testRouter(t)
 	_, backend := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(r.URL.Path))
+		w.Write([]byte(r.URL.String()))
 	})
 
-	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, "/app", backend, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, "/api/internal", backend, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	firstOptions := defaultTargetOptions
+	firstOptions.StripPrefix = "/app"
+	secondOptions := defaultTargetOptions
+	secondOptions.StripPrefix = "/api/internal"
+
 	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, "", backend, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service2", []string{"example.com"}, "/app", backend, defaultServiceOptions, firstOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service3", []string{"example.com"}, "/api/internal", backend, defaultServiceOptions, secondOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://example.com/app/show")
 	assert.Equal(t, http.StatusOK, statusCode)
