@@ -81,12 +81,39 @@ Only one service at a time can route a specific host:
     kamal-proxy deploy service2 --target web-2:3000 --host app1.example.com # succeeds
 
 
+### Path-based routing
+
+For applications that split their traffic to different services based on the
+request path, you can use path-based routing to mount services under different
+path prefixes.
+
+For example, to send all the requests for paths begining with `/api` to web-1,
+and the rest to web-2:
+
+    kamal-proxy deploy service1 --target web-1:3000 --path-prefix=/api
+    kamal-proxy deploy service2 --target web-2:3000
+
+By default, the path prefix will be stripped from the request before it is
+forwarded upstream. So in the example above, a request to `/api/users/123` will
+be forwarded to `web-1` as `/users/123`. To instead forward the request with
+the original path (including the prefix), specify `--strip-path-prefix=false`:
+
+    kamal-proxy deploy service1 --target web-1:3000 --path-prefix=/api --strip-path-prefix=false
+
+
 ### Automatic TLS
 
 Kamal Proxy can automatically obtain and renew TLS certificates for your
 applications. To enable this, add the `--tls` flag when deploying an instance:
 
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls
+
+Automatic TLS requires that hosts are specified (to ensure that certificates
+are not maliciously requests for arbitrary hostnames).
+
+Additionally, when using path-based routing, TLS options must be set on the
+root path. Services deployed to other paths on the same host will use the same
+TLS settings as those specified for the root path.
 
 
 ### Custom TLS certificate

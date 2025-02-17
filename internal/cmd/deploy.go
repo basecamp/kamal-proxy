@@ -10,9 +10,10 @@ import (
 )
 
 type deployCommand struct {
-	cmd        *cobra.Command
-	args       server.DeployArgs
-	tlsStaging bool
+	cmd             *cobra.Command
+	args            server.DeployArgs
+	tlsStaging      bool
+	stripPathPrefix bool
 }
 
 func newDeployCommand() *deployCommand {
@@ -28,6 +29,8 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetURL, "target", "", "Target host to deploy")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.Hosts, "host", []string{}, "Host(s) to serve this target on (empty for wildcard)")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.PathPrefix, "path-prefix", "", "Deploy the service below the specified path")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.stripPathPrefix, "strip-path-prefix", true, "With --path-prefix, strip prefix from request before forwarding")
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.TLSEnabled, "tls", false, "Configure TLS for this target (requires a non-empty host)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environment for certificate provisioning")
@@ -79,6 +82,8 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 }
 
 func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
+	c.args.PathPrefix = server.NormalizePath(c.args.PathPrefix)
+
 	if cmd.Flags().Changed("max-request-body") && !cmd.Flags().Changed("buffer-requests") {
 		return fmt.Errorf("max-request-body can only be set when request buffering is enabled")
 	}
@@ -87,12 +92,22 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("max-response-body can only be set when response buffering is enabled")
 	}
 
-	if cmd.Flags().Changed("tls") && !cmd.Flags().Changed("host") {
-		return fmt.Errorf("host must be set when using TLS")
-	}
-
 	if !cmd.Flags().Changed("forward-headers") {
 		c.args.TargetOptions.ForwardHeaders = !c.args.ServiceOptions.TLSEnabled
+	}
+
+	if c.args.ServiceOptions.TLSEnabled {
+		if len(c.args.Hosts) == 0 {
+			return fmt.Errorf("host must be set when using TLS")
+		}
+
+		if c.args.PathPrefix != "/" {
+			return fmt.Errorf("TLS settings must be specified on the root path service")
+		}
+	}
+
+	if c.args.PathPrefix != "/" && c.stripPathPrefix {
+		c.args.TargetOptions.StripPrefix = c.args.PathPrefix
 	}
 
 	return nil

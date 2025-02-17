@@ -88,9 +88,10 @@ func (so ServiceOptions) ScopedCachePath() string {
 }
 
 type Service struct {
-	name    string
-	hosts   []string
-	options ServiceOptions
+	name       string
+	hosts      []string
+	pathPrefix string
+	options    ServiceOptions
 
 	active     *Target
 	rollout    *Target
@@ -102,13 +103,13 @@ type Service struct {
 	middleware        http.Handler
 }
 
-func NewService(name string, hosts []string, options ServiceOptions) (*Service, error) {
+func NewService(name string, hosts []string, pathPrefix string, options ServiceOptions) (*Service, error) {
 	service := &Service{
 		name:            name,
 		pauseController: NewPauseController(),
 	}
 
-	err := service.initialize(hosts, options)
+	err := service.initialize(hosts, pathPrefix, options)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +117,8 @@ func NewService(name string, hosts []string, options ServiceOptions) (*Service, 
 	return service, nil
 }
 
-func (s *Service) UpdateOptions(hosts []string, options ServiceOptions) error {
-	return s.initialize(hosts, options)
+func (s *Service) UpdateOptions(hosts []string, pathPrefix string, options ServiceOptions) error {
+	return s.initialize(hosts, pathPrefix, options)
 }
 
 func (s *Service) ActiveTarget() *Target {
@@ -199,6 +200,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type marshalledService struct {
 	Name              string             `json:"name"`
 	Hosts             []string           `json:"hosts"`
+	PathPrefix        string             `json:"path_prefix"`
 	ActiveTarget      string             `json:"active_target"`
 	RolloutTarget     string             `json:"rollout_target"`
 	Options           ServiceOptions     `json:"options"`
@@ -218,6 +220,7 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalledService{
 		Name:              s.name,
 		Hosts:             s.hosts,
+		PathPrefix:        s.pathPrefix,
 		ActiveTarget:      activeTarget,
 		RolloutTarget:     rolloutTarget,
 		Options:           s.options,
@@ -238,7 +241,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
 
-	s.initialize(ms.Hosts, ms.Options)
+	s.initialize(ms.Hosts, ms.PathPrefix, ms.Options)
 	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
 	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
 
@@ -283,7 +286,7 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize(hosts []string, options ServiceOptions) error {
+func (s *Service) initialize(hosts []string, pathPrefix string, options ServiceOptions) error {
 	certManager, err := s.createCertManager(hosts, options)
 	if err != nil {
 		return err
@@ -295,6 +298,7 @@ func (s *Service) initialize(hosts []string, options ServiceOptions) error {
 	}
 
 	s.hosts = hosts
+	s.pathPrefix = pathPrefix
 	s.options = options
 	s.certManager = certManager
 	s.middleware = middleware
