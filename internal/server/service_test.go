@@ -139,7 +139,8 @@ func TestService_MarshallingState(t *testing.T) {
 
 	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, targetOptions)
 	require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
-	service.SetTarget(TargetSlotRollout, service.active, time.Millisecond)
+	service.SetTarget(TargetSlotRollout, service.active)
+
 	require.NoError(t, service.SetRolloutSplit(20, []string{"first"}))
 
 	var buf bytes.Buffer

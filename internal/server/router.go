@@ -177,7 +177,10 @@ func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout t
 		return err
 	}
 
-	service.SetTarget(TargetSlotRollout, target, drainTimeout)
+	replacedTarget := service.SetTarget(TargetSlotRollout, target)
+	if replacedTarget != nil {
+		replacedTarget.Drain(drainTimeout)
+	}
 
 	slog.Info("Deployed for rollout", "service", name, "target", targetURL)
 	return nil
@@ -208,20 +211,27 @@ func (r *Router) StopRollout(name string) error {
 func (r *Router) RemoveService(name string) error {
 	defer r.saveStateSnapshot()
 
+	var replacedTarget *Target
+
 	err := r.withWriteLock(func() error {
 		service := r.services[name]
 		if service == nil {
 			return ErrorServiceNotFound
 		}
 
-		service.SetTarget(TargetSlotActive, nil, DefaultDrainTimeout)
 		delete(r.services, service.name)
 		r.hostServices = r.services.HostServices()
+
+		replacedTarget = service.SetTarget(TargetSlotActive, nil)
 
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+
+	if replacedTarget != nil {
+		replacedTarget.Drain(DefaultDrainTimeout)
 	}
 
 	return nil
@@ -363,30 +373,40 @@ func (r *Router) serviceForHost(host string) *Service {
 }
 
 func (r *Router) setActiveTarget(name string, hosts []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
-	r.serviceLock.Lock()
-	defer r.serviceLock.Unlock()
+	var replacedTarget *Target
 
-	conflict := r.hostServices.CheckHostAvailability(name, hosts)
-	if conflict != nil {
-		slog.Error("Host settings conflict with another service", "service", conflict.name)
-		return ErrorHostInUse
-	}
+	err := r.withWriteLock(func() error {
+		conflict := r.hostServices.CheckHostAvailability(name, hosts)
+		if conflict != nil {
+			slog.Error("Host settings conflict with another service", "service", conflict.name)
+			return ErrorHostInUse
+		}
 
-	var err error
-	service := r.services[name]
-	if service == nil {
-		service, err = NewService(name, hosts, options)
-	} else {
-		err = service.UpdateOptions(hosts, options)
-	}
+		var err error
+		service := r.services[name]
+		if service == nil {
+			service, err = NewService(name, hosts, options)
+		} else {
+			err = service.UpdateOptions(hosts, options)
+		}
+		if err != nil {
+			return err
+		}
+
+		r.services[name] = service
+		r.hostServices = r.services.HostServices()
+
+		replacedTarget = service.SetTarget(TargetSlotActive, target)
+
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 
-	r.services[name] = service
-	r.hostServices = r.services.HostServices()
-
-	service.SetTarget(TargetSlotActive, target, drainTimeout)
+	if replacedTarget != nil {
+		replacedTarget.Drain(drainTimeout)
+	}
 
 	return nil
 }
