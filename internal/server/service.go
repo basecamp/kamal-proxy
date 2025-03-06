@@ -149,26 +149,28 @@ func (s *Service) ClaimTarget(req *http.Request) (*Target, *http.Request, error)
 	return target, req, err
 }
 
-func (s *Service) SetTarget(slot TargetSlot, target *Target, drainTimeout time.Duration) {
-	s.targetLock.Lock()
-	defer s.targetLock.Unlock()
-
+func (s *Service) SetTarget(slot TargetSlot, target *Target) *Target {
 	var replaced *Target
 
-	switch slot {
-	case TargetSlotActive:
-		replaced = s.active
-		s.active = target
+	s.withWriteLock(func() error {
+		switch slot {
+		case TargetSlotActive:
+			replaced = s.active
+			s.active = target
 
-	case TargetSlotRollout:
-		replaced = s.rollout
-		s.rollout = target
-	}
+		case TargetSlotRollout:
+			replaced = s.rollout
+			s.rollout = target
+		}
+
+		return nil
+	})
 
 	if replaced != nil {
 		replaced.StopHealthChecks()
-		replaced.Drain(drainTimeout)
 	}
+
+	return replaced
 }
 
 func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
@@ -444,4 +446,11 @@ func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
 
 	url := "https://" + host + r.URL.RequestURI()
 	http.Redirect(w, r, url, http.StatusMovedPermanently)
+}
+
+func (s *Service) withWriteLock(fn func() error) error {
+	s.targetLock.Lock()
+	defer s.targetLock.Unlock()
+
+	return fn()
 }
