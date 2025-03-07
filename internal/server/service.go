@@ -72,6 +72,7 @@ type ServiceOptions struct {
 	ACMEDirectory      string `json:"acme_directory"`
 	ACMECachePath      string `json:"acme_cache_path"`
 	ErrorPagePath      string `json:"error_page_path"`
+	StripPrefix        bool   `json:"strip_prefix"`
 }
 
 func (so ServiceOptions) ScopedCachePath() string {

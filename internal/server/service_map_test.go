@@ -39,14 +39,19 @@ func TestServiceMap_ServiceForRequest(t *testing.T) {
 	sm.Set(&Service{name: "5", pathPrefix: "/api"})
 	sm.Set(&Service{name: "6"})
 
-	assert.Equal(t, "1", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://example.com/", nil)).name)
-	assert.Equal(t, "1", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://example.com/random", nil)).name)
-	assert.Equal(t, "1", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://example.com/apiary", nil)).name)
-	assert.Equal(t, "2", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)).name)
-	assert.Equal(t, "3", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://example.com/api/special", nil)).name)
-	assert.Equal(t, "4", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://other.example.com/api/test", nil)).name)
-	assert.Equal(t, "5", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://second.example.com/api/test", nil)).name)
-	assert.Equal(t, "6", sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, "http://second.example.com/non-api/test", nil)).name)
+	checkService := func(expected string, url string) {
+		servivce, _ := sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, url, nil))
+		assert.Equal(t, expected, servivce.name)
+	}
+
+	checkService("1", "http://example.com/")
+	checkService("1", "http://example.com/random")
+	checkService("1", "http://example.com/apiary")
+	checkService("2", "http://example.com/api")
+	checkService("3", "http://example.com/api/special")
+	checkService("4", "http://other.example.com/api/test")
+	checkService("5", "http://second.example.com/api/test")
+	checkService("6", "http://second.example.com/non-api/test")
 }
 
 func TestServiceMap_CheckAvailability(t *testing.T) {
@@ -109,7 +114,7 @@ func BenchmarkServiceMap_SingleServiceRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 }
@@ -124,7 +129,7 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 
@@ -132,7 +137,7 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://anything.two.example.com/", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 
@@ -140,7 +145,7 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://missing.example.com/", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 }
@@ -156,7 +161,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/api", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 
@@ -164,7 +169,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 
@@ -172,7 +177,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/app", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 
@@ -180,7 +185,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
 
 		for b.Loop() {
-			_ = sm.ServiceForRequest(req)
+			_, _ = sm.ServiceForRequest(req)
 		}
 	})
 }

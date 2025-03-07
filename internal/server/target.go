@@ -65,7 +65,6 @@ type TargetOptions struct {
 	LogRequestHeaders   []string          `json:"log_request_headers"`
 	LogResponseHeaders  []string          `json:"log_response_headers"`
 	ForwardHeaders      bool              `json:"forward_headers"`
-	StripPrefix         string            `json:"strip_prefix"`
 }
 
 func (to *TargetOptions) canonicalizeLogHeaders() {
@@ -251,6 +250,11 @@ func (t *Target) rewrite(req *httputil.ProxyRequest) {
 	req.SetURL(t.targetURL)
 	req.Out.Host = req.In.Host
 
+	routingContext := RoutingContext(req.In)
+	if routingContext != nil {
+		req.Out.URL.Path = strings.TrimPrefix(req.Out.URL.Path, routingContext.MatchedPrefix)
+	}
+
 	// Ensure query params are preserved exactly, including those we could not
 	// parse.
 	//
@@ -275,10 +279,6 @@ func (t *Target) rewrite(req *httputil.ProxyRequest) {
 	// In our case, we don't make any decisions based on the query params, so it's
 	// safe for us to pass them through verbatim.
 	req.Out.URL.RawQuery = req.In.URL.RawQuery
-
-	if t.options.StripPrefix != "" {
-		req.Out.URL.Path = strings.TrimPrefix(req.Out.URL.Path, t.options.StripPrefix)
-	}
 }
 
 func (t *Target) forwardHeaders(req *httputil.ProxyRequest) {

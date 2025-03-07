@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -19,7 +20,21 @@ var (
 	ErrorHostInUse                   = errors.New("host settings conflict with another service")
 	ErrorNoServerName                = errors.New("no server name provided")
 	ErrorUnknownServerName           = errors.New("unknown server name")
+
+	contextKeyRoutingContext = contextKey("routing-context")
 )
+
+type routingContext struct {
+	MatchedPrefix string
+}
+
+func RoutingContext(r *http.Request) *routingContext {
+	rc, ok := r.Context().Value(contextKeyRoutingContext).(*routingContext)
+	if !ok {
+		return nil
+	}
+	return rc
+}
 
 type Router struct {
 	statePath   string
@@ -77,10 +92,16 @@ func (r *Router) RestoreLastSavedState() error {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	service := r.serviceForRequest(req)
+	service, prefix := r.serviceForRequest(req)
+	slog.Info("Matched", "service", service.name, "prefix", prefix)
 	if service == nil {
 		SetErrorResponse(w, req, http.StatusNotFound, nil)
 		return
+	}
+
+	if service.options.StripPrefix && prefix != rootPath {
+		ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: prefix})
+		req = req.WithContext(ctx)
 	}
 
 	service.ServeHTTP(w, req)
@@ -92,7 +113,7 @@ func (r *Router) SetServiceTarget(name string, hosts []string, pathPrefix string
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "path", pathPrefix, "target", targetURL, "tls", options.TLSEnabled, "strip", targetOptions.StripPrefix)
+	slog.Info("Deploying", "service", name, "hosts", hosts, "path", pathPrefix, "target", targetURL, "tls", options.TLSEnabled, "strip", options.StripPrefix)
 
 	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
 	if err != nil {
@@ -302,7 +323,7 @@ func (r *Router) saveStateSnapshot() error {
 	return nil
 }
 
-func (r *Router) serviceForRequest(req *http.Request) *Service {
+func (r *Router) serviceForRequest(req *http.Request) (*Service, string) {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 

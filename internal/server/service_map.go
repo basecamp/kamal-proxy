@@ -70,10 +70,11 @@ func (m *ServiceMap) CheckAvailability(name string, hosts []string, pathPrefix s
 }
 
 func (m *ServiceMap) ServiceForHost(host string) *Service {
-	return m.serviceFor(host, rootPath)
+	service, _ := m.serviceFor(host, rootPath)
+	return service
 }
 
-func (m *ServiceMap) ServiceForRequest(req *http.Request) *Service {
+func (m *ServiceMap) ServiceForRequest(req *http.Request) (*Service, string) {
 	host := req.Host
 
 	if strings.Index(host, ":") > 0 {
@@ -88,19 +89,19 @@ func (m *ServiceMap) ServiceForRequest(req *http.Request) *Service {
 
 // Private
 
-func (m *ServiceMap) serviceFor(host, path string) *Service {
+func (m *ServiceMap) serviceFor(host, path string) (*Service, string) {
 	bindings := m.bindingsForHost(host)
 	if bindings == nil {
-		return nil
+		return nil, ""
 	}
 
 	for _, binding := range bindings {
 		if strings.HasPrefix(EnsureTrailingSlash(path), EnsureTrailingSlash(binding.pathPrefix)) {
-			return binding.service
+			return binding.service, binding.pathPrefix
 		}
 	}
 
-	return nil
+	return nil, ""
 }
 
 func (m *ServiceMap) bindingsForHost(host string) []*pathBinding {

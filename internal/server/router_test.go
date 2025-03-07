@@ -296,18 +296,20 @@ func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
 		w.Write([]byte(r.URL.String()))
 	})
 
-	firstOptions := defaultTargetOptions
-	firstOptions.StripPrefix = "/app"
-	secondOptions := defaultTargetOptions
-	secondOptions.StripPrefix = "/api/internal"
+	serviceOptions := defaultServiceOptions
+	serviceOptions.StripPrefix = true
 
 	require.NoError(t, router.SetServiceTarget("service1", []string{"example.com"}, "", backend, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("service2", []string{"example.com"}, "/app", backend, defaultServiceOptions, firstOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("service3", []string{"example.com"}, "/api/internal", backend, defaultServiceOptions, secondOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service2", []string{"example.com"}, "/app", backend, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("service3", []string{"example.com"}, "/api/internal", backend, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://example.com/app/show")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "/show", body)
+
+	statusCode, body = sendGETRequest(router, "http://example.com/app")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/", body)
 
 	statusCode, body = sendGETRequest(router, "http://example.com/api/internal/something?a=b")
 	assert.Equal(t, http.StatusOK, statusCode)
