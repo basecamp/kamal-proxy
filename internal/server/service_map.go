@@ -160,10 +160,10 @@ func (m *ServiceMap) syncTLSOptionsFromRootDomain() {
 			rootService := m.ServiceForHost(host)
 			if rootService != nil {
 				service.options.TLSEnabled = rootService.options.TLSEnabled
-				service.options.TLSDisableRedirect = rootService.options.TLSDisableRedirect
+				service.options.TLSRedirect = rootService.options.TLSRedirect
 			} else {
 				service.options.TLSEnabled = defaultServiceOptions.TLSEnabled
-				service.options.TLSDisableRedirect = defaultServiceOptions.TLSDisableRedirect
+				service.options.TLSRedirect = defaultServiceOptions.TLSRedirect
 			}
 		}
 	}

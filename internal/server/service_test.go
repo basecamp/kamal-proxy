@@ -25,7 +25,7 @@ func TestService_ServeRequest(t *testing.T) {
 }
 
 func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
-	service := testCreateService(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true}, defaultTargetOptions)
+	service := testCreateService(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true, TLSRedirect: true}, defaultTargetOptions)
 
 	require.True(t, service.options.TLSEnabled)
 
@@ -46,7 +46,7 @@ func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 	var forwardedProto string
 
-	service := testCreateServiceWithHandler(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true, TLSDisableRedirect: true}, defaultTargetOptions,
+	service := testCreateServiceWithHandler(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true, TLSRedirect: false}, defaultTargetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			forwardedProto = r.Header.Get("X-Forwarded-Proto")
 		}),

@@ -73,8 +73,8 @@ func TestServiceMap_CheckAvailability(t *testing.T) {
 
 func TestServiceMap_SyncingTLSSettingsFromRootPath(t *testing.T) {
 	optionsWithTLS := ServiceOptions{
-		TLSEnabled:         true,
-		TLSDisableRedirect: true,
+		TLSEnabled:  true,
+		TLSRedirect: false,
 	}
 
 	sm := NewServiceMap()
@@ -84,19 +84,19 @@ func TestServiceMap_SyncingTLSSettingsFromRootPath(t *testing.T) {
 	sm.Set(normalizedService(&Service{name: "4", hosts: []string{"2.example.com"}, pathPrefixes: []string{"/api"}}))
 
 	assert.True(t, sm.Get("1").options.TLSEnabled)
-	assert.True(t, sm.Get("1").options.TLSDisableRedirect)
+	assert.False(t, sm.Get("1").options.TLSRedirect)
 	assert.True(t, sm.Get("2").options.TLSEnabled)
-	assert.True(t, sm.Get("2").options.TLSDisableRedirect)
+	assert.False(t, sm.Get("2").options.TLSRedirect)
 
 	assert.False(t, sm.Get("3").options.TLSEnabled)
-	assert.False(t, sm.Get("3").options.TLSDisableRedirect)
+	assert.True(t, sm.Get("3").options.TLSRedirect)
 	assert.False(t, sm.Get("4").options.TLSEnabled)
-	assert.False(t, sm.Get("4").options.TLSDisableRedirect)
+	assert.True(t, sm.Get("4").options.TLSRedirect)
 
 	sm.Remove("1")
 
 	assert.False(t, sm.Get("2").options.TLSEnabled)
-	assert.False(t, sm.Get("2").options.TLSDisableRedirect)
+	assert.True(t, sm.Get("2").options.TLSRedirect)
 }
 
 func TestServiceMap_CheckHostAvailability_EmptyHostsFirst(t *testing.T) {

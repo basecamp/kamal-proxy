@@ -14,7 +14,7 @@ var (
 	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: DefaultHealthCheckTimeout}
 	defaultEmptyHosts        = []string{}
 	defaultPaths             = []string{rootPath}
-	defaultServiceOptions    = ServiceOptions{}
+	defaultServiceOptions    = ServiceOptions{TLSRedirect: true}
 	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
 )
 
