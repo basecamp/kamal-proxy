@@ -390,7 +390,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 
 	router := NewRouter(statePath)
 	require.NoError(t, router.SetServiceTarget("default", defaultEmptyHosts, first, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
-	require.NoError(t, router.SetServiceTarget("other", []string{"other.example.com"}, second, ServiceOptions{TLSEnabled: true}, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.SetServiceTarget("other", []string{"other.example.com"}, second, ServiceOptions{TLSEnabled: true, TLSRedirect: true}, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	statusCode, body := sendGETRequest(router, "http://something.example.com")
 	assert.Equal(t, http.StatusOK, statusCode)
