@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -89,10 +90,10 @@ func (so ServiceOptions) ScopedCachePath() string {
 }
 
 type Service struct {
-	name       string
-	hosts      []string
-	pathPrefix string
-	options    ServiceOptions
+	name         string
+	hosts        []string
+	pathPrefixes []string
+	options      ServiceOptions
 
 	active     *Target
 	rollout    *Target
@@ -104,13 +105,16 @@ type Service struct {
 	middleware        http.Handler
 }
 
-func NewService(name string, hosts []string, pathPrefix string, options ServiceOptions) (*Service, error) {
+func NewService(name string, hosts []string, pathPrefixes []string, options ServiceOptions) (*Service, error) {
 	service := &Service{
 		name:            name,
 		pauseController: NewPauseController(),
 	}
 
-	err := service.initialize(hosts, pathPrefix, options)
+	hosts = NormalizeHosts(hosts)
+	pathPrefixes = NormalizePathPrefixes(pathPrefixes)
+
+	err := service.initialize(hosts, pathPrefixes, options)
 	if err != nil {
 		return nil, err
 	}
@@ -118,8 +122,11 @@ func NewService(name string, hosts []string, pathPrefix string, options ServiceO
 	return service, nil
 }
 
-func (s *Service) UpdateOptions(hosts []string, pathPrefix string, options ServiceOptions) error {
-	return s.initialize(hosts, pathPrefix, options)
+func (s *Service) UpdateOptions(hosts []string, pathPrefixes []string, options ServiceOptions) error {
+	hosts = NormalizeHosts(hosts)
+	pathPrefixes = NormalizePathPrefixes(pathPrefixes)
+
+	return s.initialize(hosts, pathPrefixes, options)
 }
 
 func (s *Service) ActiveTarget() *Target {
@@ -203,7 +210,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type marshalledService struct {
 	Name              string             `json:"name"`
 	Hosts             []string           `json:"hosts"`
-	PathPrefix        string             `json:"path_prefix"`
+	PathPrefixes      []string           `json:"path_prefixes"`
 	ActiveTarget      string             `json:"active_target"`
 	RolloutTarget     string             `json:"rollout_target"`
 	Options           ServiceOptions     `json:"options"`
@@ -223,7 +230,7 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalledService{
 		Name:              s.name,
 		Hosts:             s.hosts,
-		PathPrefix:        s.pathPrefix,
+		PathPrefixes:      s.pathPrefixes,
 		ActiveTarget:      activeTarget,
 		RolloutTarget:     rolloutTarget,
 		Options:           s.options,
@@ -244,7 +251,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
 
-	s.initialize(ms.Hosts, ms.PathPrefix, ms.Options)
+	s.initialize(ms.Hosts, ms.PathPrefixes, ms.Options)
 	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
 	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
 
@@ -289,7 +296,7 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize(hosts []string, pathPrefix string, options ServiceOptions) error {
+func (s *Service) initialize(hosts []string, pathPrefixes []string, options ServiceOptions) error {
 	certManager, err := s.createCertManager(hosts, options)
 	if err != nil {
 		return err
@@ -301,12 +308,16 @@ func (s *Service) initialize(hosts []string, pathPrefix string, options ServiceO
 	}
 
 	s.hosts = hosts
-	s.pathPrefix = pathPrefix
+	s.pathPrefixes = pathPrefixes
 	s.options = options
 	s.certManager = certManager
 	s.middleware = middleware
 
 	return nil
+}
+
+func (s *Service) servesRootPath() bool {
+	return slices.Contains(s.pathPrefixes, rootPath)
 }
 
 func (s *Service) createCertManager(hosts []string, options ServiceOptions) (CertManager, error) {

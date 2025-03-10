@@ -55,17 +55,21 @@ func (m *ServiceMap) All() iter.Seq2[string, *Service] {
 	}
 }
 
-func (m *ServiceMap) CheckAvailability(name string, hosts []string, pathPrefix string) *Service {
-	pathPrefix = NormalizePath(pathPrefix)
+func (m *ServiceMap) CheckAvailability(name string, hosts []string, pathPrefixes []string) *Service {
+	pathPrefixes = NormalizePathPrefixes(pathPrefixes)
+	hosts = NormalizeHosts(hosts)
 
-	for _, host := range NormalizeHosts(hosts) {
-		bindings := m.requestServiceMap[host]
-		for _, binding := range bindings {
-			if pathPrefix == binding.pathPrefix && binding.service.name != name {
-				return binding.service
+	for _, host := range hosts {
+		for _, pathPrefix := range pathPrefixes {
+			bindings := m.requestServiceMap[host]
+			for _, binding := range bindings {
+				if pathPrefix == binding.pathPrefix && binding.service.name != name {
+					return binding.service
+				}
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -125,19 +129,20 @@ func (m *ServiceMap) updateRequestServiceMap() {
 	requestServiceMap := requestServiceMap{}
 
 	for _, service := range m.services {
-		pathPrefix := NormalizePath(service.pathPrefix)
-		for _, host := range NormalizeHosts(service.hosts) {
-			bindings := requestServiceMap[host]
-			if bindings == nil {
-				bindings = []*pathBinding{}
+		for _, host := range service.hosts {
+			for _, pathPrefix := range service.pathPrefixes {
+				bindings := requestServiceMap[host]
+				if bindings == nil {
+					bindings = []*pathBinding{}
+				}
+				bindings = append(bindings, &pathBinding{pathPrefix: pathPrefix, service: service})
+				requestServiceMap[host] = bindings
 			}
-			bindings = append(bindings, &pathBinding{pathPrefix: pathPrefix, service: service})
-			requestServiceMap[host] = bindings
 		}
+	}
 
-		for _, bindings := range requestServiceMap {
-			slices.SortFunc(bindings, func(a, b *pathBinding) int { return len(b.pathPrefix) - len(a.pathPrefix) })
-		}
+	for _, bindings := range requestServiceMap {
+		slices.SortFunc(bindings, func(a, b *pathBinding) int { return len(b.pathPrefix) - len(a.pathPrefix) })
 	}
 
 	m.requestServiceMap = requestServiceMap
@@ -146,7 +151,7 @@ func (m *ServiceMap) updateRequestServiceMap() {
 
 func (m *ServiceMap) syncTLSOptionsFromRootDomain() {
 	for _, service := range m.services {
-		if NormalizePath(service.pathPrefix) != rootPath {
+		if !service.servesRootPath() {
 			host := ""
 			if len(service.hosts) > 0 {
 				host = service.hosts[0]
@@ -171,8 +176,16 @@ func NormalizeHosts(hosts []string) []string {
 	return hosts
 }
 
-func NormalizePath(path string) string {
-	return "/" + strings.Trim(path, "/")
+func NormalizePathPrefixes(pathPrefixes []string) []string {
+	if len(pathPrefixes) == 0 {
+		return []string{rootPath}
+	}
+
+	result := []string{}
+	for _, pathPrefix := range pathPrefixes {
+		result = append(result, "/"+strings.Trim(pathPrefix, "/"))
+	}
+	return result
 }
 
 func EnsureTrailingSlash(path string) string {

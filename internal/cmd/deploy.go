@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/rpc"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -28,7 +29,7 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetURL, "target", "", "Target host to deploy")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.Hosts, "host", []string{}, "Host(s) to serve this target on (empty for wildcard)")
-	deployCommand.cmd.Flags().StringVar(&deployCommand.args.PathPrefix, "path-prefix", "", "Deploy the service below the specified path")
+	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.PathPrefixes, "path-prefix", []string{}, "Deploy the service below the specified path(s)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.StripPrefix, "strip-path-prefix", true, "With --path-prefix, strip prefix from request before forwarding")
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.TLSEnabled, "tls", false, "Configure TLS for this target (requires a non-empty host)")
@@ -81,7 +82,7 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 }
 
 func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
-	c.args.PathPrefix = server.NormalizePath(c.args.PathPrefix)
+	c.args.PathPrefixes = server.NormalizePathPrefixes(c.args.PathPrefixes)
 
 	if cmd.Flags().Changed("max-request-body") && !cmd.Flags().Changed("buffer-requests") {
 		return fmt.Errorf("max-request-body can only be set when request buffering is enabled")
@@ -100,7 +101,7 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("host must be set when using TLS")
 		}
 
-		if c.args.PathPrefix != "/" {
+		if !slices.Contains(c.args.PathPrefixes, "/") {
 			return fmt.Errorf("TLS settings must be specified on the root path service")
 		}
 	}

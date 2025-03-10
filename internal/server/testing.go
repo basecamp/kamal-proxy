@@ -13,6 +13,7 @@ import (
 var (
 	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: DefaultHealthCheckTimeout}
 	defaultEmptyHosts        = []string{}
+	defaultPaths             = []string{rootPath}
 	defaultServiceOptions    = ServiceOptions{}
 	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
 )
