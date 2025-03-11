@@ -322,6 +322,14 @@ func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
 	statusCode, body = sendGETRequest(router, "http://example.com/appointment")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "/appointment", body)
+
+	serviceOptions.StripPrefix = false
+
+	require.NoError(t, router.SetServiceTarget("service2", []string{"example.com"}, []string{"/app"}, backend, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	statusCode, body = sendGETRequest(router, "http://example.com/app")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/app", body)
 }
 
 func TestRouter_PathBasedRoutingWithHosts(t *testing.T) {
