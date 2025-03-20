@@ -6,12 +6,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: DefaultHealthCheckTimeout}
+	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
 	defaultEmptyHosts        = []string{}
 	defaultPaths             = []string{rootPath}
 	defaultServiceOptions    = ServiceOptions{TLSRedirect: true}

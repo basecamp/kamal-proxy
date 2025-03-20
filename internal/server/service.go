@@ -90,100 +90,80 @@ func (so ServiceOptions) ScopedCachePath() string {
 }
 
 type Service struct {
-	name         string
-	hosts        []string
-	pathPrefixes []string
-	options      ServiceOptions
+	name          string
+	hosts         []string
+	pathPrefixes  []string
+	options       ServiceOptions
+	targetOptions TargetOptions
 
-	active     *Target
-	rollout    *Target
-	targetLock sync.RWMutex
+	active  *LoadBalancer
+	rollout *LoadBalancer
 
 	pauseController   *PauseController
 	rolloutController *RolloutController
-	certManager       CertManager
-	middleware        http.Handler
+	serviceLock       sync.Mutex
+
+	certManager CertManager
+	middleware  http.Handler
 }
 
-func NewService(name string, hosts []string, pathPrefixes []string, options ServiceOptions) (*Service, error) {
-	service := &Service{
-		name:            name,
-		pauseController: NewPauseController(),
-	}
-
+func NewService(name string, hosts []string, pathPrefixes []string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
 	hosts = NormalizeHosts(hosts)
 	pathPrefixes = NormalizePathPrefixes(pathPrefixes)
 
-	err := service.initialize(hosts, pathPrefixes, options)
+	service := &Service{
+		name:            name,
+		hosts:           hosts,
+		pathPrefixes:    pathPrefixes,
+		options:         options,
+		targetOptions:   targetOptions,
+		pauseController: NewPauseController(),
+	}
+
+	return service, service.initialize()
+}
+
+func (s *Service) CopyWithOptions(hosts []string, pathPrefixes []string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+	service, err := NewService(s.name, hosts, pathPrefixes, options, targetOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return service, nil
+	service.active = s.active
+	service.rollout = s.rollout
+	service.pauseController = s.pauseController
+	service.rolloutController = s.rolloutController
+
+	return service, service.initialize()
 }
 
-func (s *Service) UpdateOptions(hosts []string, pathPrefixes []string, options ServiceOptions) error {
-	hosts = NormalizeHosts(hosts)
-	pathPrefixes = NormalizePathPrefixes(pathPrefixes)
-
-	return s.initialize(hosts, pathPrefixes, options)
-}
-
-func (s *Service) ActiveTarget() *Target {
-	s.targetLock.RLock()
-	defer s.targetLock.RUnlock()
-
-	return s.active
-}
-
-func (s *Service) RolloutTarget() *Target {
-	s.targetLock.RLock()
-	defer s.targetLock.RUnlock()
-
-	return s.rollout
-}
-
-func (s *Service) ClaimTarget(req *http.Request) (*Target, *http.Request, error) {
-	s.targetLock.RLock()
-	defer s.targetLock.RUnlock()
-
-	target := s.active
-	if s.rollout != nil && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
-		slog.Debug("Using rollout target for request", "service", s.name, "path", req.URL.Path)
-		target = s.rollout
+func (s *Service) Dispose() {
+	s.active.Dispose()
+	if s.rollout != nil {
+		s.rollout.Dispose()
 	}
-
-	req, err := target.StartRequest(req)
-	return target, req, err
 }
 
-func (s *Service) SetTarget(slot TargetSlot, target *Target) *Target {
-	var replaced *Target
+func (s *Service) UpdateLoadBalancer(lb *LoadBalancer, slot TargetSlot) *LoadBalancer {
+	s.serviceLock.Lock()
+	defer s.serviceLock.Unlock()
 
-	s.withWriteLock(func() error {
-		switch slot {
-		case TargetSlotActive:
-			replaced = s.active
-			s.active = target
+	var replaced *LoadBalancer
 
-		case TargetSlotRollout:
-			replaced = s.rollout
-			s.rollout = target
-		}
-
-		return nil
-	})
-
-	if replaced != nil {
-		replaced.StopHealthChecks()
+	if slot == TargetSlotRollout {
+		replaced = s.rollout
+		s.rollout = lb
+	} else {
+		replaced = s.active
+		s.active = lb
 	}
 
 	return replaced
 }
 
 func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
-	s.targetLock.Lock()
-	defer s.targetLock.Unlock()
+	s.serviceLock.Lock()
+	defer s.serviceLock.Unlock()
 
 	if s.rollout == nil {
 		return ErrorRolloutTargetNotSet
@@ -195,8 +175,8 @@ func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
 }
 
 func (s *Service) StopRollout() error {
-	s.targetLock.Lock()
-	defer s.targetLock.Unlock()
+	s.serviceLock.Lock()
+	defer s.serviceLock.Unlock()
 
 	s.rolloutController = nil
 	slog.Info("Stopped rollout", "service", s.name)
@@ -211,30 +191,31 @@ type marshalledService struct {
 	Name              string             `json:"name"`
 	Hosts             []string           `json:"hosts"`
 	PathPrefixes      []string           `json:"path_prefixes"`
-	ActiveTarget      string             `json:"active_target"`
-	RolloutTarget     string             `json:"rollout_target"`
 	Options           ServiceOptions     `json:"options"`
 	TargetOptions     TargetOptions      `json:"target_options"`
+	ActiveTargets     []string           `json:"active_targets"`
+	RolloutTargets    []string           `json:"rollout_targets"`
 	PauseController   *PauseController   `json:"pause_controller"`
 	RolloutController *RolloutController `json:"rollout_controller"`
+
+	LegacyActiveTarget  string `json:"active_target,omitempty"`
+	LegacyRolloutTarget string `json:"rollout_target,omitempty"`
 }
 
 func (s *Service) MarshalJSON() ([]byte, error) {
-	activeTarget := s.active.Target()
-	rolloutTarget := ""
+	var rolloutTargets []string
 	if s.rollout != nil {
-		rolloutTarget = s.rollout.Target()
+		rolloutTargets = s.rollout.Targets().Names()
 	}
-	targetOptions := s.active.options
 
 	return json.Marshal(marshalledService{
 		Name:              s.name,
 		Hosts:             s.hosts,
 		PathPrefixes:      s.pathPrefixes,
-		ActiveTarget:      activeTarget,
-		RolloutTarget:     rolloutTarget,
+		ActiveTargets:     s.active.Targets().Names(),
+		RolloutTargets:    rolloutTargets,
 		Options:           s.options,
-		TargetOptions:     targetOptions,
+		TargetOptions:     s.targetOptions,
 		PauseController:   s.pauseController,
 		RolloutController: s.rolloutController,
 	})
@@ -250,12 +231,33 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.name = ms.Name
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
+	s.hosts = ms.Hosts
+	s.pathPrefixes = ms.PathPrefixes
+	s.options = ms.Options
+	s.targetOptions = ms.TargetOptions
 
-	s.initialize(ms.Hosts, ms.PathPrefixes, ms.Options)
-	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
-	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
+	if len(ms.ActiveTargets) == 0 && ms.LegacyActiveTarget != "" {
+		ms.ActiveTargets = []string{ms.LegacyActiveTarget}
+	}
+	if len(ms.RolloutTargets) == 0 && ms.LegacyRolloutTarget != "" {
+		ms.RolloutTargets = []string{ms.LegacyRolloutTarget}
+	}
 
-	return nil
+	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.TargetOptions)
+	if err != nil {
+		return err
+	}
+	s.active = NewLoadBalancer(activeTargets)
+	s.active.MarkAllHealthy()
+
+	rolloutTargets, err := NewTargetList(ms.RolloutTargets, ms.TargetOptions)
+	if err != nil {
+		return err
+	}
+	s.rollout = NewLoadBalancer(rolloutTargets)
+	s.rollout.MarkAllHealthy()
+
+	return s.initialize()
 }
 
 func (s *Service) Stop(drainTimeout time.Duration, message string) error {
@@ -266,7 +268,7 @@ func (s *Service) Stop(drainTimeout time.Duration, message string) error {
 
 	slog.Info("Service stopped", "service", s.name)
 
-	s.ActiveTarget().Drain(drainTimeout)
+	s.Drain(drainTimeout)
 	slog.Info("Service drained", "service", s.name)
 	return nil
 }
@@ -279,7 +281,7 @@ func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) 
 
 	slog.Info("Service paused", "service", s.name)
 
-	s.ActiveTarget().Drain(drainTimeout)
+	s.Drain(drainTimeout)
 	slog.Info("Service drained", "service", s.name)
 	return nil
 }
@@ -296,24 +298,44 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize(hosts []string, pathPrefixes []string, options ServiceOptions) error {
-	certManager, err := s.createCertManager(hosts, options)
+func (s *Service) initialize() error {
+	certManager, err := s.createCertManager(s.hosts, s.options)
 	if err != nil {
 		return err
 	}
 
-	middleware, err := s.createMiddleware(options, certManager)
+	middleware, err := s.createMiddleware(s.options, certManager)
 	if err != nil {
 		return err
 	}
 
-	s.hosts = hosts
-	s.pathPrefixes = pathPrefixes
-	s.options = options
 	s.certManager = certManager
 	s.middleware = middleware
 
 	return nil
+}
+
+func (s *Service) Drain(timeout time.Duration) {
+	PerformConcurrently(
+		func() {
+			s.active.DrainAll(timeout)
+		},
+		func() {
+			if s.rollout != nil {
+				s.rollout.DrainAll(timeout)
+			}
+		},
+	)
+}
+
+func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
+	lb := s.active
+	if s.rollout != nil && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
+		slog.Debug("Using rollout for request", "service", s.name, "path", req.URL.Path)
+		lb = s.rollout
+	}
+
+	return lb
 }
 
 func (s *Service) servesRootPath() bool {
@@ -384,13 +406,8 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	target, req, err := s.ClaimTarget(r)
-	if err != nil {
-		SetErrorResponse(w, req, http.StatusServiceUnavailable, nil)
-		return
-	}
-
-	target.SendRequest(w, req)
+	lb := s.loadBalancerForRequest(r)
+	lb.ServeHTTP(w, r)
 }
 
 func (s *Service) shouldRedirectToHTTPS(r *http.Request) bool {
@@ -398,7 +415,7 @@ func (s *Service) shouldRedirectToHTTPS(r *http.Request) bool {
 }
 
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
-	if s.pauseController.GetState() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
+	if s.pauseController.GetState() != PauseStateRunning && s.targetOptions.IsHealthCheckRequest(r) {
 		// When paused or stopped, return success for any health check
 		// requests from downstream services. Otherwise, they might consider
 		// us as unhealthy while in that state, and remove us from their
@@ -423,31 +440,6 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 	return false
 }
 
-func (s *Service) restoreSavedTarget(slot TargetSlot, savedTarget string, options TargetOptions) error {
-	if savedTarget == "" {
-		return nil // Nothing to restore
-	}
-
-	target, err := NewTarget(savedTarget, options)
-	if err != nil {
-		return err
-	}
-
-	// Restored targets are always considered healthy, because they would have
-	// been that way when they were saved.
-	target.state = TargetStateHealthy
-
-	switch slot {
-	case TargetSlotActive:
-		s.active = target
-
-	case TargetSlotRollout:
-		s.rollout = target
-	}
-
-	return nil
-}
-
 func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "close")
 
@@ -458,11 +450,4 @@ func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
 
 	url := "https://" + host + r.URL.RequestURI()
 	http.Redirect(w, r, url, http.StatusMovedPermanently)
-}
-
-func (s *Service) withWriteLock(fn func() error) error {
-	s.targetLock.Lock()
-	defer s.targetLock.Unlock()
-
-	return fn()
 }

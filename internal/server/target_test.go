@@ -277,11 +277,11 @@ func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
 func TestTarget_IsHealthCheckRequest(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 
-	assert.True(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up", nil)))
-	assert.True(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up?one=two", nil)))
+	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up", nil)))
+	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up?one=two", nil)))
 
-	assert.False(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up/other", nil)))
-	assert.False(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/health", nil)))
+	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up/other", nil)))
+	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/health", nil)))
 }
 
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
@@ -289,7 +289,7 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 		w.Write([]byte("ok"))
 	})
 
-	target.BeginHealthChecks()
+	target.BeginHealthChecks(nil)
 
 	require.True(t, target.WaitUntilHealthy(time.Second))
 	require.Equal(t, TargetStateHealthy, target.state)

@@ -132,14 +132,15 @@ func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 
 func TestService_MarshallingState(t *testing.T) {
 	targetOptions := TargetOptions{
-		HealthCheckConfig:   HealthCheckConfig{Path: "/health", Interval: 1, Timeout: 2},
+		HealthCheckConfig:   HealthCheckConfig{Path: "/health", Interval: time.Second, Timeout: 2 * time.Second},
 		BufferRequests:      true,
 		MaxMemoryBufferSize: 123,
 	}
 
 	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, targetOptions)
+	defer service.Dispose()
 	require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
-	service.SetTarget(TargetSlotRollout, service.active)
+	service.UpdateLoadBalancer(NewLoadBalancer(service.active.Targets()), TargetSlotRollout)
 
 	require.NoError(t, service.SetRolloutSplit(20, []string{"first"}))
 
@@ -150,10 +151,11 @@ func TestService_MarshallingState(t *testing.T) {
 	var service2 Service
 	err = json.NewDecoder(&buf).Decode(&service2)
 	require.NoError(t, err)
+	defer service2.Dispose()
 
 	assert.Equal(t, service.name, service2.name)
-	assert.Equal(t, service.active.Target(), service2.active.Target())
-	assert.Equal(t, service.active.options, service2.active.options)
+	assert.Equal(t, service.active.Targets().Names(), service2.active.Targets().Names())
+	assert.Equal(t, service.targetOptions, service2.targetOptions)
 
 	assert.Equal(t, PauseStateStopped, service2.pauseController.GetState())
 	assert.Equal(t, DefaultStopMessage, service2.pauseController.GetStopMessage())
@@ -178,9 +180,11 @@ func testCreateServiceWithHandler(t *testing.T, hosts []string, options ServiceO
 	target, err := NewTarget(serverURL.Host, targetOptions)
 	require.NoError(t, err)
 
-	service, err := NewService("test", hosts, defaultPaths, options)
+	service, err := NewService("test", hosts, defaultPaths, options, targetOptions)
 	require.NoError(t, err)
-	service.active = target
+
+	service.UpdateLoadBalancer(NewLoadBalancer(TargetList{target}), TargetSlotActive)
+	service.active.WaitUntilHealthy(time.Second)
 
 	return service
 }
