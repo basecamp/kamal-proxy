@@ -66,14 +66,33 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	TLSEnabled         bool   `json:"tls_enabled"`
-	TLSCertificatePath string `json:"tls_certificate_path"`
-	TLSPrivateKeyPath  string `json:"tls_private_key_path"`
-	TLSRedirect        bool   `json:"tls_redirect"`
-	ACMEDirectory      string `json:"acme_directory"`
-	ACMECachePath      string `json:"acme_cache_path"`
-	ErrorPagePath      string `json:"error_page_path"`
-	StripPrefix        bool   `json:"strip_prefix"`
+	Hosts              []string `json:"hosts"`
+	PathPrefixes       []string `json:"path_prefixes"`
+	TLSEnabled         bool     `json:"tls_enabled"`
+	TLSCertificatePath string   `json:"tls_certificate_path"`
+	TLSPrivateKeyPath  string   `json:"tls_private_key_path"`
+	TLSRedirect        bool     `json:"tls_redirect"`
+	ACMEDirectory      string   `json:"acme_directory"`
+	ACMECachePath      string   `json:"acme_cache_path"`
+	ErrorPagePath      string   `json:"error_page_path"`
+	StripPrefix        bool     `json:"strip_prefix"`
+}
+
+func (so *ServiceOptions) Normalize() {
+	so.Hosts = NormalizeHosts(so.Hosts)
+	so.PathPrefixes = NormalizePathPrefixes(so.PathPrefixes)
+}
+
+func (so *ServiceOptions) WithHosts(hosts []string) ServiceOptions {
+	options := *so
+	options.Hosts = hosts
+	return options
+}
+
+func (so *ServiceOptions) WithPathPrefixes(pathPrefixes []string) ServiceOptions {
+	options := *so
+	options.PathPrefixes = pathPrefixes
+	return options
 }
 
 func (so ServiceOptions) ScopedCachePath() string {
@@ -91,8 +110,6 @@ func (so ServiceOptions) ScopedCachePath() string {
 
 type Service struct {
 	name          string
-	hosts         []string
-	pathPrefixes  []string
 	options       ServiceOptions
 	targetOptions TargetOptions
 
@@ -107,14 +124,11 @@ type Service struct {
 	middleware  http.Handler
 }
 
-func NewService(name string, hosts []string, pathPrefixes []string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
-	hosts = NormalizeHosts(hosts)
-	pathPrefixes = NormalizePathPrefixes(pathPrefixes)
+func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+	options.Normalize()
 
 	service := &Service{
 		name:            name,
-		hosts:           hosts,
-		pathPrefixes:    pathPrefixes,
 		options:         options,
 		targetOptions:   targetOptions,
 		pauseController: NewPauseController(),
@@ -123,8 +137,8 @@ func NewService(name string, hosts []string, pathPrefixes []string, options Serv
 	return service, service.initialize()
 }
 
-func (s *Service) CopyWithOptions(hosts []string, pathPrefixes []string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
-	service, err := NewService(s.name, hosts, pathPrefixes, options, targetOptions)
+func (s *Service) CopyWithOptions(options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+	service, err := NewService(s.name, options, targetOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +203,6 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type marshalledService struct {
 	Name              string             `json:"name"`
-	Hosts             []string           `json:"hosts"`
-	PathPrefixes      []string           `json:"path_prefixes"`
 	Options           ServiceOptions     `json:"options"`
 	TargetOptions     TargetOptions      `json:"target_options"`
 	ActiveTargets     []string           `json:"active_targets"`
@@ -198,8 +210,10 @@ type marshalledService struct {
 	PauseController   *PauseController   `json:"pause_controller"`
 	RolloutController *RolloutController `json:"rollout_controller"`
 
-	LegacyActiveTarget  string `json:"active_target,omitempty"`
-	LegacyRolloutTarget string `json:"rollout_target,omitempty"`
+	LegacyActiveTarget  string   `json:"active_target,omitempty"`
+	LegacyRolloutTarget string   `json:"rollout_target,omitempty"`
+	LegacyHosts         []string `json:"hosts,omitempty"`
+	LegacyPathPrefixes  []string `json:"path_prefixes,omitempty"`
 }
 
 func (s *Service) MarshalJSON() ([]byte, error) {
@@ -210,8 +224,6 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(marshalledService{
 		Name:              s.name,
-		Hosts:             s.hosts,
-		PathPrefixes:      s.pathPrefixes,
 		ActiveTargets:     s.active.Targets().Names(),
 		RolloutTargets:    rolloutTargets,
 		Options:           s.options,
@@ -228,20 +240,25 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	s.name = ms.Name
-	s.pauseController = ms.PauseController
-	s.rolloutController = ms.RolloutController
-	s.hosts = ms.Hosts
-	s.pathPrefixes = ms.PathPrefixes
-	s.options = ms.Options
-	s.targetOptions = ms.TargetOptions
-
+	// Support previous version of service state
 	if len(ms.ActiveTargets) == 0 && ms.LegacyActiveTarget != "" {
 		ms.ActiveTargets = []string{ms.LegacyActiveTarget}
 	}
 	if len(ms.RolloutTargets) == 0 && ms.LegacyRolloutTarget != "" {
 		ms.RolloutTargets = []string{ms.LegacyRolloutTarget}
 	}
+	if len(ms.Options.Hosts) == 0 && len(ms.LegacyHosts) > 0 {
+		ms.Options.Hosts = ms.LegacyHosts
+	}
+	if len(ms.Options.PathPrefixes) == 0 && len(ms.LegacyPathPrefixes) > 0 {
+		ms.Options.PathPrefixes = ms.LegacyPathPrefixes
+	}
+
+	s.name = ms.Name
+	s.pauseController = ms.PauseController
+	s.rolloutController = ms.RolloutController
+	s.options = ms.Options
+	s.targetOptions = ms.TargetOptions
 
 	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.TargetOptions)
 	if err != nil {
@@ -299,7 +316,7 @@ func (s *Service) Resume() error {
 // Private
 
 func (s *Service) initialize() error {
-	certManager, err := s.createCertManager(s.hosts, s.options)
+	certManager, err := s.createCertManager(s.options)
 	if err != nil {
 		return err
 	}
@@ -339,10 +356,10 @@ func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 }
 
 func (s *Service) servesRootPath() bool {
-	return slices.Contains(s.pathPrefixes, rootPath)
+	return slices.Contains(s.options.PathPrefixes, rootPath)
 }
 
-func (s *Service) createCertManager(hosts []string, options ServiceOptions) (CertManager, error) {
+func (s *Service) createCertManager(options ServiceOptions) (CertManager, error) {
 	if !options.TLSEnabled {
 		return nil, nil
 	}
@@ -353,7 +370,7 @@ func (s *Service) createCertManager(hosts []string, options ServiceOptions) (Cer
 
 	// Ensure we're not trying to use Let's Encrypt to fetch a wildcard domain,
 	// as that is not supported with the challenge types that we use.
-	for _, host := range hosts {
+	for _, host := range options.Hosts {
 		if strings.Contains(host, "*") {
 			return nil, ErrorAutomaticTLSDoesNotSupportWildcards
 		}
@@ -362,7 +379,7 @@ func (s *Service) createCertManager(hosts []string, options ServiceOptions) (Cer
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		Cache:      autocert.DirCache(options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(hosts...),
+		HostPolicy: autocert.HostWhitelist(options.Hosts...),
 		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
 	}, nil
 }

@@ -105,22 +105,22 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) DeployService(name string, hosts []string, pathPrefixes []string, targetURLs []string,
+func (r *Router) DeployService(name string, targetURLs []string,
 	options ServiceOptions, targetOptions TargetOptions,
 	deployTimeout time.Duration, drainTimeout time.Duration,
 ) error {
-	service, err := r.findOrCreateService(name, hosts, pathPrefixes, options, targetOptions)
+	service, err := r.findOrCreateService(name, options, targetOptions)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "paths", pathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
+	slog.Info("Deploying", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
 	err = r.deployTargetsIntoService(service, TargetSlotActive, targetURLs, deployTimeout, drainTimeout)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deployed", "service", name, "hosts", hosts, "targets", targetURLs)
+	slog.Info("Deployed", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
 	return nil
 }
 
@@ -218,12 +218,12 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 	r.withReadLock(func() error {
 		for name, service := range r.services.All() {
 			if service.active != nil {
-				host := strings.Join(service.hosts, ",")
+				host := strings.Join(service.options.Hosts, ",")
 				if host == "" {
 					host = "*"
 				}
 
-				path := strings.Join(service.pathPrefixes, ",")
+				path := strings.Join(service.options.PathPrefixes, ",")
 				target := strings.Join(service.active.Targets().Names(), ",")
 
 				result[name] = ServiceDescription{
@@ -296,7 +296,7 @@ func (r *Router) installService(s *Service) error {
 	defer r.saveStateSnapshot()
 
 	err := r.withWriteLock(func() error {
-		conflict := r.services.CheckAvailability(s.name, s.hosts, s.pathPrefixes)
+		conflict := r.services.CheckAvailability(s.name, s.options)
 		if conflict != nil {
 			slog.Error("Host settings conflict with another service", "service", conflict.name)
 			return ErrorHostInUse
@@ -312,13 +312,13 @@ func (r *Router) installService(s *Service) error {
 	return nil
 }
 
-func (r *Router) findOrCreateService(name string, hosts []string, pathPrefixes []string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+func (r *Router) findOrCreateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
 	service := r.serviceForName(name)
 	if service != nil {
-		return service.CopyWithOptions(hosts, pathPrefixes, options, targetOptions)
+		return service.CopyWithOptions(options, targetOptions)
 	}
 
-	return NewService(name, hosts, pathPrefixes, options, targetOptions)
+	return NewService(name, options, targetOptions)
 }
 
 func (r *Router) saveStateSnapshot() error {

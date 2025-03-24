@@ -10,11 +10,11 @@ import (
 
 func TestServiceMap_ServiceForHost(t *testing.T) {
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{"example.com"}}))
-	sm.Set(normalizedService(&Service{name: "2", hosts: []string{"app.example.com"}}))
-	sm.Set(normalizedService(&Service{name: "3", hosts: []string{"api.example.com"}}))
-	sm.Set(normalizedService(&Service{name: "4", hosts: []string{"*.example.com"}}))
-	sm.Set(normalizedService(&Service{name: "5"}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}})})
+	sm.Set(&Service{name: "3", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"api.example.com"}})})
+	sm.Set(&Service{name: "4", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"*.example.com"}})})
+	sm.Set(&Service{name: "5", options: normalizedServiceOptions(defaultServiceOptions)})
 
 	assert.Equal(t, "1", sm.ServiceForHost("example.com").name)
 	assert.Equal(t, "2", sm.ServiceForHost("app.example.com").name)
@@ -25,19 +25,19 @@ func TestServiceMap_ServiceForHost(t *testing.T) {
 	assert.Equal(t, "5", sm.ServiceForHost("other.com").name)
 
 	sm = NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{"example.com"}}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
 
 	assert.Nil(t, sm.ServiceForHost("app.example.com"))
 }
 
 func TestServiceMap_ServiceForRequest(t *testing.T) {
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{"example.com"}}))
-	sm.Set(normalizedService(&Service{name: "2", hosts: []string{"example.com"}, pathPrefixes: []string{"/api"}}))
-	sm.Set(normalizedService(&Service{name: "3", hosts: []string{"example.com"}, pathPrefixes: []string{"/api/special"}}))
-	sm.Set(normalizedService(&Service{name: "4", hosts: []string{"other.example.com"}, pathPrefixes: []string{"/api"}}))
-	sm.Set(normalizedService(&Service{name: "5", pathPrefixes: []string{"/api"}}))
-	sm.Set(normalizedService(&Service{name: "6"}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/api"}})})
+	sm.Set(&Service{name: "3", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/api/special"}})})
+	sm.Set(&Service{name: "4", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"other.example.com"}, PathPrefixes: []string{"/api"}})})
+	sm.Set(&Service{name: "5", options: normalizedServiceOptions(ServiceOptions{PathPrefixes: []string{"/api"}})})
+	sm.Set(&Service{name: "6", options: normalizedServiceOptions(defaultServiceOptions)})
 
 	checkService := func(expected string, url string) {
 		servivce, _ := sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, url, nil))
@@ -56,32 +56,27 @@ func TestServiceMap_ServiceForRequest(t *testing.T) {
 
 func TestServiceMap_CheckAvailability(t *testing.T) {
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{"example.com"}}))
-	sm.Set(normalizedService(&Service{name: "2", hosts: []string{"app.example.com"}}))
-	sm.Set(normalizedService(&Service{name: "3", hosts: []string{"app.example.com"}, pathPrefixes: []string{"/api"}}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}})})
+	sm.Set(&Service{name: "3", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}, PathPrefixes: []string{"/api"}})})
 
-	assert.Nil(t, sm.CheckAvailability("2", []string{"app.example.com"}, defaultPaths))
+	assert.Nil(t, sm.CheckAvailability("2", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}})))
 
-	assert.Nil(t, sm.CheckAvailability("4", []string{"api.example.com"}, defaultPaths))
-	assert.Nil(t, sm.CheckAvailability("4", []string{""}, defaultPaths))
-	assert.Nil(t, sm.CheckAvailability("4", []string{"app.example.com"}, []string{"/app"}))
-	assert.Nil(t, sm.CheckAvailability("3", []string{"app.example.com"}, []string{"/api"}))
+	assert.Nil(t, sm.CheckAvailability("4", normalizedServiceOptions(ServiceOptions{Hosts: []string{"api.example.com"}})))
+	assert.Nil(t, sm.CheckAvailability("4", normalizedServiceOptions(ServiceOptions{Hosts: []string{""}})))
+	assert.Nil(t, sm.CheckAvailability("4", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}, PathPrefixes: []string{"/app"}})))
+	assert.Nil(t, sm.CheckAvailability("3", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}, PathPrefixes: []string{"/api"}})))
 
-	assert.Equal(t, "2", sm.CheckAvailability("4", []string{"app.example.com"}, defaultPaths).name)
-	assert.Equal(t, "3", sm.CheckAvailability("4", []string{"app.example.com"}, []string{"/api"}).name)
+	assert.Equal(t, "2", sm.CheckAvailability("4", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}})).name)
+	assert.Equal(t, "3", sm.CheckAvailability("4", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}, PathPrefixes: []string{"/api"}})).name)
 }
 
 func TestServiceMap_SyncingTLSSettingsFromRootPath(t *testing.T) {
-	optionsWithTLS := ServiceOptions{
-		TLSEnabled:  true,
-		TLSRedirect: false,
-	}
-
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{"1.example.com"}, options: optionsWithTLS}))
-	sm.Set(normalizedService(&Service{name: "2", hosts: []string{"1.example.com"}, pathPrefixes: []string{"/api"}}))
-	sm.Set(normalizedService(&Service{name: "3", hosts: []string{"2.example.com"}, options: defaultServiceOptions}))
-	sm.Set(normalizedService(&Service{name: "4", hosts: []string{"2.example.com"}, pathPrefixes: []string{"/api"}}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"1.example.com"}, TLSEnabled: true, TLSRedirect: false})})
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"1.example.com"}, PathPrefixes: []string{"/api"}})})
+	sm.Set(&Service{name: "3", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"2.example.com"}, TLSEnabled: false, TLSRedirect: true})})
+	sm.Set(&Service{name: "4", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"2.example.com"}, PathPrefixes: []string{"/api"}})})
 
 	assert.True(t, sm.Get("1").options.TLSEnabled)
 	assert.False(t, sm.Get("1").options.TLSRedirect)
@@ -101,14 +96,14 @@ func TestServiceMap_SyncingTLSSettingsFromRootPath(t *testing.T) {
 
 func TestServiceMap_CheckHostAvailability_EmptyHostsFirst(t *testing.T) {
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{}}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(defaultServiceOptions)})
 
-	assert.Nil(t, sm.CheckAvailability("2", []string{"app.example.com"}, defaultPaths))
+	assert.Nil(t, sm.CheckAvailability("2", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}})))
 }
 
 func BenchmarkServiceMap_SingleServiceRouting(b *testing.B) {
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1"}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(defaultServiceOptions)})
 
 	b.Run("exact match", func(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
@@ -121,9 +116,9 @@ func BenchmarkServiceMap_SingleServiceRouting(b *testing.B) {
 
 func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{"one.example.com"}}))
-	sm.Set(normalizedService(&Service{name: "2", hosts: []string{"*.two.example.com"}}))
-	sm.Set(normalizedService(&Service{name: "3"}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"one.example.com"}})})
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"*.two.example.com"}})})
+	sm.Set(&Service{name: "3", options: normalizedServiceOptions(defaultServiceOptions)})
 
 	b.Run("exact match", func(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
@@ -152,10 +147,10 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 
 func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 	sm := NewServiceMap()
-	sm.Set(normalizedService(&Service{name: "1", hosts: []string{"one.example.com"}, pathPrefixes: []string{"/api"}}))
-	sm.Set(normalizedService(&Service{name: "2", hosts: []string{"one.example.com"}}))
-	sm.Set(normalizedService(&Service{name: "3", pathPrefixes: []string{"/app"}}))
-	sm.Set(normalizedService(&Service{name: "4"}))
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"one.example.com"}, PathPrefixes: []string{"/api"}})})
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"one.example.com"}})})
+	sm.Set(&Service{name: "3", options: normalizedServiceOptions(ServiceOptions{PathPrefixes: []string{"/app"}})})
+	sm.Set(&Service{name: "4", options: normalizedServiceOptions(defaultServiceOptions)})
 
 	b.Run("host and path match", func(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/api", nil)
@@ -192,9 +187,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 
 // Helpers
 
-func normalizedService(s *Service) *Service {
-	s.hosts = NormalizeHosts(s.hosts)
-	s.pathPrefixes = NormalizePathPrefixes(s.pathPrefixes)
-
-	return s
+func normalizedServiceOptions(so ServiceOptions) ServiceOptions {
+	so.Normalize()
+	return so
 }

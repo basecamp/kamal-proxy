@@ -55,12 +55,9 @@ func (m *ServiceMap) All() iter.Seq2[string, *Service] {
 	}
 }
 
-func (m *ServiceMap) CheckAvailability(name string, hosts []string, pathPrefixes []string) *Service {
-	pathPrefixes = NormalizePathPrefixes(pathPrefixes)
-	hosts = NormalizeHosts(hosts)
-
-	for _, host := range hosts {
-		for _, pathPrefix := range pathPrefixes {
+func (m *ServiceMap) CheckAvailability(name string, options ServiceOptions) *Service {
+	for _, host := range options.Hosts {
+		for _, pathPrefix := range options.PathPrefixes {
 			bindings := m.requestServiceMap[host]
 			for _, binding := range bindings {
 				if pathPrefix == binding.pathPrefix && binding.service.name != name {
@@ -129,8 +126,8 @@ func (m *ServiceMap) updateRequestServiceMap() {
 	requestServiceMap := requestServiceMap{}
 
 	for _, service := range m.services {
-		for _, host := range service.hosts {
-			for _, pathPrefix := range service.pathPrefixes {
+		for _, host := range service.options.Hosts {
+			for _, pathPrefix := range service.options.PathPrefixes {
 				bindings := requestServiceMap[host]
 				if bindings == nil {
 					bindings = []*pathBinding{}
@@ -153,8 +150,8 @@ func (m *ServiceMap) syncTLSOptionsFromRootDomain() {
 	for _, service := range m.services {
 		if !service.servesRootPath() {
 			host := ""
-			if len(service.hosts) > 0 {
-				host = service.hosts[0]
+			if len(service.options.Hosts) > 0 {
+				host = service.options.Hosts[0]
 			}
 
 			rootService := m.ServiceForHost(host)

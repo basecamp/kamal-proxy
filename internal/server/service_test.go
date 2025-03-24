@@ -15,7 +15,7 @@ import (
 )
 
 func TestService_ServeRequest(t *testing.T) {
-	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
+	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
 
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(""))
 	w := httptest.NewRecorder()
@@ -25,7 +25,7 @@ func TestService_ServeRequest(t *testing.T) {
 }
 
 func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
-	service := testCreateService(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true, TLSRedirect: true}, defaultTargetOptions)
+	service := testCreateService(t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: true}, defaultTargetOptions)
 
 	require.True(t, service.options.TLSEnabled)
 
@@ -46,7 +46,7 @@ func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 	var forwardedProto string
 
-	service := testCreateServiceWithHandler(t, []string{"example.com"}, ServiceOptions{TLSEnabled: true, TLSRedirect: false}, defaultTargetOptions,
+	service := testCreateServiceWithHandler(t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: false}, defaultTargetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			forwardedProto = r.Header.Get("X-Forwarded-Proto")
 		}),
@@ -74,8 +74,8 @@ func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
 
 	service := testCreateService(
 		t,
-		[]string{"example.com"},
 		ServiceOptions{
+			Hosts:              []string{"example.com"},
 			TLSEnabled:         true,
 			TLSCertificatePath: certPath,
 			TLSPrivateKeyPath:  keyPath,
@@ -87,7 +87,7 @@ func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
 }
 
 func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
-	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
+	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
 
 	require.False(t, service.options.TLSEnabled)
 
@@ -105,7 +105,7 @@ func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
 }
 
 func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
-	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, defaultTargetOptions)
+	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
 
 	checkRequest := func(path string) int {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -137,7 +137,7 @@ func TestService_MarshallingState(t *testing.T) {
 		MaxMemoryBufferSize: 123,
 	}
 
-	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, targetOptions)
+	service := testCreateService(t, defaultServiceOptions, targetOptions)
 	defer service.Dispose()
 	require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
 	service.UpdateLoadBalancer(NewLoadBalancer(service.active.Targets()), TargetSlotRollout)
@@ -164,13 +164,13 @@ func TestService_MarshallingState(t *testing.T) {
 	assert.Equal(t, []string{"first"}, service2.rolloutController.Allowlist)
 }
 
-func testCreateService(t *testing.T, hosts []string, options ServiceOptions, targetOptions TargetOptions) *Service {
-	return testCreateServiceWithHandler(t, hosts, options, targetOptions,
+func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
+	return testCreateServiceWithHandler(t, options, targetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 	)
 }
 
-func testCreateServiceWithHandler(t *testing.T, hosts []string, options ServiceOptions, targetOptions TargetOptions, handler http.Handler) *Service {
+func testCreateServiceWithHandler(t *testing.T, options ServiceOptions, targetOptions TargetOptions, handler http.Handler) *Service {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
@@ -180,7 +180,7 @@ func testCreateServiceWithHandler(t *testing.T, hosts []string, options ServiceO
 	target, err := NewTarget(serverURL.Host, targetOptions)
 	require.NoError(t, err)
 
-	service, err := NewService("test", hosts, defaultPaths, options, targetOptions)
+	service, err := NewService("test", options, targetOptions)
 	require.NoError(t, err)
 
 	service.UpdateLoadBalancer(NewLoadBalancer(TargetList{target}), TargetSlotActive)
