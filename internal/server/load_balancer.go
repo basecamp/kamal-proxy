@@ -38,7 +38,7 @@ func (tl TargetList) Names() []string {
 
 func (tl TargetList) Dispose() {
 	for _, target := range tl {
-		target.Close()
+		target.Dispose()
 	}
 }
 
@@ -61,8 +61,8 @@ func NewLoadBalancer(targets TargetList) *LoadBalancer {
 
 func (lb *LoadBalancer) Targets() TargetList {
 	lb.lock.Lock()
-
 	defer lb.lock.Unlock()
+
 	return lb.all
 }
 

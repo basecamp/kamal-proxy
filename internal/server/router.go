@@ -105,10 +105,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) DeployService(name string, targetURLs []string,
-	options ServiceOptions, targetOptions TargetOptions,
-	deployTimeout time.Duration, drainTimeout time.Duration,
-) error {
+func (r *Router) DeployService(name string, targetURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	service, err := r.findOrCreateService(name, options, targetOptions)
 	if err != nil {
 		return err

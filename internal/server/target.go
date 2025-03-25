@@ -138,7 +138,7 @@ func (t *Target) State() TargetState {
 	return t.state
 }
 
-func (t *Target) Close() {
+func (t *Target) Dispose() {
 	t.stopHealthChecks()
 }
 
