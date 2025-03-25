@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -89,6 +90,7 @@ func (to *TargetOptions) canonicalizeLogHeaders() {
 
 type Target struct {
 	targetURL    *url.URL
+	readonly     bool
 	options      TargetOptions
 	proxyHandler http.Handler
 
@@ -98,7 +100,6 @@ type Target struct {
 
 	healthcheck   *HealthCheck
 	stateConsumer TargetStateConsumer
-	becameHealthy chan (bool)
 }
 
 func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
@@ -129,6 +130,15 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 	return target, nil
 }
 
+func NewReadOnlyTarget(targetURL string, options TargetOptions) (*Target, error) {
+	target, err := NewTarget(targetURL, options)
+	if err == nil {
+		target.readonly = true
+	}
+
+	return target, err
+}
+
 func (t *Target) Target() string {
 	return t.targetURL.Host
 }
@@ -140,8 +150,8 @@ func (t *Target) State() TargetState {
 	return t.state
 }
 
-func (t *Target) Dispose() {
-	t.stopHealthChecks()
+func (t *Target) ReadOnly() bool {
+	return t.readonly
 }
 
 func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
@@ -206,47 +216,39 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 }
 
 func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
-	t.stateConsumer = stateConsumer
-	t.becameHealthy = make(chan bool)
-
-	t.healthcheck = NewHealthCheck(t,
-		t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
-		t.options.HealthCheckConfig.Interval,
-		t.options.HealthCheckConfig.Timeout,
-	)
+	t.withInflightLock(func() {
+		t.stateConsumer = stateConsumer
+		t.healthcheck = NewHealthCheck(t,
+			t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
+			t.options.HealthCheckConfig.Interval,
+			t.options.HealthCheckConfig.Timeout,
+		)
+	})
 }
 
-func (t *Target) stopHealthChecks() {
-	if t.healthcheck != nil {
-		t.healthcheck.Close()
-		t.healthcheck = nil
-	}
-}
-
-func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
-	select {
-	case <-time.After(timeout):
-		t.stopHealthChecks()
-		return false
-
-	case <-t.becameHealthy:
-		return true
-	}
+func (t *Target) StopHealthChecks() {
+	t.withInflightLock(func() {
+		if t.healthcheck != nil {
+			t.healthcheck.Close()
+			t.healthcheck = nil
+			t.stateConsumer = nil
+		}
+	})
 }
 
 // HealthCheckConsumer
 
 func (t *Target) HealthCheckCompleted(success bool) {
-	previousState := t.state
-	newState := t.state
+	var previousState, newState TargetState
 
 	t.withInflightLock(func() {
+		previousState = t.state
+
 		switch success {
 		case true:
 			switch t.state {
 			case TargetStateAdding:
 				t.state = TargetStateHealthy
-				close(t.becameHealthy)
 			default:
 				t.state = TargetStateHealthy
 			}
@@ -256,6 +258,7 @@ func (t *Target) HealthCheckCompleted(success bool) {
 				t.state = TargetStateUnhealthy
 			}
 		}
+
 		newState = t.state
 	})
 
@@ -423,10 +426,7 @@ func (t *Target) pendingRequestsToCancel() inflightMap {
 	defer t.inflightLock.Unlock()
 
 	result := inflightMap{}
-	for k, v := range t.inflight {
-		result[k] = v
-	}
-
+	maps.Copy(result, t.inflight)
 	return result
 }
 

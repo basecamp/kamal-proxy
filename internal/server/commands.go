@@ -19,6 +19,7 @@ type CommandHandler struct {
 type DeployArgs struct {
 	Service        string
 	TargetURLs     []string
+	ReaderURLs     []string
 	DeployTimeout  time.Duration
 	DrainTimeout   time.Duration
 	ServiceOptions ServiceOptions
@@ -48,6 +49,7 @@ type RemoveArgs struct {
 type RolloutDeployArgs struct {
 	Service       string
 	TargetURLs    []string
+	ReaderURLs    []string
 	DeployTimeout time.Duration
 	DrainTimeout  time.Duration
 }
@@ -113,7 +115,7 @@ func (h *CommandHandler) Close() error {
 }
 
 func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
-	return h.router.DeployService(args.Service, args.TargetURLs, args.ServiceOptions, args.TargetOptions, args.DeployTimeout, args.DrainTimeout)
+	return h.router.DeployService(args.Service, args.TargetURLs, args.ReaderURLs, args.ServiceOptions, args.TargetOptions, args.DeployTimeout, args.DrainTimeout)
 }
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
@@ -139,7 +141,7 @@ func (h *CommandHandler) List(args bool, reply *ListResponse) error {
 }
 
 func (h *CommandHandler) RolloutDeploy(args RolloutDeployArgs, reply *bool) error {
-	return h.router.SetRolloutTargets(args.Service, args.TargetURLs, args.DeployTimeout, args.DrainTimeout)
+	return h.router.SetRolloutTargets(args.Service, args.TargetURLs, args.ReaderURLs, args.DeployTimeout, args.DrainTimeout)
 }
 
 func (h *CommandHandler) RolloutSet(args RolloutSetArgs, reply *bool) error {
