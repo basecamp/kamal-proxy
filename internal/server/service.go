@@ -27,9 +27,10 @@ const (
 )
 
 const (
-	DefaultDeployTimeout = time.Second * 30
-	DefaultDrainTimeout  = time.Second * 30
-	DefaultPauseTimeout  = time.Second * 30
+	DefaultDeployTimeout         = time.Second * 30
+	DefaultDrainTimeout          = time.Second * 30
+	DefaultPauseTimeout          = time.Second * 30
+	DefaultWriterAffinityTimeout = time.Second * 3
 
 	DefaultHealthCheckPath     = "/up"
 	DefaultHealthCheckInterval = time.Second
@@ -66,16 +67,17 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	Hosts              []string `json:"hosts"`
-	PathPrefixes       []string `json:"path_prefixes"`
-	TLSEnabled         bool     `json:"tls_enabled"`
-	TLSCertificatePath string   `json:"tls_certificate_path"`
-	TLSPrivateKeyPath  string   `json:"tls_private_key_path"`
-	TLSRedirect        bool     `json:"tls_redirect"`
-	ACMEDirectory      string   `json:"acme_directory"`
-	ACMECachePath      string   `json:"acme_cache_path"`
-	ErrorPagePath      string   `json:"error_page_path"`
-	StripPrefix        bool     `json:"strip_prefix"`
+	Hosts                 []string      `json:"hosts"`
+	PathPrefixes          []string      `json:"path_prefixes"`
+	TLSEnabled            bool          `json:"tls_enabled"`
+	TLSCertificatePath    string        `json:"tls_certificate_path"`
+	TLSPrivateKeyPath     string        `json:"tls_private_key_path"`
+	TLSRedirect           bool          `json:"tls_redirect"`
+	ACMEDirectory         string        `json:"acme_directory"`
+	ACMECachePath         string        `json:"acme_cache_path"`
+	ErrorPagePath         string        `json:"error_page_path"`
+	StripPrefix           bool          `json:"strip_prefix"`
+	WriterAffinityTimeout time.Duration `json:"writer_affinity_timeout"`
 }
 
 func (so *ServiceOptions) Normalize() {
@@ -125,8 +127,6 @@ type Service struct {
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
-	options.Normalize()
-
 	service := &Service{
 		name:            name,
 		options:         options,
@@ -137,18 +137,11 @@ func NewService(name string, options ServiceOptions, targetOptions TargetOptions
 	return service, service.initialize()
 }
 
-func (s *Service) CopyWithOptions(options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
-	service, err := NewService(s.name, options, targetOptions)
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOptions) error {
+	s.options = options
+	s.targetOptions = targetOptions
 
-	service.active = s.active
-	service.rollout = s.rollout
-	service.pauseController = s.pauseController
-	service.rolloutController = s.rolloutController
-
-	return service, service.initialize()
+	return s.initialize()
 }
 
 func (s *Service) Dispose() {
@@ -206,7 +199,9 @@ type marshalledService struct {
 	Options           ServiceOptions     `json:"options"`
 	TargetOptions     TargetOptions      `json:"target_options"`
 	ActiveTargets     []string           `json:"active_targets"`
+	ActiveReaders     []string           `json:"active_readers"`
 	RolloutTargets    []string           `json:"rollout_targets"`
+	RolloutReaders    []string           `json:"rollout_readers"`
 	PauseController   *PauseController   `json:"pause_controller"`
 	RolloutController *RolloutController `json:"rollout_controller"`
 
@@ -218,14 +213,18 @@ type marshalledService struct {
 
 func (s *Service) MarshalJSON() ([]byte, error) {
 	var rolloutTargets []string
+	var rolloutReaders []string
 	if s.rollout != nil {
-		rolloutTargets = s.rollout.Targets().Names()
+		rolloutTargets = s.rollout.WriteTargets().Names()
+		rolloutReaders = s.rollout.ReadTargets().Names()
 	}
 
 	return json.Marshal(marshalledService{
 		Name:              s.name,
-		ActiveTargets:     s.active.Targets().Names(),
+		ActiveTargets:     s.active.WriteTargets().Names(),
+		ActiveReaders:     s.active.ReadTargets().Names(),
 		RolloutTargets:    rolloutTargets,
+		RolloutReaders:    rolloutReaders,
 		Options:           s.options,
 		TargetOptions:     s.targetOptions,
 		PauseController:   s.pauseController,
@@ -260,19 +259,21 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.options = ms.Options
 	s.targetOptions = ms.TargetOptions
 
-	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.TargetOptions)
+	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.ActiveReaders, ms.TargetOptions)
 	if err != nil {
 		return err
 	}
-	s.active = NewLoadBalancer(activeTargets)
+	s.active = NewLoadBalancer(activeTargets, s.options.WriterAffinityTimeout)
 	s.active.MarkAllHealthy()
 
-	rolloutTargets, err := NewTargetList(ms.RolloutTargets, ms.TargetOptions)
+	rolloutTargets, err := NewTargetList(ms.RolloutTargets, ms.RolloutReaders, ms.TargetOptions)
 	if err != nil {
 		return err
 	}
-	s.rollout = NewLoadBalancer(rolloutTargets)
-	s.rollout.MarkAllHealthy()
+	if len(rolloutTargets) > 0 {
+		s.rollout = NewLoadBalancer(rolloutTargets, s.options.WriterAffinityTimeout)
+		s.rollout.MarkAllHealthy()
+	}
 
 	return s.initialize()
 }
@@ -423,8 +424,18 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	sendRequest := s.startLoadBalancerRequest(w, r)
+	if sendRequest != nil {
+		sendRequest()
+	}
+}
+
+func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Request) func() {
+	s.serviceLock.Lock()
+	defer s.serviceLock.Unlock()
+
 	lb := s.loadBalancerForRequest(r)
-	lb.ServeHTTP(w, r)
+	return lb.StartRequest(w, r)
 }
 
 func (s *Service) shouldRedirectToHTTPS(r *http.Request) bool {

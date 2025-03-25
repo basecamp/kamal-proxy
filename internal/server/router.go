@@ -105,36 +105,57 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) DeployService(name string, targetURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	service, err := r.findOrCreateService(name, options, targetOptions)
+func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	options.Normalize()
+	slog.Info("Deploying", "service", name, "target", targetURLs, "hosts", options.Hosts, "paths", options.PathPrefixes, "tls", options.TLSEnabled)
+
+	lb, err := r.createLoadBalancer(targetURLs, readerURLs, options, targetOptions, deployTimeout)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deploying", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
-	err = r.deployTargetsIntoService(service, TargetSlotActive, targetURLs, deployTimeout, drainTimeout)
+	replaced, err := r.installLoadBalancer(name, TargetSlotActive, lb, options, func() (*Service, error) {
+		return r.createOrUpdateService(name, options, targetOptions)
+	})
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deployed", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
+	if replaced != nil {
+		replaced.Dispose()
+		replaced.DrainAll(drainTimeout)
+	}
+
+	slog.Info("Deployed", "service", name, "target", targetURLs, "hosts", options.Hosts, "paths", options.PathPrefixes, "tls", options.TLSEnabled)
 	return nil
 }
 
-func (r *Router) SetRolloutTargets(name string, targetURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	slog.Info("Deploying for rollout", "service", name, "target", targetURLs)
+
 	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
 
-	slog.Info("Deploying for rollout", "service", name, "targets", targetURLs)
-
-	err := r.deployTargetsIntoService(service, TargetSlotRollout, targetURLs, deployTimeout, drainTimeout)
+	lb, err := r.createLoadBalancer(targetURLs, readerURLs, service.options, service.targetOptions, deployTimeout)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deployed for rollout", "service", name, "targets", targetURLs)
+	replaced, err := r.installLoadBalancer(name, TargetSlotRollout, lb, service.options, func() (*Service, error) {
+		return service, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if replaced != nil {
+		replaced.Dispose()
+		replaced.DrainAll(drainTimeout)
+	}
+
+	slog.Info("Deployed for rollout", "service", name, "target", targetURLs)
 	return nil
 }
 
@@ -261,61 +282,55 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 
 // Private
 
-func (r *Router) deployTargetsIntoService(service *Service, targetSlot TargetSlot, targetURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	tl, err := NewTargetList(targetURLs, service.targetOptions)
-	if err != nil {
-		return err
+func (r *Router) createOrUpdateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+	service := r.services.Get(name)
+	if service == nil {
+		return NewService(name, options, targetOptions)
 	}
 
-	lb := NewLoadBalancer(tl)
+	err := service.UpdateOptions(options, targetOptions)
+	return service, err
+}
+
+func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration) (*LoadBalancer, error) {
+	tl, err := NewTargetList(targetURLs, readerURLs, targetOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout)
 	err = lb.WaitUntilHealthy(deployTimeout)
 	if err != nil {
 		lb.Dispose()
-		return err
+		return nil, err
 	}
 
-	replaced := service.UpdateLoadBalancer(lb, targetSlot)
-
-	err = r.installService(service)
-	if err != nil {
-		return err
-	}
-
-	if replaced != nil {
-		replaced.DrainAll(drainTimeout)
-		replaced.Dispose()
-	}
-
-	return nil
+	return lb, nil
 }
 
-func (r *Router) installService(s *Service) error {
+func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalancer, options ServiceOptions, getService func() (*Service, error)) (*LoadBalancer, error) {
 	defer r.saveStateSnapshot()
 
+	var replaced *LoadBalancer
+
 	err := r.withWriteLock(func() error {
-		conflict := r.services.CheckAvailability(s.name, s.options)
+		conflict := r.services.CheckAvailability(name, options)
 		if conflict != nil {
 			slog.Error("Host settings conflict with another service", "service", conflict.name)
 			return ErrorHostInUse
 		}
 
-		r.services.Set(s)
+		service, err := getService()
+		if err != nil {
+			return err
+		}
+
+		replaced = service.UpdateLoadBalancer(lb, slot)
+		r.services.Set(service)
 		return nil
 	})
-	if err != nil {
-		return err
-	}
 
-	return nil
-}
-
-func (r *Router) findOrCreateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
-	service := r.serviceForName(name)
-	if service != nil {
-		return service.CopyWithOptions(options, targetOptions)
-	}
-
-	return NewService(name, options, targetOptions)
+	return replaced, err
 }
 
 func (r *Router) saveStateSnapshot() error {

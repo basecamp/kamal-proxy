@@ -16,8 +16,8 @@ const (
 )
 
 var (
-	ErrorHealthCheckRequestTimedOut  = errors.New("Request timed out")
-	ErrorHealthCheckUnexpectedStatus = errors.New("Unexpected status")
+	ErrorHealthCheckRequestTimedOut  = errors.New("request timed out")
+	ErrorHealthCheckUnexpectedStatus = errors.New("unexpected status")
 )
 
 type HealthCheckConsumer interface {
