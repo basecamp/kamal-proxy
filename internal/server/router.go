@@ -106,50 +106,79 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) SetServiceTarget(name string, hosts []string, pathPrefixes []string, targetURL string,
+func (r *Router) SetServiceTargets(name string, hosts []string, pathPrefixes []string, targetURLs []string,
 	options ServiceOptions, targetOptions TargetOptions,
 	deployTimeout time.Duration, drainTimeout time.Duration,
 ) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying", "service", name, "hosts", hosts, "paths", pathPrefixes, "target", targetURL, "tls", options.TLSEnabled, "strip", options.StripPrefix)
+	slog.Info("Deploying", "service", name, "hosts", hosts, "paths", pathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
 
-	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
+	targets := make([]*Target, 0, len(targetURLs))
+	for _, targetURL := range targetURLs {
+		target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
+		if err != nil {
+			for _, t := range targets {
+				t.StopHealthChecks()
+			}
+			return err
+		}
+		targets = append(targets, target)
+	}
+
+	err := r.setActiveTargets(name, hosts, pathPrefixes, targets, options, drainTimeout)
 	if err != nil {
+		for _, target := range targets {
+			target.StopHealthChecks()
+		}
 		return err
 	}
 
-	err = r.setActiveTarget(name, hosts, pathPrefixes, target, options, drainTimeout)
-	if err != nil {
-		return err
-	}
-
-	slog.Info("Deployed", "service", name, "hosts", hosts, "target", targetURL)
+	slog.Info("Deployed", "service", name, "hosts", hosts, "targets", targetURLs)
 	return nil
 }
 
-func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+func (r *Router) SetRolloutTargets(name string, targetURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	defer r.saveStateSnapshot()
 
-	slog.Info("Deploying for rollout", "service", name, "target", targetURL)
+	slog.Info("Deploying for rollout", "service", name, "targets", targetURLs)
 
 	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
-	targetOptions := service.ActiveTarget().options
 
-	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
-	if err != nil {
-		return err
+	activeTargets := service.activePool.GetTargets()
+	if len(activeTargets) == 0 {
+		return ErrorNoHealthyTargets
+	}
+	targetOptions := activeTargets[0].options
+
+	var newTargets []*Target
+	var deployedTargets []*Target
+
+	for _, targetURL := range targetURLs {
+		target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
+		if err != nil {
+			for _, t := range deployedTargets {
+				t.StopHealthChecks()
+			}
+			return err
+		}
+
+		newTargets = append(newTargets, target)
+		deployedTargets = append(deployedTargets, target)
 	}
 
-	replacedTarget := service.SetTarget(TargetSlotRollout, target)
-	if replacedTarget != nil {
-		replacedTarget.Drain(drainTimeout)
+	oldTargets := service.rolloutPool.GetTargets()
+
+	service.rolloutPool.ReplaceTargets(newTargets)
+
+	for _, oldTarget := range oldTargets {
+		oldTarget.Drain(drainTimeout)
 	}
 
-	slog.Info("Deployed for rollout", "service", name, "target", targetURL)
+	slog.Info("Deployed for rollout", "service", name, "targets", targetURLs)
 	return nil
 }
 
@@ -240,7 +269,8 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 
 	r.withReadLock(func() error {
 		for name, service := range r.services.All() {
-			if service.active != nil {
+			activeTargets := service.activePool.GetTargets()
+			if len(activeTargets) > 0 {
 				host := strings.Join(service.hosts, ",")
 				if host == "" {
 					host = "*"
@@ -251,7 +281,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 				result[name] = ServiceDescription{
 					Host:   host,
 					Path:   path,
-					Target: service.active.Target(),
+					Target: activeTargets[0].Target(),
 					TLS:    service.options.TLSEnabled,
 					State:  service.pauseController.GetState().String(),
 				}
@@ -337,6 +367,45 @@ func (r *Router) serviceForHost(host string) *Service {
 	defer r.serviceLock.RUnlock()
 
 	return r.services.ServiceForHost(host)
+}
+
+func (r *Router) setActiveTargets(name string, hosts []string, pathPrefixes []string, targets []*Target, options ServiceOptions, drainTimeout time.Duration) error {
+	var replacedTargets []*Target
+
+	err := r.withWriteLock(func() error {
+		conflict := r.services.CheckAvailability(name, hosts, pathPrefixes)
+		if conflict != nil {
+			slog.Error("Host settings conflict with another service", "service", conflict.name)
+			return ErrorHostInUse
+		}
+
+		var err error
+		service := r.services.Get(name)
+		if service == nil {
+			service, err = NewService(name, hosts, pathPrefixes, options)
+		} else {
+			err = service.UpdateOptions(hosts, pathPrefixes, options)
+		}
+		if err != nil {
+			return err
+		}
+
+		r.services.Set(service)
+
+		replacedTargets = service.activePool.GetTargets()
+		service.activePool.ReplaceTargets(targets)
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, replacedTarget := range replacedTargets {
+		replacedTarget.Drain(drainTimeout)
+	}
+
+	return nil
 }
 
 func (r *Router) setActiveTarget(name string, hosts []string, pathPrefixes []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {

@@ -27,7 +27,7 @@ func newDeployCommand() *deployCommand {
 		ValidArgs: []string{"service"},
 	}
 
-	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetURL, "target", "", "Target host to deploy")
+	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.TargetURLs, "target", []string{}, "Target host(s) to deploy (for load balancing)")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.Hosts, "host", []string{}, "Host(s) to serve this target on (empty for wildcard)")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.PathPrefixes, "path-prefix", []string{}, "Deploy the service below the specified path(s)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.StripPrefix, "strip-path-prefix", true, "With --path-prefix, strip prefix from request before forwarding")

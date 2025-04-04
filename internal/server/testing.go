@@ -75,7 +75,7 @@ func testServer(t testing.TB) (*Server, string) {
 
 	t.Cleanup(server.Stop)
 
-	addr := fmt.Sprintf("http://localhost:%d", server.HttpPort())
+	addr := fmt.Sprintf("http://127.0.0.1:%d", server.HttpPort())
 
 	return server, addr
 }

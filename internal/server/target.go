@@ -223,6 +223,12 @@ func (t *Target) HealthCheckCompleted(success bool) {
 	if success && t.state == TargetStateAdding {
 		t.state = TargetStateHealthy
 		close(t.becameHealthy)
+	} else if !success && t.state == TargetStateHealthy {
+		t.state = TargetStateDraining
+		slog.Warn("Target became unhealthy", "target", t.Target())
+	} else if success && t.state == TargetStateDraining {
+		t.state = TargetStateHealthy
+		slog.Info("Target recovered and is healthy again", "target", t.Target())
 	}
 
 	slog.Info("Target health updated", "target", t.Target(), "success", success, "state", t.state.String())

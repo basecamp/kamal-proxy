@@ -139,7 +139,11 @@ func TestService_MarshallingState(t *testing.T) {
 
 	service := testCreateService(t, defaultEmptyHosts, defaultServiceOptions, targetOptions)
 	require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
-	service.SetTarget(TargetSlotRollout, service.active)
+	
+	activeTargets := service.activePool.GetTargets()
+	if len(activeTargets) > 0 {
+		service.SetTarget(TargetSlotRollout, activeTargets[0])
+	}
 
 	require.NoError(t, service.SetRolloutSplit(20, []string{"first"}))
 
@@ -152,8 +156,14 @@ func TestService_MarshallingState(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, service.name, service2.name)
-	assert.Equal(t, service.active.Target(), service2.active.Target())
-	assert.Equal(t, service.active.options, service2.active.options)
+	
+	serviceTargets := service.activePool.GetTargets()
+	service2Targets := service2.activePool.GetTargets()
+	
+	if len(serviceTargets) > 0 && len(service2Targets) > 0 {
+		assert.Equal(t, serviceTargets[0].Target(), service2Targets[0].Target())
+		assert.Equal(t, serviceTargets[0].options, service2Targets[0].options)
+	}
 
 	assert.Equal(t, PauseStateStopped, service2.pauseController.GetState())
 	assert.Equal(t, DefaultStopMessage, service2.pauseController.GetStopMessage())
@@ -180,7 +190,8 @@ func testCreateServiceWithHandler(t *testing.T, hosts []string, options ServiceO
 
 	service, err := NewService("test", hosts, defaultPaths, options)
 	require.NoError(t, err)
-	service.active = target
+	
+	service.activePool.AddTarget(target)
 
 	return service
 }

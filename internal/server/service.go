@@ -95,9 +95,9 @@ type Service struct {
 	pathPrefixes []string
 	options      ServiceOptions
 
-	active     *Target
-	rollout    *Target
-	targetLock sync.RWMutex
+	activePool  *TargetPool
+	rolloutPool *TargetPool
+	targetLock  sync.RWMutex
 
 	pauseController   *PauseController
 	rolloutController *RolloutController
@@ -109,6 +109,8 @@ func NewService(name string, hosts []string, pathPrefixes []string, options Serv
 	service := &Service{
 		name:            name,
 		pauseController: NewPauseController(),
+		activePool:      NewTargetPool(),
+		rolloutPool:     NewTargetPool(),
 	}
 
 	hosts = NormalizeHosts(hosts)
@@ -129,63 +131,61 @@ func (s *Service) UpdateOptions(hosts []string, pathPrefixes []string, options S
 	return s.initialize(hosts, pathPrefixes, options)
 }
 
-func (s *Service) ActiveTarget() *Target {
+func (s *Service) ActiveTargets() []*Target {
 	s.targetLock.RLock()
 	defer s.targetLock.RUnlock()
 
-	return s.active
+	return s.activePool.GetTargets()
 }
 
-func (s *Service) RolloutTarget() *Target {
+func (s *Service) RolloutTargets() []*Target {
 	s.targetLock.RLock()
 	defer s.targetLock.RUnlock()
 
-	return s.rollout
+	return s.rolloutPool.GetTargets()
 }
 
 func (s *Service) ClaimTarget(req *http.Request) (*Target, *http.Request, error) {
 	s.targetLock.RLock()
 	defer s.targetLock.RUnlock()
 
-	target := s.active
-	if s.rollout != nil && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
-		slog.Debug("Using rollout target for request", "service", s.name, "path", req.URL.Path)
-		target = s.rollout
+	var targetPool *TargetPool
+	targetPool = s.activePool
+
+	if s.rolloutPool.Count() > 0 && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
+		slog.Debug("Using rollout target pool for request", "service", s.name, "path", req.URL.Path)
+		targetPool = s.rolloutPool
 	}
 
-	req, err := target.StartRequest(req)
-	return target, req, err
+	return targetPool.StartRequest(req)
 }
 
+// SetTarget adds a target to the specified slot's pool.
+// This method simply adds the target to the appropriate pool.
+// Returns nil as we no longer track or return "old" targets.
 func (s *Service) SetTarget(slot TargetSlot, target *Target) *Target {
-	var replaced *Target
-
 	s.withWriteLock(func() error {
 		switch slot {
 		case TargetSlotActive:
-			replaced = s.active
-			s.active = target
+			s.activePool.AddTarget(target)
 
 		case TargetSlotRollout:
-			replaced = s.rollout
-			s.rollout = target
+			s.rolloutPool.AddTarget(target)
 		}
 
 		return nil
 	})
 
-	if replaced != nil {
-		replaced.StopHealthChecks()
-	}
-
-	return replaced
+	// We no longer return any target
+	// Callers should use ActiveTargets() or RolloutTargets() to access all targets
+	return nil
 }
 
 func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
 	s.targetLock.Lock()
 	defer s.targetLock.Unlock()
 
-	if s.rollout == nil {
+	if s.rolloutPool.Count() == 0 {
 		return ErrorRolloutTargetNotSet
 	}
 
@@ -198,6 +198,12 @@ func (s *Service) StopRollout() error {
 	s.targetLock.Lock()
 	defer s.targetLock.Unlock()
 
+	rolloutTargets := s.rolloutPool.GetTargets()
+	for _, target := range rolloutTargets {
+		target.StopHealthChecks()
+	}
+
+	s.rolloutPool.ReplaceTargets([]*Target{})
 	s.rolloutController = nil
 	slog.Info("Stopped rollout", "service", s.name)
 	return nil
@@ -211,8 +217,8 @@ type marshalledService struct {
 	Name              string             `json:"name"`
 	Hosts             []string           `json:"hosts"`
 	PathPrefixes      []string           `json:"path_prefixes"`
-	ActiveTarget      string             `json:"active_target"`
-	RolloutTarget     string             `json:"rollout_target"`
+	ActiveTargets     []string           `json:"active_targets"`
+	RolloutTargets    []string           `json:"rollout_targets,omitempty"`
 	Options           ServiceOptions     `json:"options"`
 	TargetOptions     TargetOptions      `json:"target_options"`
 	PauseController   *PauseController   `json:"pause_controller"`
@@ -220,19 +226,32 @@ type marshalledService struct {
 }
 
 func (s *Service) MarshalJSON() ([]byte, error) {
-	activeTarget := s.active.Target()
-	rolloutTarget := ""
-	if s.rollout != nil {
-		rolloutTarget = s.rollout.Target()
+	var activeTargetURLs []string
+	var rolloutTargetURLs []string
+	var targetOptions TargetOptions
+
+	activeTargets := s.activePool.GetTargets()
+	if len(activeTargets) > 0 {
+		targetOptions = activeTargets[0].options
+
+		for _, t := range activeTargets {
+			activeTargetURLs = append(activeTargetURLs, t.Target())
+		}
 	}
-	targetOptions := s.active.options
+
+	rolloutTargets := s.rolloutPool.GetTargets()
+	if len(rolloutTargets) > 0 {
+		for _, t := range rolloutTargets {
+			rolloutTargetURLs = append(rolloutTargetURLs, t.Target())
+		}
+	}
 
 	return json.Marshal(marshalledService{
 		Name:              s.name,
 		Hosts:             s.hosts,
 		PathPrefixes:      s.pathPrefixes,
-		ActiveTarget:      activeTarget,
-		RolloutTarget:     rolloutTarget,
+		ActiveTargets:     activeTargetURLs,
+		RolloutTargets:    rolloutTargetURLs,
 		Options:           s.options,
 		TargetOptions:     targetOptions,
 		PauseController:   s.pauseController,
@@ -252,8 +271,22 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.rolloutController = ms.RolloutController
 
 	s.initialize(ms.Hosts, ms.PathPrefixes, ms.Options)
-	s.restoreSavedTarget(TargetSlotActive, ms.ActiveTarget, ms.TargetOptions)
-	s.restoreSavedTarget(TargetSlotRollout, ms.RolloutTarget, ms.TargetOptions)
+
+	if s.activePool == nil {
+		s.activePool = NewTargetPool()
+	}
+
+	if s.rolloutPool == nil {
+		s.rolloutPool = NewTargetPool()
+	}
+
+	for _, targetURL := range ms.ActiveTargets {
+		s.restoreSavedTarget(TargetSlotActive, targetURL, ms.TargetOptions)
+	}
+
+	for _, targetURL := range ms.RolloutTargets {
+		s.restoreSavedTarget(TargetSlotRollout, targetURL, ms.TargetOptions)
+	}
 
 	return nil
 }
@@ -266,7 +299,9 @@ func (s *Service) Stop(drainTimeout time.Duration, message string) error {
 
 	slog.Info("Service stopped", "service", s.name)
 
-	s.ActiveTarget().Drain(drainTimeout)
+	for _, target := range s.ActiveTargets() {
+		target.Drain(drainTimeout)
+	}
 	slog.Info("Service drained", "service", s.name)
 	return nil
 }
@@ -279,7 +314,9 @@ func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) 
 
 	slog.Info("Service paused", "service", s.name)
 
-	s.ActiveTarget().Drain(drainTimeout)
+	for _, target := range s.ActiveTargets() {
+		target.Drain(drainTimeout)
+	}
 	slog.Info("Service drained", "service", s.name)
 	return nil
 }
@@ -398,7 +435,9 @@ func (s *Service) shouldRedirectToHTTPS(r *http.Request) bool {
 }
 
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
-	if s.pauseController.GetState() != PauseStateRunning && s.ActiveTarget().IsHealthCheckRequest(r) {
+	targets := s.activePool.GetTargets()
+
+	if s.pauseController.GetState() != PauseStateRunning && len(targets) > 0 && targets[0].IsHealthCheckRequest(r) {
 		// When paused or stopped, return success for any health check
 		// requests from downstream services. Otherwise, they might consider
 		// us as unhealthy while in that state, and remove us from their
@@ -439,10 +478,10 @@ func (s *Service) restoreSavedTarget(slot TargetSlot, savedTarget string, option
 
 	switch slot {
 	case TargetSlotActive:
-		s.active = target
+		s.activePool.ReplaceTargets([]*Target{target})
 
 	case TargetSlotRollout:
-		s.rollout = target
+		s.rolloutPool.ReplaceTargets([]*Target{target})
 	}
 
 	return nil

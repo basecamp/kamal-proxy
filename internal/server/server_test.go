@@ -24,7 +24,7 @@ func TestServer_Deploying(t *testing.T) {
 func testDeployTarget(t *testing.T, target *Target, server *Server) {
 	var result bool
 	err := server.commandHandler.Deploy(DeployArgs{
-		TargetURL:      target.Target(),
+		TargetURLs:     []string{target.Target()},
 		DeployTimeout:  DefaultDeployTimeout,
 		DrainTimeout:   DefaultDrainTimeout,
 		ServiceOptions: defaultServiceOptions,

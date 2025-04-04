@@ -22,11 +22,11 @@ func newRolloutDeployCommand() *rolloutDeployCommand {
 		ValidArgs: []string{"service"},
 	}
 
-	rolloutDeployCommand.cmd.Flags().StringVar(&rolloutDeployCommand.args.TargetURL, "target", "", "Target host to deploy")
+	rolloutDeployCommand.cmd.Flags().StringSliceVar(&rolloutDeployCommand.args.TargetURLs, "targets", []string{}, "Target hosts to deploy (can specify multiple)")
 	rolloutDeployCommand.cmd.Flags().DurationVar(&rolloutDeployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	rolloutDeployCommand.cmd.Flags().DurationVar(&rolloutDeployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
 
-	rolloutDeployCommand.cmd.MarkFlagRequired("target")
+	rolloutDeployCommand.cmd.MarkFlagRequired("targets")
 
 	return rolloutDeployCommand
 }
