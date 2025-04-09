@@ -62,7 +62,7 @@ func TestLoadBalancer_ServeHTTP(t *testing.T) {
 	require.NoError(t, lb.WaitUntilHealthy(time.Second))
 
 	bodies := []string{}
-	for i := 0; i <= 4; i++ {
+	for range 4 {
 		r := httptest.NewRequest("GET", "/", nil)
 		w := httptest.NewRecorder()
 

@@ -40,7 +40,7 @@ func TestRouter_DeployServiceMultipleTargets(t *testing.T) {
 	require.NoError(t, router.DeployService("service1", []string{firstTarget, secondTarget}, defaultServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 	bodies := []string{}
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		statusCode, body := sendGETRequest(router, "http://example.com/")
 		assert.Equal(t, http.StatusOK, statusCode)
 		bodies = append(bodies, body)
