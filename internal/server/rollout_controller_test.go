@@ -22,7 +22,7 @@ func TestRolloutController_PercentageSplit(t *testing.T) {
 	rc := NewRolloutController(60, []string{})
 
 	usedRolloutGroup := 0
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		req := &http.Request{Header: http.Header{"Cookie": []string{fmt.Sprintf("kamal-rollout=%05d", i)}}}
 		if rc.RequestUsesRolloutGroup(req) {
 			usedRolloutGroup++
@@ -38,7 +38,7 @@ func TestRolloutController_AllowListAndPercentageTogether(t *testing.T) {
 	rc := NewRolloutController(10, []string{"00001", "00002"})
 
 	usedRolloutGroup := 0
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		req := &http.Request{Header: http.Header{"Cookie": []string{fmt.Sprintf("kamal-rollout=%05d", i)}}}
 		if rc.RequestUsesRolloutGroup(req) {
 			usedRolloutGroup++

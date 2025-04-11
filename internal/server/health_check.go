@@ -109,10 +109,8 @@ func (hc *HealthCheck) check() {
 }
 
 func (hc *HealthCheck) reportResult(success bool, err error) {
-	if success {
-		slog.Info("Healthcheck succeeded")
-	} else {
-		slog.Info("Healthcheck failed", "error", err)
+	if !success {
+		slog.Info("Healthcheck failed", "url", hc.endpoint.String(), "error", err)
 	}
 
 	hc.consumer.HealthCheckCompleted(success)

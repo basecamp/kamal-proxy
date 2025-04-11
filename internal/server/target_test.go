@@ -277,11 +277,11 @@ func TestTarget_UnparseableQueryParametersArePreserved(t *testing.T) {
 func TestTarget_IsHealthCheckRequest(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 
-	assert.True(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up", nil)))
-	assert.True(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up?one=two", nil)))
+	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up", nil)))
+	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up?one=two", nil)))
 
-	assert.False(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up/other", nil)))
-	assert.False(t, target.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/health", nil)))
+	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up/other", nil)))
+	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/health", nil)))
 }
 
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
@@ -289,7 +289,7 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 		w.Write([]byte("ok"))
 	})
 
-	target.BeginHealthChecks()
+	target.BeginHealthChecks(nil)
 
 	require.True(t, target.WaitUntilHealthy(time.Second))
 	require.Equal(t, TargetStateHealthy, target.state)
@@ -321,7 +321,7 @@ func TestTarget_DrainRequestsThatCompleteWithinTimeout(t *testing.T) {
 		started.Done()
 	})
 
-	for i := 0; i < n; i++ {
+	for range n {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
 		go testServeRequestWithTarget(t, target, w, req)
@@ -342,7 +342,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		started.Done()
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			time.Sleep(time.Millisecond * 100)
 			if r.Context().Err() != nil { // Request was cancelled by client
 				return
@@ -351,7 +351,7 @@ func TestTarget_DrainRequestsThatNeedToBeCancelled(t *testing.T) {
 		served++
 	})
 
-	for i := 0; i < n; i++ {
+	for range n {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
 		go func() {

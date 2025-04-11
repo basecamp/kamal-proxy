@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -106,50 +105,36 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) SetServiceTarget(name string, hosts []string, pathPrefixes []string, targetURL string,
-	options ServiceOptions, targetOptions TargetOptions,
-	deployTimeout time.Duration, drainTimeout time.Duration,
-) error {
-	defer r.saveStateSnapshot()
-
-	slog.Info("Deploying", "service", name, "hosts", hosts, "paths", pathPrefixes, "target", targetURL, "tls", options.TLSEnabled, "strip", options.StripPrefix)
-
-	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
+func (r *Router) DeployService(name string, targetURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	service, err := r.findOrCreateService(name, options, targetOptions)
 	if err != nil {
 		return err
 	}
 
-	err = r.setActiveTarget(name, hosts, pathPrefixes, target, options, drainTimeout)
+	slog.Info("Deploying", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
+	err = r.deployTargetsIntoService(service, TargetSlotActive, targetURLs, deployTimeout, drainTimeout)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deployed", "service", name, "hosts", hosts, "target", targetURL)
+	slog.Info("Deployed", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
 	return nil
 }
 
-func (r *Router) SetRolloutTarget(name string, targetURL string, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	defer r.saveStateSnapshot()
-
-	slog.Info("Deploying for rollout", "service", name, "target", targetURL)
-
+func (r *Router) SetRolloutTargets(name string, targetURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
-	targetOptions := service.ActiveTarget().options
 
-	target, err := r.deployNewTargetWithOptions(targetURL, targetOptions, deployTimeout)
+	slog.Info("Deploying for rollout", "service", name, "targets", targetURLs)
+
+	err := r.deployTargetsIntoService(service, TargetSlotRollout, targetURLs, deployTimeout, drainTimeout)
 	if err != nil {
 		return err
 	}
 
-	replacedTarget := service.SetTarget(TargetSlotRollout, target)
-	if replacedTarget != nil {
-		replacedTarget.Drain(drainTimeout)
-	}
-
-	slog.Info("Deployed for rollout", "service", name, "target", targetURL)
+	slog.Info("Deployed for rollout", "service", name, "targets", targetURLs)
 	return nil
 }
 
@@ -178,28 +163,17 @@ func (r *Router) StopRollout(name string) error {
 func (r *Router) RemoveService(name string) error {
 	defer r.saveStateSnapshot()
 
-	var replacedTarget *Target
-
-	err := r.withWriteLock(func() error {
+	return r.withWriteLock(func() error {
 		service := r.services.Get(name)
 		if service == nil {
 			return ErrorServiceNotFound
 		}
 
-		replacedTarget = service.SetTarget(TargetSlotActive, nil)
+		service.Dispose()
 		r.services.Remove(service.name)
 
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-
-	if replacedTarget != nil {
-		replacedTarget.Drain(DefaultDrainTimeout)
-	}
-
-	return nil
 }
 
 func (r *Router) PauseService(name string, drainTimeout time.Duration, pauseTimeout time.Duration) error {
@@ -241,17 +215,18 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 	r.withReadLock(func() error {
 		for name, service := range r.services.All() {
 			if service.active != nil {
-				host := strings.Join(service.hosts, ",")
+				host := strings.Join(service.options.Hosts, ",")
 				if host == "" {
 					host = "*"
 				}
 
-				path := strings.Join(service.pathPrefixes, ",")
+				path := strings.Join(service.options.PathPrefixes, ",")
+				target := strings.Join(service.active.Targets().Names(), ",")
 
 				result[name] = ServiceDescription{
 					Host:   host,
 					Path:   path,
-					Target: service.active.Target(),
+					Target: target,
 					TLS:    service.options.TLSEnabled,
 					State:  service.pauseController.GetState().String(),
 				}
@@ -286,19 +261,61 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 
 // Private
 
-func (r *Router) deployNewTargetWithOptions(targetURL string, targetOptions TargetOptions, deployTimeout time.Duration) (*Target, error) {
-	target, err := NewTarget(targetURL, targetOptions)
+func (r *Router) deployTargetsIntoService(service *Service, targetSlot TargetSlot, targetURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	tl, err := NewTargetList(targetURLs, service.targetOptions)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	becameHealthy := target.WaitUntilHealthy(deployTimeout)
-	if !becameHealthy {
-		slog.Info("Target failed to become healthy", "target", targetURL)
-		return nil, fmt.Errorf("%w (%s)", ErrorTargetFailedToBecomeHealthy, deployTimeout)
+	lb := NewLoadBalancer(tl)
+	err = lb.WaitUntilHealthy(deployTimeout)
+	if err != nil {
+		lb.Dispose()
+		return err
 	}
 
-	return target, nil
+	replaced := service.UpdateLoadBalancer(lb, targetSlot)
+
+	err = r.installService(service)
+	if err != nil {
+		return err
+	}
+
+	if replaced != nil {
+		replaced.DrainAll(drainTimeout)
+		replaced.Dispose()
+	}
+
+	return nil
+}
+
+func (r *Router) installService(s *Service) error {
+	defer r.saveStateSnapshot()
+
+	err := r.withWriteLock(func() error {
+		conflict := r.services.CheckAvailability(s.name, s.options)
+		if conflict != nil {
+			slog.Error("Host settings conflict with another service", "service", conflict.name)
+			return ErrorHostInUse
+		}
+
+		r.services.Set(s)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *Router) findOrCreateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+	service := r.serviceForName(name)
+	if service != nil {
+		return service.CopyWithOptions(options, targetOptions)
+	}
+
+	return NewService(name, options, targetOptions)
 }
 
 func (r *Router) saveStateSnapshot() error {
@@ -337,43 +354,6 @@ func (r *Router) serviceForHost(host string) *Service {
 	defer r.serviceLock.RUnlock()
 
 	return r.services.ServiceForHost(host)
-}
-
-func (r *Router) setActiveTarget(name string, hosts []string, pathPrefixes []string, target *Target, options ServiceOptions, drainTimeout time.Duration) error {
-	var replacedTarget *Target
-
-	err := r.withWriteLock(func() error {
-		conflict := r.services.CheckAvailability(name, hosts, pathPrefixes)
-		if conflict != nil {
-			slog.Error("Host settings conflict with another service", "service", conflict.name)
-			return ErrorHostInUse
-		}
-
-		var err error
-		service := r.services.Get(name)
-		if service == nil {
-			service, err = NewService(name, hosts, pathPrefixes, options)
-		} else {
-			err = service.UpdateOptions(hosts, pathPrefixes, options)
-		}
-		if err != nil {
-			return err
-		}
-
-		r.services.Set(service)
-		replacedTarget = service.SetTarget(TargetSlotActive, target)
-
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	if replacedTarget != nil {
-		replacedTarget.Drain(drainTimeout)
-	}
-
-	return nil
 }
 
 func (r *Router) serviceForName(name string) *Service {

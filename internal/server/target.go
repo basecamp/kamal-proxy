@@ -33,6 +33,7 @@ const (
 	TargetStateAdding TargetState = iota
 	TargetStateDraining
 	TargetStateHealthy
+	TargetStateUnhealthy
 )
 
 func (ts TargetState) String() string {
@@ -45,6 +46,10 @@ func (ts TargetState) String() string {
 		return "healthy"
 	}
 	return ""
+}
+
+type TargetStateConsumer interface {
+	TargetStateChanged(*Target)
 }
 
 type inflightRequest struct {
@@ -67,6 +72,10 @@ type TargetOptions struct {
 	ForwardHeaders      bool              `json:"forward_headers"`
 }
 
+func (to *TargetOptions) IsHealthCheckRequest(r *http.Request) bool {
+	return r.Method == http.MethodGet && r.URL.Path == to.HealthCheckConfig.Path
+}
+
 func (to *TargetOptions) canonicalizeLogHeaders() {
 	for i, header := range to.LogRequestHeaders {
 		to.LogRequestHeaders[i] = http.CanonicalHeaderKey(header)
@@ -86,6 +95,7 @@ type Target struct {
 	inflightLock sync.Mutex
 
 	healthcheck   *HealthCheck
+	stateConsumer TargetStateConsumer
 	becameHealthy chan (bool)
 }
 
@@ -121,6 +131,17 @@ func (t *Target) Target() string {
 	return t.targetURL.Host
 }
 
+func (t *Target) State() TargetState {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
+
+	return t.state
+}
+
+func (t *Target) Dispose() {
+	t.stopHealthChecks()
+}
+
 func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
@@ -148,10 +169,6 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 
 	tw := newTargetResponseWriter(w, inflightRequest)
 	t.proxyHandler.ServeHTTP(tw, req)
-}
-
-func (t *Target) IsHealthCheckRequest(r *http.Request) bool {
-	return r.Method == http.MethodGet && r.URL.Path == t.options.HealthCheckConfig.Path
 }
 
 func (t *Target) Drain(timeout time.Duration) {
@@ -186,8 +203,10 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 	}
 }
 
-func (t *Target) BeginHealthChecks() {
+func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
+	t.stateConsumer = stateConsumer
 	t.becameHealthy = make(chan bool)
+
 	t.healthcheck = NewHealthCheck(t,
 		t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
 		t.options.HealthCheckConfig.Interval,
@@ -195,7 +214,7 @@ func (t *Target) BeginHealthChecks() {
 	)
 }
 
-func (t *Target) StopHealthChecks() {
+func (t *Target) stopHealthChecks() {
 	if t.healthcheck != nil {
 		t.healthcheck.Close()
 		t.healthcheck = nil
@@ -203,12 +222,11 @@ func (t *Target) StopHealthChecks() {
 }
 
 func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
-	t.BeginHealthChecks()
-	defer t.StopHealthChecks()
-
 	select {
 	case <-time.After(timeout):
+		t.stopHealthChecks()
 		return false
+
 	case <-t.becameHealthy:
 		return true
 	}
@@ -217,15 +235,35 @@ func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
 // HealthCheckConsumer
 
 func (t *Target) HealthCheckCompleted(success bool) {
-	t.inflightLock.Lock()
-	defer t.inflightLock.Unlock()
+	previousState := t.state
+	newState := t.state
 
-	if success && t.state == TargetStateAdding {
-		t.state = TargetStateHealthy
-		close(t.becameHealthy)
+	t.withInflightLock(func() {
+		switch success {
+		case true:
+			switch t.state {
+			case TargetStateAdding:
+				t.state = TargetStateHealthy
+				close(t.becameHealthy)
+			default:
+				t.state = TargetStateHealthy
+			}
+		case false:
+			switch t.state {
+			case TargetStateHealthy:
+				t.state = TargetStateUnhealthy
+			}
+		}
+		newState = t.state
+	})
+
+	if newState != previousState {
+		slog.Info("Target health updated", "target", t.Target(), "state", newState.String(), "was", previousState.String())
+
+		if t.stateConsumer != nil {
+			t.stateConsumer.TargetStateChanged(t)
+		}
 	}
-
-	slog.Info("Target health updated", "target", t.Target(), "success", success, "state", t.state.String())
 }
 
 // Private
@@ -388,6 +426,13 @@ func (t *Target) pendingRequestsToCancel() inflightMap {
 	}
 
 	return result
+}
+
+func (t *Target) withInflightLock(fn func()) {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
+
+	fn()
 }
 
 func parseTargetURL(targetURL string) (*url.URL, error) {
