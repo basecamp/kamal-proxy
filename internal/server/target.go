@@ -44,6 +44,8 @@ func (ts TargetState) String() string {
 		return "draining"
 	case TargetStateHealthy:
 		return "healthy"
+	case TargetStateUnhealthy:
+		return "unhealthy"
 	}
 	return ""
 }
