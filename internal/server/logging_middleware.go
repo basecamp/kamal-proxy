@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/basecamp/kamal-proxy/internal/metrics"
 )
 
 type contextKey string
@@ -101,8 +103,9 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.RequestHeaders, r.Header, "req")...)
 		attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.ResponseHeaders, writer.Header(), "resp")...)
-
 		h.logger.LogAttrs(context.Background(), slog.LevelInfo, "Request", attrs...)
+
+		metrics.Tracker.TrackRequest(loggingRequestContext.Service, r.Method, writer.statusCode, elapsed)
 	}()
 
 	h.next.ServeHTTP(writer, r)
