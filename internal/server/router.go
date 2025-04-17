@@ -105,14 +105,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) DeployService(name string, targetURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
+func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	service, err := r.findOrCreateService(name, options, targetOptions)
 	if err != nil {
 		return err
 	}
 
 	slog.Info("Deploying", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
-	err = r.deployTargetsIntoService(service, TargetSlotActive, targetURLs, deployTimeout, drainTimeout)
+	err = r.deployTargetsIntoService(service, TargetSlotActive, targetURLs, readerURLs, deployTimeout, drainTimeout)
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (r *Router) DeployService(name string, targetURLs []string, options Service
 	return nil
 }
 
-func (r *Router) SetRolloutTargets(name string, targetURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
 	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
@@ -129,7 +129,7 @@ func (r *Router) SetRolloutTargets(name string, targetURLs []string, deployTimeo
 
 	slog.Info("Deploying for rollout", "service", name, "targets", targetURLs)
 
-	err := r.deployTargetsIntoService(service, TargetSlotRollout, targetURLs, deployTimeout, drainTimeout)
+	err := r.deployTargetsIntoService(service, TargetSlotRollout, targetURLs, readerURLs, deployTimeout, drainTimeout)
 	if err != nil {
 		return err
 	}
@@ -261,13 +261,13 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 
 // Private
 
-func (r *Router) deployTargetsIntoService(service *Service, targetSlot TargetSlot, targetURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	tl, err := NewTargetList(targetURLs, service.targetOptions)
+func (r *Router) deployTargetsIntoService(service *Service, targetSlot TargetSlot, targetURLs []string, readerURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+	tl, err := NewTargetList(targetURLs, readerURLs, service.targetOptions)
 	if err != nil {
 		return err
 	}
 
-	lb := NewLoadBalancer(tl)
+	lb := NewLoadBalancer(tl, service.options.WriterAffinityTimeout)
 	err = lb.WaitUntilHealthy(deployTimeout)
 	if err != nil {
 		lb.Dispose()

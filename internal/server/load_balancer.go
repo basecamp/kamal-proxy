@@ -5,20 +5,32 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
+const LoadBalancerWriteCookieName = "kamal-writer"
+
 var ErrorNoHealthyTargets = errors.New("no healthy targets")
 
 type TargetList []*Target
 
-func NewTargetList(targetNames []string, options TargetOptions) (TargetList, error) {
+func NewTargetList(targetURLs, readerURLs []string, options TargetOptions) (TargetList, error) {
 	targets := TargetList{}
 
-	for _, name := range targetNames {
+	for _, name := range targetURLs {
 		target, err := NewTarget(name, options)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+
+	for _, name := range readerURLs {
+		target, err := NewReadOnlyTarget(name, options)
 		if err != nil {
 			return nil, err
 		}
@@ -36,26 +48,63 @@ func (tl TargetList) Names() []string {
 	return names
 }
 
-func (tl TargetList) Dispose() {
+func (tl TargetList) HasReaders() bool {
 	for _, target := range tl {
-		target.Dispose()
+		if target.ReadOnly() {
+			return true
+		}
 	}
+	return false
+}
+
+func (tl TargetList) BeginHealthChecks(stateConsumer TargetStateConsumer) {
+	for _, target := range tl {
+		target.BeginHealthChecks(stateConsumer)
+	}
+}
+
+func (tl TargetList) StopHealthChecks() {
+	for _, target := range tl {
+		target.StopHealthChecks()
+	}
+}
+
+func (tl TargetList) targetsMatchingReadonly(readonly bool) TargetList {
+	result := TargetList{}
+	for _, target := range tl {
+		if target.ReadOnly() == readonly {
+			result = append(result, target)
+		}
+	}
+	return result
 }
 
 type LoadBalancer struct {
-	healthy TargetList
-	all     TargetList
-	index   int
-	lock    sync.Mutex
+	all                   TargetList
+	writers               TargetList
+	readers               TargetList
+	writerAffinityTimeout time.Duration
+	writerIndex           int
+	readerIndex           int
+	lock                  sync.Mutex
+
+	multiTarget bool
+	hasReaders  bool
 }
 
-func NewLoadBalancer(targets TargetList) *LoadBalancer {
+func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration) *LoadBalancer {
 	lb := &LoadBalancer{
-		healthy: TargetList{},
-		all:     targets,
+		all:                   targets,
+		writers:               TargetList{},
+		readers:               TargetList{},
+		writerAffinityTimeout: writerAffinityTimeout,
+
+		multiTarget: len(targets) > 1,
+		hasReaders:  targets.HasReaders(),
 	}
 
-	lb.beginHealthChecks()
+	lb.all.BeginHealthChecks(lb)
+
 	return lb
 }
 
@@ -64,6 +113,14 @@ func (lb *LoadBalancer) Targets() TargetList {
 	defer lb.lock.Unlock()
 
 	return lb.all
+}
+
+func (lb *LoadBalancer) WriteTargets() TargetList {
+	return lb.all.targetsMatchingReadonly(false)
+}
+
+func (lb *LoadBalancer) ReadTargets() TargetList {
+	return lb.all.targetsMatchingReadonly(true)
 }
 
 func (lb *LoadBalancer) WaitUntilHealthy(timeout time.Duration) error {
@@ -102,7 +159,7 @@ func (lb *LoadBalancer) Dispose() {
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
 
-	lb.all.Dispose()
+	lb.all.StopHealthChecks()
 }
 
 func (lb *LoadBalancer) DrainAll(timeout time.Duration) {
@@ -120,10 +177,14 @@ func (lb *LoadBalancer) DrainAll(timeout time.Duration) {
 }
 
 func (lb *LoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	target, req, err := lb.claimTarget(r)
+	target, req, readRequest, err := lb.claimTarget(r)
 	if err != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return
+	}
+
+	if lb.hasReaders && !readRequest {
+		lb.setWriteCookie(w)
 	}
 
 	target.SendRequest(w, req)
@@ -137,42 +198,97 @@ func (lb *LoadBalancer) TargetStateChanged(target *Target) {
 
 // Private
 
-func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, error) {
+func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, bool, error) {
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
 
-	target := lb.nextTarget()
+	readRequest := lb.isReadRequest(req)
+	treatAsReadRequest := readRequest && !lb.hasWriteCookie(req)
+
+	target := lb.nextTarget(treatAsReadRequest)
 	if target == nil {
-		return nil, nil, ErrorNoHealthyTargets
+		return nil, nil, false, ErrorNoHealthyTargets
 	}
 
 	req, err := target.StartRequest(req)
-	return target, req, err
+	return target, req, readRequest, err
 }
 
-func (lb *LoadBalancer) nextTarget() *Target {
-	if len(lb.healthy) == 0 {
-		return nil
+func (lb *LoadBalancer) nextTarget(reader bool) *Target {
+	if reader && len(lb.readers) > 0 {
+		lb.readerIndex = (lb.readerIndex + 1) % len(lb.readers)
+		return lb.readers[lb.readerIndex]
 	}
 
-	lb.index = (lb.index + 1) % len(lb.healthy)
-	return lb.healthy[lb.index]
+	if len(lb.writers) > 0 {
+		lb.writerIndex = (lb.writerIndex + 1) % len(lb.writers)
+		return lb.writers[lb.writerIndex]
+	}
+
+	return nil
 }
 
-func (lb *LoadBalancer) beginHealthChecks() {
-	for _, target := range lb.all {
-		target.BeginHealthChecks(lb)
-	}
+func (lb *LoadBalancer) isReadRequest(req *http.Request) bool {
+	return (req.Method == http.MethodGet || req.Method == http.MethodHead) && !lb.isWebSocketRequest(req)
+}
+
+func (lb *LoadBalancer) isWebSocketRequest(req *http.Request) bool {
+	return req.Method == http.MethodGet &&
+		strings.EqualFold(req.Header.Get("Upgrade"), "websocket") &&
+		strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
 }
 
 func (lb *LoadBalancer) updateHealthyTargets() {
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
 
-	lb.healthy = TargetList{}
+	lb.writers = TargetList{}
+	lb.readers = TargetList{}
+
 	for _, target := range lb.all {
 		if target.State() == TargetStateHealthy {
-			lb.healthy = append(lb.healthy, target)
+			if target.ReadOnly() {
+				lb.readers = append(lb.readers, target)
+			} else {
+				lb.writers = append(lb.writers, target)
+			}
 		}
 	}
+
+	// If we have a single target, we can stop health-checking once it's
+	// healthy. Even if it becomes unhealthy later, taking it out of the pool
+	// won't help.
+	if !lb.multiTarget && len(lb.writers) == 1 {
+		lb.all.StopHealthChecks()
+	}
+}
+
+func (lb *LoadBalancer) setWriteCookie(w http.ResponseWriter) {
+	if lb.writerAffinityTimeout > 0 {
+		expires := time.Now().Add(lb.writerAffinityTimeout)
+
+		cookie := &http.Cookie{
+			Name:     LoadBalancerWriteCookieName,
+			Value:    strconv.FormatInt(expires.UnixMilli(), 10),
+			Path:     "/",
+			HttpOnly: true,
+			Expires:  expires,
+		}
+
+		http.SetCookie(w, cookie)
+	}
+}
+
+func (lb *LoadBalancer) hasWriteCookie(r *http.Request) bool {
+	cookie, err := r.Cookie(LoadBalancerWriteCookieName)
+	if err != nil {
+		return false
+	}
+
+	expires, err := strconv.ParseInt(cookie.Value, 10, 64)
+	if err != nil {
+		return false
+	}
+
+	return time.Now().UnixMilli() < expires
 }

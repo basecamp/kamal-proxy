@@ -89,6 +89,7 @@ func (to *TargetOptions) canonicalizeLogHeaders() {
 
 type Target struct {
 	targetURL    *url.URL
+	readonly     bool
 	options      TargetOptions
 	proxyHandler http.Handler
 
@@ -129,6 +130,15 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 	return target, nil
 }
 
+func NewReadOnlyTarget(targetURL string, options TargetOptions) (*Target, error) {
+	target, err := NewTarget(targetURL, options)
+	if err == nil {
+		target.readonly = true
+	}
+
+	return target, err
+}
+
 func (t *Target) Target() string {
 	return t.targetURL.Host
 }
@@ -140,8 +150,8 @@ func (t *Target) State() TargetState {
 	return t.state
 }
 
-func (t *Target) Dispose() {
-	t.stopHealthChecks()
+func (t *Target) ReadOnly() bool {
+	return t.readonly
 }
 
 func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
@@ -216,7 +226,7 @@ func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 	)
 }
 
-func (t *Target) stopHealthChecks() {
+func (t *Target) StopHealthChecks() {
 	if t.healthcheck != nil {
 		t.healthcheck.Close()
 		t.healthcheck = nil
@@ -226,7 +236,7 @@ func (t *Target) stopHealthChecks() {
 func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
 	select {
 	case <-time.After(timeout):
-		t.stopHealthChecks()
+		t.StopHealthChecks()
 		return false
 
 	case <-t.becameHealthy:

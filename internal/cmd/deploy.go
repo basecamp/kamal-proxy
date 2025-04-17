@@ -28,6 +28,7 @@ func newDeployCommand() *deployCommand {
 	}
 
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.TargetURLs, "target", []string{}, "Target host(s) to deploy")
+	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.ReaderURLs, "read-target", []string{}, "Read-only target host(s) to deploy")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.ServiceOptions.Hosts, "host", []string{}, "Host(s) to serve this target on (empty for wildcard)")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.ServiceOptions.PathPrefixes, "path-prefix", []string{}, "Deploy the service below the specified path(s)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.StripPrefix, "strip-path-prefix", true, "With --path-prefix, strip prefix from request before forwarding")
@@ -43,6 +44,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.WriterAffinityTimeout, "writer-affinity-timeout", server.DefaultWriterAffinityTimeout, "Time after a write before read requests will be routed to readers")
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.ResponseTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
 
