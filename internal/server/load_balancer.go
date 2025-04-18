@@ -109,9 +109,6 @@ func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration) *L
 }
 
 func (lb *LoadBalancer) Targets() TargetList {
-	lb.lock.Lock()
-	defer lb.lock.Unlock()
-
 	return lb.all
 }
 
@@ -127,9 +124,9 @@ func (lb *LoadBalancer) WaitUntilHealthy(timeout time.Duration) error {
 	var wg sync.WaitGroup
 	var failed atomic.Bool
 
-	wg.Add(len(lb.Targets()))
+	wg.Add(len(lb.all))
 
-	for _, target := range lb.Targets() {
+	for _, target := range lb.all {
 		go func() {
 			if !target.WaitUntilHealthy(timeout) {
 				slog.Info("Target failed to become healthy", "target", target.Target())
@@ -149,7 +146,7 @@ func (lb *LoadBalancer) WaitUntilHealthy(timeout time.Duration) error {
 }
 
 func (lb *LoadBalancer) MarkAllHealthy() {
-	for _, target := range lb.Targets() {
+	for _, target := range lb.all {
 		target.updateState(TargetStateHealthy)
 	}
 	lb.updateHealthyTargets()
