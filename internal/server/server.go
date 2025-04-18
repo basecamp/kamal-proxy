@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/crypto/acme"
 
+	"github.com/basecamp/kamal-proxy/internal/metrics"
 	"github.com/basecamp/kamal-proxy/internal/pages"
 )
 
@@ -23,13 +24,15 @@ const (
 )
 
 type Server struct {
-	config         *Config
-	router         *Router
-	httpListener   net.Listener
-	httpsListener  net.Listener
-	httpServer     *http.Server
-	httpsServer    *http.Server
-	commandHandler *CommandHandler
+	config          *Config
+	router          *Router
+	httpListener    net.Listener
+	httpsListener   net.Listener
+	metricsListener net.Listener
+	httpServer      *http.Server
+	httpsServer     *http.Server
+	metricsServer   *http.Server
+	commandHandler  *CommandHandler
 }
 
 func NewServer(config *Config, router *Router) *Server {
@@ -40,7 +43,12 @@ func NewServer(config *Config, router *Router) *Server {
 }
 
 func (s *Server) Start() error {
-	err := s.startHTTPServers()
+	err := s.startMetricsServer()
+	if err != nil {
+		return err
+	}
+
+	err = s.startHTTPServers()
 	if err != nil {
 		return err
 	}
@@ -62,6 +70,7 @@ func (s *Server) Stop() {
 		func() { _ = s.commandHandler.Close() },
 		func() { s.stopHTTPServer(ctx, s.httpServer) },
 		func() { s.stopHTTPServer(ctx, s.httpsServer) },
+		func() { s.stopHTTPServer(ctx, s.metricsServer) },
 	)
 
 	slog.Info("Server stopped")
@@ -113,6 +122,32 @@ func (s *Server) startHTTPServers() error {
 	return nil
 }
 
+func (s *Server) startMetricsServer() error {
+	if s.config.MetricsPort == 0 {
+		slog.Debug("Metrics server disabled")
+		return nil
+	}
+
+	addr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.MetricsPort)
+	handler := metrics.Enable()
+
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	s.metricsListener = l
+	s.metricsServer = &http.Server{
+		Addr:    addr,
+		Handler: handler,
+	}
+
+	go s.metricsServer.Serve(s.metricsListener)
+
+	slog.Info("Metrics enabled", "address", addr)
+
+	return nil
+}
+
 func (s *Server) startCommandHandler() error {
 	s.commandHandler = NewCommandHandler(s.router)
 	_ = os.Remove(s.config.SocketPath())
@@ -134,12 +169,14 @@ func (s *Server) buildHandler() http.Handler {
 }
 
 func (s *Server) stopHTTPServer(ctx context.Context, server *http.Server) {
-	err := server.Shutdown(ctx)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			slog.Warn("Closing active connections")
-		} else {
-			slog.Error("Error while attempting to stop server", "error", err)
+	if server != nil {
+		err := server.Shutdown(ctx)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				slog.Warn("Closing active connections")
+			} else {
+				slog.Error("Error while attempting to stop server", "error", err)
+			}
 		}
 	}
 }

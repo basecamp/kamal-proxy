@@ -17,6 +17,8 @@ import (
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/basecamp/kamal-proxy/internal/metrics"
 )
 
 const (
@@ -198,6 +200,9 @@ func (s *Service) StopRollout() error {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	metrics.Tracker.AddInflightRequest(s.name)
+	defer metrics.Tracker.SubtractInflightRequest(s.name)
+
 	s.middleware.ServeHTTP(w, r)
 }
 
