@@ -139,18 +139,13 @@ func NewService(name string, options ServiceOptions, targetOptions TargetOptions
 	return service, service.initialize()
 }
 
-func (s *Service) CopyWithOptions(options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
-	service, err := NewService(s.name, options, targetOptions)
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOptions) error {
+	options.Normalize()
 
-	service.active = s.active
-	service.rollout = s.rollout
-	service.pauseController = s.pauseController
-	service.rolloutController = s.rolloutController
+	s.options = options
+	s.targetOptions = targetOptions
 
-	return service, service.initialize()
+	return s.initialize()
 }
 
 func (s *Service) Dispose() {

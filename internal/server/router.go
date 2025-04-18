@@ -106,18 +106,46 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
-	service, err := r.findOrCreateService(name, options, targetOptions)
+	tl, err := NewTargetList(targetURLs, readerURLs, targetOptions)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deploying", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
-	err = r.deployTargetsIntoService(service, TargetSlotActive, targetURLs, readerURLs, deployTimeout, drainTimeout)
+	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout)
+	err = lb.WaitUntilHealthy(deployTimeout)
+	if err != nil {
+		lb.Dispose()
+		return err
+	}
+
+	var replaced *LoadBalancer
+
+	err = r.withWriteLock(func() error {
+		conflict := r.services.CheckAvailability(name, options)
+		if conflict != nil {
+			slog.Error("Host settings conflict with another service", "service", conflict.name)
+			return ErrorHostInUse
+		}
+
+		service, err := r.createOrUpdateService(name, options, targetOptions)
+		if err != nil {
+			return err
+		}
+
+		replaced = service.UpdateLoadBalancer(lb, TargetSlotActive)
+
+		r.services.Set(service)
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Deployed", "service", name, "hosts", options.Hosts, "paths", options.PathPrefixes, "targets", targetURLs, "tls", options.TLSEnabled, "strip", options.StripPrefix)
+	if replaced != nil {
+		replaced.Dispose()
+		replaced.DrainAll(drainTimeout)
+	}
+
 	return nil
 }
 
@@ -309,13 +337,14 @@ func (r *Router) installService(s *Service) error {
 	return nil
 }
 
-func (r *Router) findOrCreateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
-	service := r.serviceForName(name)
-	if service != nil {
-		return service.CopyWithOptions(options, targetOptions)
+func (r *Router) createOrUpdateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+	service := r.services.Get(name)
+	if service == nil {
+		return NewService(name, options, targetOptions)
 	}
 
-	return NewService(name, options, targetOptions)
+	err := service.UpdateOptions(options, targetOptions)
+	return service, err
 }
 
 func (r *Router) saveStateSnapshot() error {

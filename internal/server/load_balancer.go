@@ -145,9 +145,6 @@ func (lb *LoadBalancer) MarkAllHealthy() {
 }
 
 func (lb *LoadBalancer) Dispose() {
-	lb.lock.Lock()
-	defer lb.lock.Unlock()
-
 	lb.all.StopHealthChecks()
 }
 
