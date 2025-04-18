@@ -247,10 +247,11 @@ func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
 // HealthCheckConsumer
 
 func (t *Target) HealthCheckCompleted(success bool) {
-	previousState := t.state
-	newState := t.state
+	var previousState, newState TargetState
 
 	t.withInflightLock(func() {
+		previousState = t.state
+
 		switch success {
 		case true:
 			switch t.state {
@@ -266,6 +267,7 @@ func (t *Target) HealthCheckCompleted(success bool) {
 				t.state = TargetStateUnhealthy
 			}
 		}
+
 		newState = t.state
 	})
 
