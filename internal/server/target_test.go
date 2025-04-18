@@ -289,9 +289,10 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 		w.Write([]byte("ok"))
 	})
 
-	target.BeginHealthChecks(nil)
+	waiter := newTestHealthConsumer()
+	target.BeginHealthChecks(waiter)
 
-	require.True(t, target.WaitUntilHealthy(time.Second))
+	require.NoError(t, waiter.waitUntilHealthy())
 	require.Equal(t, TargetStateHealthy, target.state)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -539,8 +540,35 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	})
 }
 
+// Helpers
+
 func testServeRequestWithTarget(t *testing.T, target *Target, w http.ResponseWriter, r *http.Request) {
 	r, err := target.StartRequest(r)
 	require.NoError(t, err)
 	target.SendRequest(w, r)
+}
+
+type testHealthConsumer struct {
+	healthy chan struct{}
+}
+
+func newTestHealthConsumer() *testHealthConsumer {
+	return &testHealthConsumer{
+		healthy: make(chan struct{}),
+	}
+}
+
+func (c *testHealthConsumer) TargetStateChanged(target *Target) {
+	if target.state == TargetStateHealthy {
+		close(c.healthy)
+	}
+}
+
+func (c *testHealthConsumer) waitUntilHealthy() error {
+	select {
+	case <-c.healthy:
+		return nil
+	case <-time.After(5 * time.Second):
+		return ErrorTargetFailedToBecomeHealthy
+	}
 }

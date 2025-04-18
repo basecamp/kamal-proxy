@@ -99,7 +99,6 @@ type Target struct {
 
 	healthcheck   *HealthCheck
 	stateConsumer TargetStateConsumer
-	becameHealthy chan (bool)
 }
 
 func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
@@ -217,7 +216,6 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 
 func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 	t.stateConsumer = stateConsumer
-	t.becameHealthy = make(chan bool)
 
 	t.healthcheck = NewHealthCheck(t,
 		t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
@@ -230,17 +228,6 @@ func (t *Target) StopHealthChecks() {
 	if t.healthcheck != nil {
 		t.healthcheck.Close()
 		t.healthcheck = nil
-	}
-}
-
-func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
-	select {
-	case <-time.After(timeout):
-		t.StopHealthChecks()
-		return false
-
-	case <-t.becameHealthy:
-		return true
 	}
 }
 
@@ -257,7 +244,6 @@ func (t *Target) HealthCheckCompleted(success bool) {
 			switch t.state {
 			case TargetStateAdding:
 				t.state = TargetStateHealthy
-				close(t.becameHealthy)
 			default:
 				t.state = TargetStateHealthy
 			}

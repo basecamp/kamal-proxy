@@ -1,14 +1,12 @@
 package server
 
 import (
+	"context"
 	"errors"
-	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -88,19 +86,25 @@ type LoadBalancer struct {
 	readerIndex           int
 	lock                  sync.Mutex
 
-	multiTarget bool
-	hasReaders  bool
+	multiTarget           bool
+	hasReaders            bool
+	waitForHealthyContext context.Context
+	markHealthy           context.CancelFunc
 }
 
 func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration) *LoadBalancer {
+	waitForHealthyContext, markHealthy := context.WithCancel(context.Background())
+
 	lb := &LoadBalancer{
 		all:                   targets,
 		writers:               TargetList{},
 		readers:               TargetList{},
 		writerAffinityTimeout: writerAffinityTimeout,
 
-		multiTarget: len(targets) > 1,
-		hasReaders:  targets.HasReaders(),
+		multiTarget:           len(targets) > 1,
+		hasReaders:            targets.HasReaders(),
+		waitForHealthyContext: waitForHealthyContext,
+		markHealthy:           markHealthy,
 	}
 
 	lb.all.BeginHealthChecks(lb)
@@ -121,25 +125,13 @@ func (lb *LoadBalancer) ReadTargets() TargetList {
 }
 
 func (lb *LoadBalancer) WaitUntilHealthy(timeout time.Duration) error {
-	var wg sync.WaitGroup
-	var failed atomic.Bool
+	ctx, cancel := context.WithTimeout(lb.waitForHealthyContext, timeout)
+	defer cancel()
 
-	wg.Add(len(lb.all))
+	<-ctx.Done()
 
-	for _, target := range lb.all {
-		go func() {
-			if !target.WaitUntilHealthy(timeout) {
-				slog.Info("Target failed to become healthy", "target", target.Target())
-				failed.Store(true)
-			}
-			wg.Done()
-		}()
-	}
-
-	wg.Wait()
-
-	if failed.Load() {
-		return fmt.Errorf("%w (%s)", ErrorTargetFailedToBecomeHealthy, timeout)
+	if ctx.Err() == context.DeadlineExceeded {
+		return ErrorTargetFailedToBecomeHealthy
 	}
 
 	return nil
@@ -242,8 +234,11 @@ func (lb *LoadBalancer) updateHealthyTargets() {
 	lb.writers = TargetList{}
 	lb.readers = TargetList{}
 
+	healthyCount := 0
 	for _, target := range lb.all {
 		if target.State() == TargetStateHealthy {
+			healthyCount++
+
 			if target.ReadOnly() {
 				lb.readers = append(lb.readers, target)
 			} else {
@@ -257,6 +252,11 @@ func (lb *LoadBalancer) updateHealthyTargets() {
 	// won't help.
 	if !lb.multiTarget && len(lb.writers) == 1 {
 		lb.all.StopHealthChecks()
+	}
+
+	// Notify we've become healthy only if *all* targets are healthy.
+	if healthyCount == len(lb.all) {
+		lb.markHealthy()
 	}
 }
 
