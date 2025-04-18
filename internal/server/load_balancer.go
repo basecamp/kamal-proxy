@@ -162,18 +162,20 @@ func (lb *LoadBalancer) DrainAll(timeout time.Duration) {
 	wg.Wait()
 }
 
-func (lb *LoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) func() {
 	target, req, readRequest, err := lb.claimTarget(r)
 	if err != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
-		return
+		return nil
 	}
 
 	if lb.hasReaders && !readRequest {
 		lb.setWriteCookie(w)
 	}
 
-	target.SendRequest(w, req)
+	return func() {
+		target.SendRequest(w, req)
+	}
 }
 
 // TargetStateConsumer

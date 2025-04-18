@@ -428,8 +428,18 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	sendRequest := s.startLoadBalancerRequest(w, r)
+	if sendRequest != nil {
+		sendRequest()
+	}
+}
+
+func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Request) func() {
+	s.serviceLock.Lock()
+	defer s.serviceLock.Unlock()
+
 	lb := s.loadBalancerForRequest(r)
-	lb.ServeHTTP(w, r)
+	return lb.StartRequest(w, r)
 }
 
 func (s *Service) shouldRedirectToHTTPS(r *http.Request) bool {
