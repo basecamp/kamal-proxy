@@ -183,8 +183,12 @@ func testCreateServiceWithHandler(t *testing.T, options ServiceOptions, targetOp
 	service, err := NewService("test", options, targetOptions)
 	require.NoError(t, err)
 
-	service.UpdateLoadBalancer(NewLoadBalancer(TargetList{target}), TargetSlotActive)
-	service.active.WaitUntilHealthy(time.Second)
+	lb := NewLoadBalancer(TargetList{target})
+	service.UpdateLoadBalancer(lb, TargetSlotActive)
+
+	time.Sleep(100 * time.Millisecond)
+	err = lb.WaitUntilTargetHealthy(target, time.Second)
+	require.NoError(t, err)
 
 	return service
 }

@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
-var ErrorNoHealthyTargets = errors.New("no healthy targets")
+var (
+	ErrorNoHealthyTargets             = errors.New("no healthy targets")
+	ErrorTargetFailedToUpdateLBStatus = errors.New("timed out waiting for load balancer to acknowledge target health")
+)
 
 type TargetList []*Target
 
@@ -47,6 +49,7 @@ type LoadBalancer struct {
 	all     TargetList
 	index   int
 	lock    sync.Mutex
+	cond    *sync.Cond
 }
 
 func NewLoadBalancer(targets TargetList) *LoadBalancer {
@@ -54,6 +57,7 @@ func NewLoadBalancer(targets TargetList) *LoadBalancer {
 		healthy: TargetList{},
 		all:     targets,
 	}
+	lb.cond = sync.NewCond(&lb.lock)
 
 	lb.beginHealthChecks()
 	return lb
@@ -64,31 +68,6 @@ func (lb *LoadBalancer) Targets() TargetList {
 	defer lb.lock.Unlock()
 
 	return lb.all
-}
-
-func (lb *LoadBalancer) WaitUntilHealthy(timeout time.Duration) error {
-	var wg sync.WaitGroup
-	var failed atomic.Bool
-
-	wg.Add(len(lb.Targets()))
-
-	for _, target := range lb.Targets() {
-		go func() {
-			if !target.WaitUntilHealthy(timeout) {
-				slog.Info("Target failed to become healthy", "target", target.Target())
-				failed.Store(true)
-			}
-			wg.Done()
-		}()
-	}
-
-	wg.Wait()
-
-	if failed.Load() {
-		return fmt.Errorf("%w (%s)", ErrorTargetFailedToBecomeHealthy, timeout)
-	}
-
-	return nil
 }
 
 func (lb *LoadBalancer) MarkAllHealthy() {
@@ -133,6 +112,7 @@ func (lb *LoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (lb *LoadBalancer) TargetStateChanged(target *Target) {
 	lb.updateHealthyTargets()
+	lb.cond.Broadcast()
 }
 
 // Private
@@ -175,4 +155,49 @@ func (lb *LoadBalancer) updateHealthyTargets() {
 			lb.healthy = append(lb.healthy, target)
 		}
 	}
+}
+
+func (lb *LoadBalancer) WaitUntilTargetHealthy(checkTarget *Target, timeout time.Duration) error {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		lb.lock.Lock()
+		targetIsHealthyInLB := false
+		for _, t := range lb.healthy {
+			if t == checkTarget {
+				targetIsHealthyInLB = true
+				break
+			}
+		}
+
+		if targetIsHealthyInLB {
+			lb.lock.Unlock()
+			return nil
+		}
+
+		lb.lock.Unlock()
+
+		select {
+		case <-deadline.C:
+			slog.Warn("Timed out waiting for load balancer to acknowledge target health", "target", checkTarget.Target())
+			return fmt.Errorf("%w: %s", ErrorTargetFailedToUpdateLBStatus, checkTarget.Target())
+		case <-ticker.C:
+			continue
+		}
+	}
+}
+
+func (lb *LoadBalancer) IsTargetInHealthyList(checkTarget *Target) bool {
+	lb.lock.Lock()
+	defer lb.lock.Unlock()
+	for _, healthyTarget := range lb.healthy {
+		if healthyTarget == checkTarget {
+			return true
+		}
+	}
+	return false
 }

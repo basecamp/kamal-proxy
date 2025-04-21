@@ -289,10 +289,25 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 		w.Write([]byte("ok"))
 	})
 
-	target.BeginHealthChecks(nil)
+	healthyChan := make(chan bool, 1)
 
-	require.True(t, target.WaitUntilHealthy(time.Second))
-	require.Equal(t, TargetStateHealthy, target.state)
+	consumer := &testStateConsumer{
+		onStateChanged: func(target *Target) {
+			if target.State() == TargetStateHealthy {
+				healthyChan <- true
+			}
+		},
+	}
+
+	target.BeginHealthChecks(consumer)
+
+	select {
+	case <-healthyChan:
+	case <-time.After(time.Second):
+		t.Fatal("Target failed to become healthy within timeout")
+	}
+
+	require.Equal(t, TargetStateHealthy, target.State())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -300,6 +315,16 @@ func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, "ok", string(w.Body.String()))
+}
+
+type testStateConsumer struct {
+	onStateChanged func(*Target)
+}
+
+func (c *testStateConsumer) TargetStateChanged(target *Target) {
+	if c.onStateChanged != nil {
+		c.onStateChanged(target)
+	}
 }
 
 func TestTarget_DrainWhenEmpty(t *testing.T) {

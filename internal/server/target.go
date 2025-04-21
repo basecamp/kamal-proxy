@@ -98,7 +98,6 @@ type Target struct {
 
 	healthcheck   *HealthCheck
 	stateConsumer TargetStateConsumer
-	becameHealthy chan (bool)
 }
 
 func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
@@ -207,13 +206,14 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 
 func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 	t.stateConsumer = stateConsumer
-	t.becameHealthy = make(chan bool)
 
-	t.healthcheck = NewHealthCheck(t,
-		t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
-		t.options.HealthCheckConfig.Interval,
-		t.options.HealthCheckConfig.Timeout,
-	)
+	if t.healthcheck == nil {
+		t.healthcheck = NewHealthCheck(t,
+			t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
+			t.options.HealthCheckConfig.Interval,
+			t.options.HealthCheckConfig.Timeout,
+		)
+	}
 }
 
 func (t *Target) stopHealthChecks() {
@@ -223,43 +223,119 @@ func (t *Target) stopHealthChecks() {
 	}
 }
 
-func (t *Target) WaitUntilHealthy(timeout time.Duration) bool {
-	select {
-	case <-time.After(timeout):
-		t.stopHealthChecks()
-		return false
+func (t *Target) updateState(state TargetState) TargetState {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
 
-	case <-t.becameHealthy:
-		return true
+	originalState := t.state
+	t.state = state
+
+	return originalState
+}
+
+func (t *Target) getInflightRequest(req *http.Request) *inflightRequest {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
+
+	return t.inflight[req]
+}
+
+func (t *Target) endInflightRequest(req *http.Request) {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
+
+	inflightRequest, ok := t.inflight[req]
+	if ok {
+		inflightRequest.cancel(nil)
+		delete(t.inflight, req)
+	}
+}
+
+func (t *Target) pendingRequestsToCancel() inflightMap {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
+
+	result := inflightMap{}
+	for k, v := range t.inflight {
+		result[k] = v
+	}
+
+	return result
+}
+
+func (t *Target) withInflightLock(fn func()) {
+	t.inflightLock.Lock()
+	defer t.inflightLock.Unlock()
+
+	fn()
+}
+
+func parseTargetURL(targetURL string) (*url.URL, error) {
+	if !hostRegex.MatchString(targetURL) {
+		return nil, fmt.Errorf("%s :%w", targetURL, ErrorInvalidHostPattern)
+	}
+
+	uri, _ := url.Parse("http://" + targetURL)
+	return uri, nil
+}
+
+type targetResponseWriter struct {
+	http.ResponseWriter
+	inflightRequest *inflightRequest
+}
+
+func newTargetResponseWriter(w http.ResponseWriter, inflightRequest *inflightRequest) *targetResponseWriter {
+	return &targetResponseWriter{w, inflightRequest}
+}
+
+func (r *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
+	}
+
+	r.inflightRequest.hijacked = true
+	return hijacker.Hijack()
+}
+
+func (r *targetResponseWriter) Flush() {
+	flusher, ok := r.ResponseWriter.(http.Flusher)
+	if ok {
+		flusher.Flush()
 	}
 }
 
 // HealthCheckConsumer
 
 func (t *Target) HealthCheckCompleted(success bool) {
-	previousState := t.state
-	newState := t.state
+	var previousState, newState TargetState
+	stateChanged := false
 
 	t.withInflightLock(func() {
+		previousState = t.state
+		newState = t.state
+
 		switch success {
 		case true:
-			switch t.state {
-			case TargetStateAdding:
-				t.state = TargetStateHealthy
-				close(t.becameHealthy)
-			default:
-				t.state = TargetStateHealthy
+			if newState == TargetStateAdding {
+				newState = TargetStateHealthy
+			} else {
+				newState = TargetStateHealthy
 			}
 		case false:
-			switch t.state {
-			case TargetStateHealthy:
-				t.state = TargetStateUnhealthy
+			switch newState {
+			case TargetStateHealthy, TargetStateAdding:
+				newState = TargetStateUnhealthy
 			}
 		}
-		newState = t.state
+
+		if newState != previousState {
+			t.state = newState
+			stateChanged = true
+		}
 	})
 
-	if newState != previousState {
+	if stateChanged {
 		slog.Info("Target health updated", "target", t.Target(), "state", newState.String(), "was", previousState.String())
 
 		if t.stateConsumer != nil {
@@ -385,89 +461,4 @@ func (t *Target) isClientCancellation(err error) bool {
 
 func (t *Target) isDraining(err error) bool {
 	return errors.Is(err, ErrorDraining)
-}
-
-func (t *Target) updateState(state TargetState) TargetState {
-	t.inflightLock.Lock()
-	defer t.inflightLock.Unlock()
-
-	originalState := t.state
-	t.state = state
-
-	return originalState
-}
-
-func (t *Target) getInflightRequest(req *http.Request) *inflightRequest {
-	t.inflightLock.Lock()
-	defer t.inflightLock.Unlock()
-
-	return t.inflight[req]
-}
-
-func (t *Target) endInflightRequest(req *http.Request) {
-	t.inflightLock.Lock()
-	defer t.inflightLock.Unlock()
-
-	inflightRequest, ok := t.inflight[req]
-	if ok {
-		inflightRequest.cancel(nil)
-		delete(t.inflight, req)
-	}
-}
-
-func (t *Target) pendingRequestsToCancel() inflightMap {
-	// We use a copy of the inflight map to iterate over while draining, so that
-	// we don't need to lock it the whole time, which could interfere with the
-	// locking that happens when requests end.
-	t.inflightLock.Lock()
-	defer t.inflightLock.Unlock()
-
-	result := inflightMap{}
-	for k, v := range t.inflight {
-		result[k] = v
-	}
-
-	return result
-}
-
-func (t *Target) withInflightLock(fn func()) {
-	t.inflightLock.Lock()
-	defer t.inflightLock.Unlock()
-
-	fn()
-}
-
-func parseTargetURL(targetURL string) (*url.URL, error) {
-	if !hostRegex.MatchString(targetURL) {
-		return nil, fmt.Errorf("%s :%w", targetURL, ErrorInvalidHostPattern)
-	}
-
-	uri, _ := url.Parse("http://" + targetURL)
-	return uri, nil
-}
-
-type targetResponseWriter struct {
-	http.ResponseWriter
-	inflightRequest *inflightRequest
-}
-
-func newTargetResponseWriter(w http.ResponseWriter, inflightRequest *inflightRequest) *targetResponseWriter {
-	return &targetResponseWriter{w, inflightRequest}
-}
-
-func (r *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	hijacker, ok := r.ResponseWriter.(http.Hijacker)
-	if !ok {
-		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
-	}
-
-	r.inflightRequest.hijacked = true
-	return hijacker.Hijack()
-}
-
-func (r *targetResponseWriter) Flush() {
-	flusher, ok := r.ResponseWriter.(http.Flusher)
-	if ok {
-		flusher.Flush()
-	}
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -268,22 +269,46 @@ func (r *Router) deployTargetsIntoService(service *Service, targetSlot TargetSlo
 	}
 
 	lb := NewLoadBalancer(tl)
-	err = lb.WaitUntilHealthy(deployTimeout)
-	if err != nil {
+
+	var deployErr error
+	var wg sync.WaitGroup
+	targets := lb.Targets()
+	wg.Add(len(targets))
+
+	for _, target := range targets {
+		go func(t *Target) {
+			defer wg.Done()
+			err := lb.WaitUntilTargetHealthy(t, deployTimeout)
+			if err != nil {
+				if deployErr == nil {
+					deployErr = fmt.Errorf("target %s failed health check: %w", t.Target(), err)
+				}
+			}
+		}(target)
+	}
+
+	wg.Wait()
+
+	if deployErr != nil {
 		lb.Dispose()
-		return err
+		return fmt.Errorf("%w: %w", ErrorTargetFailedToBecomeHealthy, deployErr)
 	}
 
 	replaced := service.UpdateLoadBalancer(lb, targetSlot)
 
 	err = r.installService(service)
 	if err != nil {
+		slog.Error("Failed to install service after successful health checks", "service", service.name, "error", err)
+		lb.Dispose()
 		return err
 	}
 
 	if replaced != nil {
-		replaced.DrainAll(drainTimeout)
-		replaced.Dispose()
+		go func() {
+			replaced.DrainAll(drainTimeout)
+			replaced.Dispose()
+			slog.Info("Drained and disposed old load balancer", "service", service.name)
+		}()
 	}
 
 	return nil
