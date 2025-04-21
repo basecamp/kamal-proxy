@@ -13,8 +13,7 @@ import (
 
 var (
 	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
-	defaultEmptyHosts        = []string{}
-	defaultPaths             = []string{rootPath}
+	defaultEmptyReaders      = []string{}
 	defaultServiceOptions    = ServiceOptions{TLSRedirect: true}
 	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
 )
@@ -25,6 +24,16 @@ func testTarget(t testing.TB, handler http.HandlerFunc) *Target {
 	_, targetURL := testBackendWithHandler(t, handler)
 
 	target, err := NewTarget(targetURL, defaultTargetOptions)
+	require.NoError(t, err)
+	return target
+}
+
+func testReadOnlyTarget(t testing.TB, handler http.HandlerFunc) *Target {
+	t.Helper()
+
+	_, targetURL := testBackendWithHandler(t, handler)
+
+	target, err := NewReadOnlyTarget(targetURL, defaultTargetOptions)
 	require.NoError(t, err)
 	return target
 }
