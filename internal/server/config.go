@@ -13,9 +13,10 @@ const (
 )
 
 type Config struct {
-	Bind      string
-	HttpPort  int
-	HttpsPort int
+	Bind        string
+	HttpPort    int
+	HttpsPort   int
+	MetricsPort int
 
 	AlternateConfigDir string
 }
