@@ -3,7 +3,7 @@ workdir /app
 copy . .
 run make
 
-from ubuntu:noble-20240801 as base
+from ubuntu:noble-20250404 as base
 copy --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 copy --from=build /app/bin/kamal-proxy /usr/local/bin/
 expose 80 443
