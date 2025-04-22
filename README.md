@@ -58,6 +58,19 @@ Because traffic is only routed to a new instance once it's healthy, and traffic
 is drained completely from old instances before they are removed, deployments
 take place with zero downtime.
 
+### Customizing the health check
+
+By default, Kamal Proxy will test the health of each service by sending a `GET`
+request to `/up`, once per second. A `200` response is considered healthy.
+
+If you need to customize the health checks for your application, there are a
+few `deploy` flags you can use. See the help for `--health-check-path`,
+`--health-check-timeout`, and `--health-check-interval`.
+
+For example, to change the health check path to something other than `/up`, you
+could:
+
+    kamal-proxy deploy service1 --target web-1:3000 --health-check-path web/index.html
 
 ### Host-based routing
 
