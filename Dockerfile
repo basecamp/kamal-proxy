@@ -1,16 +1,24 @@
-from golang:1.24.2 as build
-workdir /app
-copy . .
-run make
+FROM golang:1.24.2 AS build
 
-from ubuntu:noble-20250404 as base
-copy --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-copy --from=build /app/bin/kamal-proxy /usr/local/bin/
-expose 80 443
+WORKDIR /app
 
-run useradd kamal-proxy
-run mkdir -p /home/kamal-proxy/.config/kamal-proxy
-run chown -R kamal-proxy:kamal-proxy /home/kamal-proxy
-user kamal-proxy:kamal-proxy
+COPY go.mod go.sum ./
+RUN go mod download
 
-cmd [ "kamal-proxy", "run" ]
+COPY . .
+RUN make
+
+FROM ubuntu:noble-20250404 AS base
+
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /app/bin/kamal-proxy /usr/local/bin/
+
+EXPOSE 80 443
+
+RUN useradd kamal-proxy \
+    && mkdir -p /home/kamal-proxy/.config/kamal-proxy \
+    && chown -R kamal-proxy:kamal-proxy /home/kamal-proxy
+
+USER kamal-proxy:kamal-proxy
+
+CMD ["kamal-proxy", "run"]
