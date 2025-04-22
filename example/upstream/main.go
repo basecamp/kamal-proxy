@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-func upHandler(w http.ResponseWriter, _ *http.Request) {
+func upHandler(w http.ResponseWriter, r *http.Request) {
+	slog.Info("Health request", "method", r.Method, "url", r.URL)
 	w.WriteHeader(http.StatusOK)
 }
 
