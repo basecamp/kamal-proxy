@@ -216,8 +216,9 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 }
 
 func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
+	t.stateConsumer = stateConsumer
+
 	t.withInflightLock(func() {
-		t.stateConsumer = stateConsumer
 		t.healthcheck = NewHealthCheck(t,
 			t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
 			t.options.HealthCheckConfig.Interval,
@@ -231,7 +232,6 @@ func (t *Target) StopHealthChecks() {
 		if t.healthcheck != nil {
 			t.healthcheck.Close()
 			t.healthcheck = nil
-			t.stateConsumer = nil
 		}
 	})
 }
