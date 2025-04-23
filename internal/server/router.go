@@ -298,7 +298,7 @@ func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options Ser
 		return nil, err
 	}
 
-	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout)
+	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout, options.ReadTargetsAcceptWebsockets)
 	err = lb.WaitUntilHealthy(deployTimeout)
 	if err != nil {
 		lb.Dispose()

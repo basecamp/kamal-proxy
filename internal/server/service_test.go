@@ -140,7 +140,7 @@ func TestService_MarshallingState(t *testing.T) {
 	service := testCreateService(t, defaultServiceOptions, targetOptions)
 	defer service.Dispose()
 	require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
-	service.UpdateLoadBalancer(NewLoadBalancer(service.active.Targets(), DefaultWriterAffinityTimeout), TargetSlotRollout)
+	service.UpdateLoadBalancer(NewLoadBalancer(service.active.Targets(), DefaultWriterAffinityTimeout, false), TargetSlotRollout)
 
 	require.NoError(t, service.SetRolloutSplit(20, []string{"first"}))
 
@@ -183,7 +183,7 @@ func testCreateServiceWithHandler(t *testing.T, options ServiceOptions, targetOp
 	service, err := NewService("test", options, targetOptions)
 	require.NoError(t, err)
 
-	service.UpdateLoadBalancer(NewLoadBalancer(TargetList{target}, DefaultWriterAffinityTimeout), TargetSlotActive)
+	service.UpdateLoadBalancer(NewLoadBalancer(TargetList{target}, DefaultWriterAffinityTimeout, false), TargetSlotActive)
 	service.active.WaitUntilHealthy(time.Second)
 
 	return service

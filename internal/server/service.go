@@ -69,17 +69,18 @@ type HealthCheckConfig struct {
 }
 
 type ServiceOptions struct {
-	Hosts                 []string      `json:"hosts"`
-	PathPrefixes          []string      `json:"path_prefixes"`
-	TLSEnabled            bool          `json:"tls_enabled"`
-	TLSCertificatePath    string        `json:"tls_certificate_path"`
-	TLSPrivateKeyPath     string        `json:"tls_private_key_path"`
-	TLSRedirect           bool          `json:"tls_redirect"`
-	ACMEDirectory         string        `json:"acme_directory"`
-	ACMECachePath         string        `json:"acme_cache_path"`
-	ErrorPagePath         string        `json:"error_page_path"`
-	StripPrefix           bool          `json:"strip_prefix"`
-	WriterAffinityTimeout time.Duration `json:"writer_affinity_timeout"`
+	Hosts                       []string      `json:"hosts"`
+	PathPrefixes                []string      `json:"path_prefixes"`
+	TLSEnabled                  bool          `json:"tls_enabled"`
+	TLSCertificatePath          string        `json:"tls_certificate_path"`
+	TLSPrivateKeyPath           string        `json:"tls_private_key_path"`
+	TLSRedirect                 bool          `json:"tls_redirect"`
+	ACMEDirectory               string        `json:"acme_directory"`
+	ACMECachePath               string        `json:"acme_cache_path"`
+	ErrorPagePath               string        `json:"error_page_path"`
+	StripPrefix                 bool          `json:"strip_prefix"`
+	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
+	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
 }
 
 func (so *ServiceOptions) Normalize() {
@@ -268,7 +269,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	s.active = NewLoadBalancer(activeTargets, s.options.WriterAffinityTimeout)
+	s.active = NewLoadBalancer(activeTargets, s.options.WriterAffinityTimeout, s.options.ReadTargetsAcceptWebsockets)
 	s.active.MarkAllHealthy()
 
 	rolloutTargets, err := NewTargetList(ms.RolloutTargets, ms.RolloutReaders, ms.TargetOptions)
@@ -276,7 +277,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if len(rolloutTargets) > 0 {
-		s.rollout = NewLoadBalancer(rolloutTargets, s.options.WriterAffinityTimeout)
+		s.rollout = NewLoadBalancer(rolloutTargets, s.options.WriterAffinityTimeout, s.options.ReadTargetsAcceptWebsockets)
 		s.rollout.MarkAllHealthy()
 	}
 

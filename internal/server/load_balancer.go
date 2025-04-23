@@ -79,13 +79,14 @@ func (tl TargetList) targetsMatchingReadonly(readonly bool) TargetList {
 }
 
 type LoadBalancer struct {
-	all                   TargetList
-	writers               TargetList
-	readers               TargetList
-	writerAffinityTimeout time.Duration
-	writerIndex           int
-	readerIndex           int
-	lock                  sync.Mutex
+	all                         TargetList
+	writers                     TargetList
+	readers                     TargetList
+	writerAffinityTimeout       time.Duration
+	readTargetsAcceptWebsockets bool
+	writerIndex                 int
+	readerIndex                 int
+	lock                        sync.Mutex
 
 	multiTarget           bool
 	hasReaders            bool
@@ -93,14 +94,15 @@ type LoadBalancer struct {
 	markHealthy           context.CancelFunc
 }
 
-func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration) *LoadBalancer {
+func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration, readTargetsAcceptWebsockets bool) *LoadBalancer {
 	waitForHealthyContext, markHealthy := context.WithCancel(context.Background())
 
 	lb := &LoadBalancer{
-		all:                   targets,
-		writers:               TargetList{},
-		readers:               TargetList{},
-		writerAffinityTimeout: writerAffinityTimeout,
+		all:                         targets,
+		writers:                     TargetList{},
+		readers:                     TargetList{},
+		writerAffinityTimeout:       writerAffinityTimeout,
+		readTargetsAcceptWebsockets: readTargetsAcceptWebsockets,
 
 		multiTarget:           len(targets) > 1,
 		hasReaders:            targets.HasReaders(),
@@ -218,7 +220,8 @@ func (lb *LoadBalancer) nextTarget(reader bool) *Target {
 }
 
 func (lb *LoadBalancer) isReadRequest(req *http.Request) bool {
-	return (req.Method == http.MethodGet || req.Method == http.MethodHead) && !lb.isWebSocketRequest(req)
+	return (req.Method == http.MethodGet || req.Method == http.MethodHead) &&
+		(lb.readTargetsAcceptWebsockets || !lb.isWebSocketRequest(req))
 }
 
 func (lb *LoadBalancer) isWebSocketRequest(req *http.Request) bool {

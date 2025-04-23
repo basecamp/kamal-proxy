@@ -26,7 +26,7 @@ func TestLoadBalancer_Targets(t *testing.T) {
 	tl, err := NewTargetList([]string{"one", "two", "three"}, []string{}, defaultTargetOptions)
 	require.NoError(t, err)
 
-	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
 	defer lb.Dispose()
 
 	assert.Equal(t, []string{"one", "two", "three"}, lb.Targets().Names())
@@ -93,7 +93,7 @@ func TestLoadBalancer_Readers(t *testing.T) {
 		tl, err := NewTargetList([]string{writer.Target()}, readers, defaultTargetOptions)
 		require.NoError(t, err)
 
-		lb := NewLoadBalancer(tl, writerAffinityTimeout)
+		lb := NewLoadBalancer(tl, writerAffinityTimeout, false)
 		t.Cleanup(lb.Dispose)
 
 		lb.WaitUntilHealthy(time.Second)
@@ -163,7 +163,7 @@ func testLoadBalancerWithHandlers(t *testing.T, handlers ...http.HandlerFunc) *L
 	tl, err := NewTargetList(targets, []string{}, defaultTargetOptions)
 	require.NoError(t, err)
 
-	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
 	t.Cleanup(lb.Dispose)
 
 	return lb
