@@ -38,25 +38,31 @@ func NewPrometheusTracker() *prometheusTracker {
 	tracker := &prometheusTracker{
 		httpRequests: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "http_requests_total",
-				Help: "HTTP requests processed, labeled by service, status code and method.",
+				Name:      "http_requests_total",
+				Namespace: "kamal",
+				Subsystem: "proxy",
+				Help:      "HTTP requests processed, labeled by service, status code and method.",
 			},
 			[]string{"service", "method", "status"},
 		),
 
 		httpDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "http_request_duration_seconds",
-				Help:    "Duration of HTTP requests, labeled by service, status code and method.",
-				Buckets: prometheus.DefBuckets,
+				Name:      "http_request_duration_seconds",
+				Namespace: "kamal",
+				Subsystem: "proxy",
+				Help:      "Duration of HTTP requests, labeled by service, status code and method.",
+				Buckets:   prometheus.DefBuckets,
 			},
 			[]string{"service", "method", "status"},
 		),
 
 		inflightRequests: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "http_in_flight_requests",
-				Help: "Number of in-flight HTTP requests, labeled by service.",
+				Name:      "http_in_flight_requests",
+				Namespace: "kamal",
+				Subsystem: "proxy",
+				Help:      "Number of in-flight HTTP requests, labeled by service.",
 			},
 			[]string{"service"},
 		),
