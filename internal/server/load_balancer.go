@@ -172,7 +172,7 @@ func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) fun
 		return nil
 	}
 
-	if lb.hasReaders && !readRequest {
+	if lb.hasReaders && !readRequest && !lb.skipsWriterAffinity(r) {
 		lb.setWriteCookie(w)
 	}
 
@@ -222,6 +222,10 @@ func (lb *LoadBalancer) nextTarget(reader bool) *Target {
 func (lb *LoadBalancer) isReadRequest(req *http.Request) bool {
 	return (req.Method == http.MethodGet || req.Method == http.MethodHead) &&
 		(lb.readTargetsAcceptWebsockets || !lb.isWebSocketRequest(req))
+}
+
+func (lb *LoadBalancer) skipsWriterAffinity(req *http.Request) bool {
+	return req.Header.Get("X-Writer-Affinity") == "false"
 }
 
 func (lb *LoadBalancer) isWebSocketRequest(req *http.Request) bool {

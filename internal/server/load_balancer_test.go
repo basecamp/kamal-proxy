@@ -189,6 +189,16 @@ func TestLoadBalancer_Readers(t *testing.T) {
 		w := checkResponse(lb, httptest.NewRequest("PUT", "/something", nil), isWriter)
 		assert.Empty(t, w.Result().Cookies())
 	})
+
+	t.Run("writer affinity not active when `X-Writer-Affinity` header is `false`", func(t *testing.T) {
+		lb := createDefaultLoadBalancer(true)
+
+		req := httptest.NewRequest("PUT", "/something", nil)
+		req.Header.Set("X-Writer-Affinity", "false")
+
+		w := checkResponse(lb, req, isWriter)
+		assert.Empty(t, w.Result().Cookies())
+	})
 }
 
 // Helpers
