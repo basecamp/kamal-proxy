@@ -161,6 +161,15 @@ func TestLoadBalancer_Readers(t *testing.T) {
 		_ = checkResponse(lb, req, isReader)
 	})
 
+	t.Run("writer affinity sub 1s", func(t *testing.T) {
+		lb := createLoadBalancer(true, time.Millisecond*200, false)
+
+		w := checkResponse(lb, httptest.NewRequest("PUT", "/something", nil), isWriter)
+		cookie := w.Result().Cookies()[0]
+		assert.Equal(t, LoadBalancerWriteCookieName, cookie.Name)
+		assert.Greater(t, cookie.Expires, time.Now())
+	})
+
 	t.Run("writer affinity", func(t *testing.T) {
 		lb := createDefaultLoadBalancer(true)
 

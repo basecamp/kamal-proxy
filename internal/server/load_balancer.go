@@ -276,7 +276,7 @@ func (lb *LoadBalancer) setWriteCookie(w http.ResponseWriter) {
 			Value:    strconv.FormatInt(expires.UnixMilli(), 10),
 			Path:     "/",
 			HttpOnly: true,
-			Expires:  expires,
+			Expires:  expires.Add(time.Second),
 		}
 
 		http.SetCookie(w, cookie)
