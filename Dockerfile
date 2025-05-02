@@ -28,4 +28,6 @@ RUN adduser -D kamal-proxy \
 
 USER kamal-proxy:kamal-proxy
 
+WORKDIR /home/kamal-proxy
+
 CMD ["kamal-proxy", "run"]
