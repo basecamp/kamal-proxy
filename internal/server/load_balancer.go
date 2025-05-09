@@ -269,7 +269,7 @@ func (lb *LoadBalancer) updateHealthyTargets() {
 
 func (lb *LoadBalancer) setWriteCookie(w http.ResponseWriter) {
 	if lb.writerAffinityTimeout > 0 {
-		expires := time.Now().Add(time.Second).Add(lb.writerAffinityTimeout)
+		expires := time.Now().Add(lb.writerAffinityTimeout)
 
 		cookie := &http.Cookie{
 			Name:     LoadBalancerWriteCookieName,
