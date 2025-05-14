@@ -164,6 +164,58 @@ func TestService_MarshallingState(t *testing.T) {
 	assert.Equal(t, []string{"first"}, service2.rolloutController.Allowlist)
 }
 
+func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
+	state := `
+	  {
+		"name": "my-app",
+		"hosts": ["app.example.com"],
+		"active_target": "localhost:3000",
+		"rollout_target": "",
+		"options": {
+		  "tls_enabled": false,
+		  "tls_certificate_path": "",
+		  "tls_private_key_path": "",
+		  "acme_directory": "",
+		  "acme_cache_path": "",
+		  "error_page_path": ""
+		},
+		"target_options": {
+		  "health_check_config": {
+			"path": "/up",
+			"interval": 1000000000,
+			"timeout": 5000000000
+		  },
+		  "response_timeout": 3000000000,
+		  "buffer_requests": false,
+		  "buffer_responses": false,
+		  "max_memory_buffer_size": 1048576,
+		  "max_request_body_size": 0,
+		  "max_response_body_size": 0,
+		  "log_request_headers": null,
+		  "log_response_headers": null,
+		  "forward_headers": true
+		},
+		"pause_controller": {
+		  "state": 0,
+		  "stop_message": "",
+		  "fail_after": 0
+		},
+		"rollout_controller": null
+	  }
+	`
+
+	var service Service
+	err := json.NewDecoder(strings.NewReader(state)).Decode(&service)
+	require.NoError(t, err)
+	defer service.Dispose()
+
+	assert.Equal(t, "my-app", service.name)
+	assert.Equal(t, []string{"localhost:3000"}, service.active.Targets().Names())
+	assert.Equal(t, []string{"app.example.com"}, service.options.Hosts)
+	assert.Equal(t, []string{"/"}, service.options.PathPrefixes)
+	assert.Equal(t, 3*time.Second, service.targetOptions.ResponseTimeout)
+}
+
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
 	return testCreateServiceWithHandler(t, options, targetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),

@@ -258,6 +258,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	if len(ms.Options.PathPrefixes) == 0 && len(ms.LegacyPathPrefixes) > 0 {
 		ms.Options.PathPrefixes = ms.LegacyPathPrefixes
 	}
+	ms.Options.Normalize()
 
 	s.name = ms.Name
 	s.pauseController = ms.PauseController
