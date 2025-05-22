@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,7 +13,10 @@ import (
 	"time"
 )
 
-const LoadBalancerWriteCookieName = "kamal-writer"
+const (
+	LoadBalancerWriteCookieName      = "kamal-writer"
+	LoadBalancerAffinityOptOutHeader = "X-Writer-Affinity"
+)
 
 var ErrorNoHealthyTargets = errors.New("no healthy targets")
 
@@ -172,8 +177,8 @@ func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) fun
 		return nil
 	}
 
-	if lb.hasReaders && !readRequest && !lb.skipsWriterAffinity(r) {
-		lb.setWriteCookie(w)
+	if lb.writerAffinityTimeout > 0 && lb.hasReaders && !readRequest {
+		w = newLoadBalancerReponseWriter(w, lb.writerAffinityTimeout)
 	}
 
 	return func() {
@@ -295,4 +300,67 @@ func (lb *LoadBalancer) hasWriteCookie(r *http.Request) bool {
 	}
 
 	return time.Now().UnixMilli() < expires
+}
+
+type loadBalancerResponseWriter struct {
+	http.ResponseWriter
+	headerWritten         bool
+	writerAffinityTimeout time.Duration
+}
+
+func newLoadBalancerReponseWriter(w http.ResponseWriter, writerAffinityTimeout time.Duration) *loadBalancerResponseWriter {
+	return &loadBalancerResponseWriter{
+		ResponseWriter:        w,
+		headerWritten:         false,
+		writerAffinityTimeout: writerAffinityTimeout,
+	}
+}
+
+func (w *loadBalancerResponseWriter) WriteHeader(statusCode int) {
+	w.setWriterAffinityCookie()
+
+	w.ResponseWriter.WriteHeader(statusCode)
+	w.headerWritten = true
+}
+
+func (w *loadBalancerResponseWriter) Write(b []byte) (int, error) {
+	if !w.headerWritten {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *loadBalancerResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
+	}
+
+	return hijacker.Hijack()
+}
+
+func (w *loadBalancerResponseWriter) Flush() {
+	flusher, ok := w.ResponseWriter.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+}
+
+func (w *loadBalancerResponseWriter) setWriterAffinityCookie() {
+	if w.Header().Get(LoadBalancerAffinityOptOutHeader) != "false" {
+		expires := time.Now().Add(w.writerAffinityTimeout)
+
+		cookie := &http.Cookie{
+			Name:     LoadBalancerWriteCookieName,
+			Value:    strconv.FormatInt(expires.UnixMilli(), 10),
+			Path:     "/",
+			HttpOnly: true,
+			Expires:  expires.Add(time.Second),
+		}
+
+		http.SetCookie(w, cookie)
+	}
+
+	w.Header().Del(LoadBalancerAffinityOptOutHeader)
 }

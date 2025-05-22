@@ -78,9 +78,12 @@ func TestLoadBalancer_StartRequest(t *testing.T) {
 }
 
 func TestLoadBalancer_Readers(t *testing.T) {
-	createLoadBalancer := func(includeReader bool, writerAffinityTimeout time.Duration, readTargetsAcceptWebsockets bool) *LoadBalancer {
+	createLoadBalancer := func(includeReader bool, writerAffinityTimeout time.Duration, readTargetsAcceptWebsockets bool, handler http.HandlerFunc) *LoadBalancer {
 		writer := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Writer", "true")
+			if handler != nil {
+				handler(w, r)
+			}
 		})
 
 		readers := []string{}
@@ -103,7 +106,7 @@ func TestLoadBalancer_Readers(t *testing.T) {
 	}
 
 	createDefaultLoadBalancer := func(includeReader bool) *LoadBalancer {
-		return createLoadBalancer(includeReader, DefaultWriterAffinityTimeout, false)
+		return createLoadBalancer(includeReader, DefaultWriterAffinityTimeout, false, nil)
 	}
 
 	checkResponse := func(lb *LoadBalancer, r *http.Request, writer bool) *httptest.ResponseRecorder {
@@ -157,12 +160,12 @@ func TestLoadBalancer_Readers(t *testing.T) {
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", "websocket")
 
-		lb := createLoadBalancer(true, DefaultWriterAffinityTimeout, true)
+		lb := createLoadBalancer(true, DefaultWriterAffinityTimeout, true, nil)
 		_ = checkResponse(lb, req, isReader)
 	})
 
 	t.Run("writer affinity sub 1s", func(t *testing.T) {
-		lb := createLoadBalancer(true, time.Millisecond*200, false)
+		lb := createLoadBalancer(true, time.Millisecond*200, false, nil)
 
 		w := checkResponse(lb, httptest.NewRequest("PUT", "/something", nil), isWriter)
 		cookie := w.Result().Cookies()[0]
@@ -193,20 +196,22 @@ func TestLoadBalancer_Readers(t *testing.T) {
 	})
 
 	t.Run("writer affinity not active when the timeout is zero", func(t *testing.T) {
-		lb := createLoadBalancer(true, 0, false)
+		lb := createLoadBalancer(true, 0, false, nil)
 
 		w := checkResponse(lb, httptest.NewRequest("PUT", "/something", nil), isWriter)
 		assert.Empty(t, w.Result().Cookies())
 	})
 
-	t.Run("writer affinity not active when `X-Writer-Affinity` header is `false`", func(t *testing.T) {
-		lb := createDefaultLoadBalancer(true)
+	t.Run("writer affinity not active when `X-Writer-Affinity` response header is `false`", func(t *testing.T) {
+		lb := createLoadBalancer(true, DefaultWriterAffinityTimeout, false, func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Writer-Affinity", "false")
+		})
 
 		req := httptest.NewRequest("PUT", "/something", nil)
-		req.Header.Set("X-Writer-Affinity", "false")
 
 		w := checkResponse(lb, req, isWriter)
 		assert.Empty(t, w.Result().Cookies())
+		assert.Empty(t, w.Header().Get("X-Writer-Affinity"))
 	})
 }
 
