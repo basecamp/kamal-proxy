@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,13 +16,15 @@ func upHandler(w http.ResponseWriter, r *http.Request) {
 
 func helloHandler(host string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		slog.Info("Request", "host", host, "request_id", r.Header.Get("X-Request-ID"), "method", r.Method, "url", r.URL)
+		host = cmp.Or(r.Header.Get("X-Kamal-Target"), host)
 
 		w.Header().Add("Content-Type", "text/html")
 		fmt.Fprintf(w, "<body>Hello from <strong>%s</strong> at <strong>%s</strong></body>\n",
 			host,
 			time.Now().Format(time.RFC3339),
 		)
+
+		slog.Info("Request", "host", host, "request_id", r.Header.Get("X-Request-ID"), "method", r.Method, "url", r.URL)
 	}
 }
 
