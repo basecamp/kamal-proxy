@@ -91,10 +91,10 @@ func TestLoadBalancer_Readers(t *testing.T) {
 			reader := testReadOnlyTarget(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("X-Writer", "false")
 			})
-			readers = []string{reader.Target()}
+			readers = []string{reader.Address()}
 		}
 
-		tl, err := NewTargetList([]string{writer.Target()}, readers, defaultTargetOptions)
+		tl, err := NewTargetList([]string{writer.Address()}, readers, defaultTargetOptions)
 		require.NoError(t, err)
 
 		lb := NewLoadBalancer(tl, writerAffinityTimeout, readTargetsAcceptWebsockets)
@@ -220,7 +220,7 @@ func TestLoadBalancer_Readers(t *testing.T) {
 func testLoadBalancerWithHandlers(t *testing.T, handlers ...http.HandlerFunc) *LoadBalancer {
 	targets := []string{}
 	for _, h := range handlers {
-		targets = append(targets, testTarget(t, h).Target())
+		targets = append(targets, testTarget(t, h).Address())
 	}
 
 	tl, err := NewTargetList(targets, []string{}, defaultTargetOptions)

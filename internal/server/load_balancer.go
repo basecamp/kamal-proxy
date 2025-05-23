@@ -47,7 +47,7 @@ func NewTargetList(targetURLs, readerURLs []string, options TargetOptions) (Targ
 func (tl TargetList) Names() []string {
 	names := []string{}
 	for _, target := range tl {
-		names = append(names, target.Target())
+		names = append(names, target.Address())
 	}
 	return names
 }
