@@ -215,6 +215,39 @@ func TestLoadBalancer_Readers(t *testing.T) {
 	})
 }
 
+func TestLoadBalancer_PinnedWriters(t *testing.T) {
+	writer1 := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("one"))
+	})
+
+	writer2 := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("two"))
+	})
+
+	reader := testReadOnlyTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(LoadBalancerWriterHeader, writer1.Address())
+		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
+
+		w.Write([]byte("reader"))
+	})
+
+	tl, _ := NewTargetList([]string{writer1.Address(), writer2.Address()}, []string{reader.Address()}, defaultTargetOptions)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
+	lb.WaitUntilHealthy(time.Second)
+
+	checkResponder := func(method string, expected string) {
+		w := httptest.NewRecorder()
+		lb.StartRequest(w, httptest.NewRequest(method, "/", nil))()
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, expected, w.Body.String())
+	}
+
+	checkResponder("GET", "reader")
+	checkResponder("PUT", "one")
+	checkResponder("POST", "one")
+}
+
 func TestLoadBalancer_TargetHeader(t *testing.T) {
 	reader := testReadOnlyTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
