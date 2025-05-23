@@ -139,7 +139,7 @@ func NewReadOnlyTarget(targetURL string, options TargetOptions) (*Target, error)
 	return target, err
 }
 
-func (t *Target) Target() string {
+func (t *Target) Address() string {
 	return t.targetURL.Host
 }
 
@@ -172,7 +172,7 @@ func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
 }
 
 func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
-	LoggingRequestContext(req).Target = t.Target()
+	LoggingRequestContext(req).Target = t.Address()
 	LoggingRequestContext(req).RequestHeaders = t.options.LogRequestHeaders
 	LoggingRequestContext(req).ResponseHeaders = t.options.LogResponseHeaders
 
@@ -263,7 +263,7 @@ func (t *Target) HealthCheckCompleted(success bool) {
 	})
 
 	if newState != previousState {
-		slog.Info("Target health updated", "target", t.Target(), "state", newState.String(), "was", previousState.String())
+		slog.Info("Target health updated", "target", t.Address(), "state", newState.String(), "was", previousState.String())
 
 		if t.stateConsumer != nil {
 			t.stateConsumer.TargetStateChanged(t)
@@ -360,12 +360,12 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 	}
 
 	if t.isDraining(err) {
-		slog.Info("Request cancelled due to draining", "target", t.Target(), "path", r.URL.Path)
+		slog.Info("Request cancelled due to draining", "target", t.Address(), "path", r.URL.Path)
 		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
 		return
 	}
 
-	slog.Error("Error while proxying", "target", t.Target(), "path", r.URL.Path, "error", err)
+	slog.Error("Error while proxying", "target", t.Address(), "path", r.URL.Path, "error", err)
 	SetErrorResponse(w, r, http.StatusBadGateway, nil)
 }
 

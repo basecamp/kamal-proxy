@@ -91,10 +91,10 @@ func TestLoadBalancer_Readers(t *testing.T) {
 			reader := testReadOnlyTarget(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("X-Writer", "false")
 			})
-			readers = []string{reader.Target()}
+			readers = []string{reader.Address()}
 		}
 
-		tl, err := NewTargetList([]string{writer.Target()}, readers, defaultTargetOptions)
+		tl, err := NewTargetList([]string{writer.Address()}, readers, defaultTargetOptions)
 		require.NoError(t, err)
 
 		lb := NewLoadBalancer(tl, writerAffinityTimeout, readTargetsAcceptWebsockets)
@@ -215,12 +215,37 @@ func TestLoadBalancer_Readers(t *testing.T) {
 	})
 }
 
+func TestLoadBalancer_TargetHeader(t *testing.T) {
+	reader := testReadOnlyTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
+	})
+
+	writer := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
+	})
+
+	tl, _ := NewTargetList([]string{writer.Address()}, []string{reader.Address()}, defaultTargetOptions)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
+	lb.WaitUntilHealthy(time.Second)
+
+	checkHeader := func(method string, expected string) {
+		w := httptest.NewRecorder()
+		lb.StartRequest(w, httptest.NewRequest(method, "/", nil))()
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, expected, w.Header().Get(LoadBalancerTargetHeader))
+	}
+
+	checkHeader("GET", reader.Address())
+	checkHeader("POST", writer.Address())
+}
+
 // Helpers
 
 func testLoadBalancerWithHandlers(t *testing.T, handlers ...http.HandlerFunc) *LoadBalancer {
 	targets := []string{}
 	for _, h := range handlers {
-		targets = append(targets, testTarget(t, h).Target())
+		targets = append(targets, testTarget(t, h).Address())
 	}
 
 	tl, err := NewTargetList(targets, []string{}, defaultTargetOptions)

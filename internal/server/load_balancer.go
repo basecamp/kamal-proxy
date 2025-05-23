@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	LoadBalancerWriteCookieName      = "kamal-writer"
 	LoadBalancerAffinityOptOutHeader = "X-Writer-Affinity"
+	LoadBalancerTargetHeader         = "X-Kamal-Target"
+	LoadBalancerWriteCookieName      = "kamal-writer"
 )
 
 var ErrorNoHealthyTargets = errors.New("no healthy targets")
@@ -47,7 +48,7 @@ func NewTargetList(targetURLs, readerURLs []string, options TargetOptions) (Targ
 func (tl TargetList) Names() []string {
 	names := []string{}
 	for _, target := range tl {
-		names = append(names, target.Target())
+		names = append(names, target.Address())
 	}
 	return names
 }
@@ -180,6 +181,8 @@ func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) fun
 	if lb.writerAffinityTimeout > 0 && lb.hasReaders && !readRequest {
 		w = newLoadBalancerReponseWriter(w, lb.writerAffinityTimeout)
 	}
+
+	req.Header.Set(LoadBalancerTargetHeader, target.Address())
 
 	return func() {
 		target.SendRequest(w, req)
