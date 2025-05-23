@@ -269,7 +269,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	s.active = NewLoadBalancer(activeTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets)
+	s.active = NewLoadBalancer(activeTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets, ms.Options.DynamicLoadBalancing)
 	s.active.MarkAllHealthy()
 
 	rolloutTargets, err := NewTargetList(ms.RolloutTargets, ms.RolloutReaders, ms.TargetOptions)
@@ -277,7 +277,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if len(rolloutTargets) > 0 {
-		s.rollout = NewLoadBalancer(rolloutTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets)
+		s.rollout = NewLoadBalancer(rolloutTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets, ms.Options.DynamicLoadBalancing)
 		s.rollout.MarkAllHealthy()
 	}
 
