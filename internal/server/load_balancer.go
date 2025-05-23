@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,7 +17,9 @@ import (
 const (
 	LoadBalancerAffinityOptOutHeader = "X-Writer-Affinity"
 	LoadBalancerTargetHeader         = "X-Kamal-Target"
-	LoadBalancerWriteCookieName      = "kamal-writer"
+	LoadBalancerWriterHeader         = "X-Kamal-Writer"
+
+	LoadBalancerWriteCookieName = "kamal-writer"
 )
 
 var ErrorNoHealthyTargets = errors.New("no healthy targets")
@@ -74,6 +77,15 @@ func (tl TargetList) StopHealthChecks() {
 	}
 }
 
+func (tl TargetList) FromAddress(address string) *Target {
+	for _, target := range tl {
+		if target.Address() == address {
+			return target
+		}
+	}
+	return nil
+}
+
 func (tl TargetList) targetsMatchingReadonly(readonly bool) TargetList {
 	result := TargetList{}
 	for _, target := range tl {
@@ -90,9 +102,11 @@ type LoadBalancer struct {
 	readers                     TargetList
 	writerAffinityTimeout       time.Duration
 	readTargetsAcceptWebsockets bool
-	writerIndex                 int
-	readerIndex                 int
-	lock                        sync.Mutex
+
+	hostWriterMap *HostWriterMap
+	writerIndex   int
+	readerIndex   int
+	lock          sync.Mutex
 
 	multiTarget           bool
 	hasReaders            bool
@@ -109,6 +123,8 @@ func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration, re
 		readers:                     TargetList{},
 		writerAffinityTimeout:       writerAffinityTimeout,
 		readTargetsAcceptWebsockets: readTargetsAcceptWebsockets,
+
+		hostWriterMap: NewHostWriterMap(0),
 
 		multiTarget:           len(targets) > 1,
 		hasReaders:            targets.HasReaders(),
@@ -177,12 +193,10 @@ func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) fun
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return nil
 	}
-
-	if lb.writerAffinityTimeout > 0 && lb.hasReaders && !readRequest {
-		w = newLoadBalancerReponseWriter(w, lb.writerAffinityTimeout)
-	}
-
 	lb.setTargetHeader(req, target)
+
+	setWriterAffinity := lb.writerAffinityTimeout > 0 && lb.hasReaders && !readRequest
+	w = newLoadBalancerReponseWriter(w, lb.hostWriterMap, req.URL, setWriterAffinity, lb.writerAffinityTimeout)
 
 	return func() {
 		target.SendRequest(w, req)
@@ -204,7 +218,7 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 	readRequest := lb.isReadRequest(req)
 	treatAsReadRequest := readRequest && !lb.hasWriteCookie(req)
 
-	target := lb.nextTarget(treatAsReadRequest)
+	target := lb.nextTarget(req.URL, treatAsReadRequest)
 	if target == nil {
 		return nil, nil, false, ErrorNoHealthyTargets
 	}
@@ -213,10 +227,15 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 	return target, req, readRequest, err
 }
 
-func (lb *LoadBalancer) nextTarget(reader bool) *Target {
-	if reader && len(lb.readers) > 0 {
+func (lb *LoadBalancer) nextTarget(url *url.URL, useReader bool) *Target {
+	if useReader && len(lb.readers) > 0 {
 		lb.readerIndex = (lb.readerIndex + 1) % len(lb.readers)
 		return lb.readers[lb.readerIndex]
+	}
+
+	pinnedWriter := lb.hostWriterMap.Get(url)
+	if pinnedWriter != "" {
+		return lb.writers.FromAddress(pinnedWriter)
 	}
 
 	if len(lb.writers) > 0 {
@@ -301,18 +320,25 @@ func (lb *LoadBalancer) hasWriteCookie(r *http.Request) bool {
 type loadBalancerResponseWriter struct {
 	http.ResponseWriter
 	headerWritten         bool
+	hostWriterMap         *HostWriterMap
+	url                   *url.URL
+	setWriterAffinity     bool
 	writerAffinityTimeout time.Duration
 }
 
-func newLoadBalancerReponseWriter(w http.ResponseWriter, writerAffinityTimeout time.Duration) *loadBalancerResponseWriter {
+func newLoadBalancerReponseWriter(w http.ResponseWriter, hostWriterMap *HostWriterMap, url *url.URL, setWriterAffinity bool, writerAffinityTimeout time.Duration) *loadBalancerResponseWriter {
 	return &loadBalancerResponseWriter{
 		ResponseWriter:        w,
 		headerWritten:         false,
+		hostWriterMap:         hostWriterMap,
+		url:                   url,
+		setWriterAffinity:     setWriterAffinity,
 		writerAffinityTimeout: writerAffinityTimeout,
 	}
 }
 
 func (w *loadBalancerResponseWriter) WriteHeader(statusCode int) {
+	w.setPinnedWriter()
 	w.setWriterAffinityCookie()
 
 	w.ResponseWriter.WriteHeader(statusCode)
@@ -343,8 +369,16 @@ func (w *loadBalancerResponseWriter) Flush() {
 	}
 }
 
+func (w *loadBalancerResponseWriter) setPinnedWriter() {
+	pinnedWriter := w.Header().Get(LoadBalancerWriterHeader)
+	if pinnedWriter != "" {
+		w.hostWriterMap.Set(w.url, pinnedWriter)
+		w.Header().Del(LoadBalancerWriterHeader)
+	}
+}
+
 func (w *loadBalancerResponseWriter) setWriterAffinityCookie() {
-	if w.Header().Get(LoadBalancerAffinityOptOutHeader) != "false" {
+	if w.setWriterAffinity && w.Header().Get(LoadBalancerAffinityOptOutHeader) != "false" {
 		expires := time.Now().Add(w.writerAffinityTimeout)
 
 		cookie := &http.Cookie{
