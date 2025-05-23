@@ -251,6 +251,41 @@ func TestLoadBalancer_TargetHeader(t *testing.T) {
 	checkHeader("POST", "existing, "+writer.Address(), "existing")
 }
 
+func TestLoadBalancer_WriterHeader(t *testing.T) {
+	writer1 := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
+	})
+
+	writer2 := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
+	})
+
+	pinnedWriterAddress := writer1.Address()
+
+	reader := testReadOnlyTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
+		w.Header().Set("X-Kamal-Writer", pinnedWriterAddress)
+	})
+
+	tl, _ := NewTargetList([]string{writer1.Address(), writer2.Address()}, []string{reader.Address()}, defaultTargetOptions)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
+	lb.WaitUntilHealthy(time.Second)
+
+	checkTarget := func(method string, expected string) {
+		for range 3 { // Ensure we don't cycle through targets
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(method, "/", nil)
+			lb.StartRequest(w, req)()
+
+			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, expected, w.Header().Get(LoadBalancerTargetHeader))
+		}
+	}
+
+	checkTarget("GET", reader.Address())
+	checkTarget("POST", writer1.Address())
+}
+
 // Helpers
 
 func testLoadBalancerWithHandlers(t *testing.T, handlers ...http.HandlerFunc) *LoadBalancer {
