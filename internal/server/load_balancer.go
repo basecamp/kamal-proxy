@@ -182,7 +182,7 @@ func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) fun
 		w = newLoadBalancerReponseWriter(w, lb.writerAffinityTimeout)
 	}
 
-	req.Header.Set(LoadBalancerTargetHeader, target.Address())
+	lb.setTargetHeader(req, target)
 
 	return func() {
 		target.SendRequest(w, req)
@@ -273,6 +273,19 @@ func (lb *LoadBalancer) updateHealthyTargets() {
 	if healthyCount == len(lb.all) {
 		lb.markHealthy()
 	}
+}
+
+func (lb *LoadBalancer) setTargetHeader(req *http.Request, target *Target) {
+	address := target.Address()
+
+	if target.options.ForwardHeaders {
+		prior := req.Header[LoadBalancerTargetHeader]
+		if len(prior) > 0 {
+			address = strings.Join(prior, ", ") + ", " + address
+		}
+	}
+
+	req.Header.Set(LoadBalancerTargetHeader, address)
 }
 
 func (lb *LoadBalancer) setWriteCookie(w http.ResponseWriter) {

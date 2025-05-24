@@ -228,9 +228,14 @@ func TestLoadBalancer_TargetHeader(t *testing.T) {
 	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
 	lb.WaitUntilHealthy(time.Second)
 
-	checkHeader := func(method string, expected string) {
+	checkHeader := func(method string, expected string, priorHeader ...string) {
 		w := httptest.NewRecorder()
-		lb.StartRequest(w, httptest.NewRequest(method, "/", nil))()
+		req := httptest.NewRequest(method, "/", nil)
+		if len(priorHeader) > 0 {
+			req.Header.Set(LoadBalancerTargetHeader, priorHeader[0])
+		}
+
+		lb.StartRequest(w, req)()
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, expected, w.Header().Get(LoadBalancerTargetHeader))
@@ -238,6 +243,12 @@ func TestLoadBalancer_TargetHeader(t *testing.T) {
 
 	checkHeader("GET", reader.Address())
 	checkHeader("POST", writer.Address())
+	checkHeader("POST", writer.Address(), "existing")
+
+	for _, t := range tl {
+		t.options.ForwardHeaders = true
+	}
+	checkHeader("POST", "existing, "+writer.Address(), "existing")
 }
 
 // Helpers
