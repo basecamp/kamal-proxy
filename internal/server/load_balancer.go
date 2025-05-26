@@ -232,10 +232,6 @@ func (lb *LoadBalancer) isReadRequest(req *http.Request) bool {
 		(lb.readTargetsAcceptWebsockets || !lb.isWebSocketRequest(req))
 }
 
-func (lb *LoadBalancer) skipsWriterAffinity(req *http.Request) bool {
-	return req.Header.Get("X-Writer-Affinity") == "false"
-}
-
 func (lb *LoadBalancer) isWebSocketRequest(req *http.Request) bool {
 	return req.Method == http.MethodGet &&
 		strings.EqualFold(req.Header.Get("Upgrade"), "websocket") &&
@@ -286,22 +282,6 @@ func (lb *LoadBalancer) setTargetHeader(req *http.Request, target *Target) {
 	}
 
 	req.Header.Set(LoadBalancerTargetHeader, address)
-}
-
-func (lb *LoadBalancer) setWriteCookie(w http.ResponseWriter) {
-	if lb.writerAffinityTimeout > 0 {
-		expires := time.Now().Add(lb.writerAffinityTimeout)
-
-		cookie := &http.Cookie{
-			Name:     LoadBalancerWriteCookieName,
-			Value:    strconv.FormatInt(expires.UnixMilli(), 10),
-			Path:     "/",
-			HttpOnly: true,
-			Expires:  expires.Add(time.Second),
-		}
-
-		http.SetCookie(w, cookie)
-	}
 }
 
 func (lb *LoadBalancer) hasWriteCookie(r *http.Request) bool {
