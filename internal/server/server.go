@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/crypto/acme"
 
 	"github.com/basecamp/kamal-proxy/internal/metrics"
@@ -28,9 +29,11 @@ type Server struct {
 	router          *Router
 	httpListener    net.Listener
 	httpsListener   net.Listener
+	http3Listener   net.PacketConn
 	metricsListener net.Listener
 	httpServer      *http.Server
 	httpsServer     *http.Server
+	http3Server     *http3.Server
 	metricsServer   *http.Server
 	commandHandler  *CommandHandler
 }
@@ -70,8 +73,20 @@ func (s *Server) Stop() {
 		func() { _ = s.commandHandler.Close() },
 		func() { s.stopHTTPServer(ctx, s.httpServer) },
 		func() { s.stopHTTPServer(ctx, s.httpsServer) },
-		func() { s.stopHTTPServer(ctx, s.metricsServer) },
+		func() { s.stopHTTPServer(ctx, s.http3Server) },
+		func() {
+			if s.metricsServer != nil {
+				s.stopHTTPServer(ctx, s.metricsServer)
+			}
+		},
 	)
+
+	s.httpListener.Close()
+	s.httpsListener.Close()
+	s.http3Listener.Close()
+	if s.metricsListener != nil {
+		s.metricsListener.Close()
+	}
 
 	slog.Info("Server stopped")
 }
@@ -87,29 +102,46 @@ func (s *Server) HttpsPort() int {
 // Private
 
 func (s *Server) startHTTPServers() error {
+	os.Setenv("QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING", "true")
+
 	httpAddr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.HttpPort)
 	httpsAddr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.HttpsPort)
 
 	handler := s.buildHandler()
 
-	l, err := net.Listen("tcp", httpAddr)
+	httpListener, err := net.Listen("tcp", httpAddr)
 	if err != nil {
 		return err
 	}
-	s.httpListener = l
+	s.httpListener = httpListener
 	s.httpServer = &http.Server{
-		Addr:    httpAddr,
 		Handler: handler,
 	}
 
-	l, err = net.Listen("tcp", httpsAddr)
+	http3Listener, err := net.ListenPacket("udp", httpsAddr)
 	if err != nil {
 		return err
 	}
-	s.httpsListener = l
-	s.httpsServer = &http.Server{
-		Addr:    httpsAddr,
+	s.http3Listener = http3Listener
+	s.http3Server = &http3.Server{
 		Handler: handler,
+		TLSConfig: &tls.Config{
+			MinVersion:     tls.VersionTLS13,
+			NextProtos:     []string{"h3"},
+			GetCertificate: s.router.GetCertificate,
+		},
+	}
+
+	httpsListener, err := net.Listen("tcp", http3Listener.LocalAddr().String())
+	if err != nil {
+		return err
+	}
+	s.httpsListener = httpsListener
+	s.httpsServer = &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.http3Server.SetQUICHeaders(w.Header())
+			handler.ServeHTTP(w, r)
+		}),
 		TLSConfig: &tls.Config{
 			NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
 			GetCertificate: s.router.GetCertificate,
@@ -118,6 +150,7 @@ func (s *Server) startHTTPServers() error {
 
 	go s.httpServer.Serve(s.httpListener)
 	go s.httpsServer.ServeTLS(s.httpsListener, "", "")
+	go s.http3Server.Serve(s.http3Listener)
 
 	return nil
 }
@@ -168,7 +201,11 @@ func (s *Server) buildHandler() http.Handler {
 	return handler
 }
 
-func (s *Server) stopHTTPServer(ctx context.Context, server *http.Server) {
+type shutdownable interface {
+	Shutdown(ctx context.Context) error
+}
+
+func (s *Server) stopHTTPServer(ctx context.Context, server shutdownable) {
 	if server != nil {
 		err := server.Shutdown(ctx)
 		if err != nil {
