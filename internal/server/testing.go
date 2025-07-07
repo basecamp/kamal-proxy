@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -69,7 +68,7 @@ func testBackendWithHandler(t testing.TB, handler http.HandlerFunc) (*httptest.S
 	return server, serverURL.Host
 }
 
-func testServer(t testing.TB) (*Server, string) {
+func testServer(t testing.TB) *Server {
 	t.Helper()
 
 	config := &Config{
@@ -85,7 +84,5 @@ func testServer(t testing.TB) (*Server, string) {
 
 	t.Cleanup(server.Stop)
 
-	addr := fmt.Sprintf("http://localhost:%d", server.HttpPort())
-
-	return server, addr
+	return server
 }
