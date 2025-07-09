@@ -382,13 +382,13 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 
 	// Ensure we're not trying to use Let's Encrypt to fetch a wildcard domain,
 	// as that is not supported with the challenge types that we use.
-	for _, host := range options.Hosts && options.TLSOnDemandUrl == "" {
+	for _, host := range options.Hosts {
 		if strings.Contains(host, "*") {
 			return nil, ErrorAutomaticTLSDoesNotSupportWildcards
 		}
 	}
 
-	hostPolicy, err := s.createAutoCertHostPolicy(hosts, options)
+	hostPolicy, err := s.createAutoCertHostPolicy(options)
 	if err != nil {
 		return nil, err
 	}
@@ -401,9 +401,9 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 	}, nil
 }
 
-func (s *Service) createAutoCertHostPolicy(hosts []string, options ServiceOptions) (autocert.HostPolicy, error) {
+func (s *Service) createAutoCertHostPolicy(options ServiceOptions) (autocert.HostPolicy, error) {
 	if options.TLSOnDemandUrl == "" {
-		return autocert.HostWhitelist(hosts...), nil
+		return autocert.HostWhitelist(options.Hosts...), nil
 	}
 
 	_, err := url.ParseRequestURI(options.TLSOnDemandUrl)
@@ -414,17 +414,25 @@ func (s *Service) createAutoCertHostPolicy(hosts []string, options ServiceOption
 
 	slog.Info("Will use the tls_on_demand_url URL", "url", options.TLSOnDemandUrl)
 
+	client := &http.Client{Timeout: 2 * time.Second}
+
 	return func(ctx context.Context, host string) error {
 		slog.Info("Get a certificate", "host", host)
 
-		resp, err := http.Get(fmt.Sprintf("%s?host=%s", options.TLSOnDemandUrl, url.QueryEscape(host)))
+		url := fmt.Sprintf("%s?host=%s", options.TLSOnDemandUrl, url.QueryEscape(host))
+		resp, err := client.Get(url)
 		if err != nil {
-			slog.Error("Unable to reach the TLS on demand URL", host, err)
+			slog.Error("Unable to reach the TLS on demand URL", "host", host, "error", err)
 			return err
 		}
+		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("%s is not allowed to get a certificate", host)
+			body := make([]byte, 256)
+			n, _ := resp.Body.Read(body)
+			msg := fmt.Sprintf("%s is not allowed to get a certificate (status: %d, body: %q)", host, resp.StatusCode, string(body[:n]))
+			slog.Warn("TLS on demand denied host", "host", host, "status", resp.StatusCode, "body", string(body[:n]))
+			return fmt.Errorf(msg)
 		}
 
 		return nil

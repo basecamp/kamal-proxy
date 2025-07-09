@@ -131,16 +131,29 @@ TLS settings as those specified for the root path.
 
 ### On-demand TLS
 
-In addition of the automatic TLS functionality, Kamal Proxy can also dynamically obtain a TLS certificate 
-from any host allowed by an external API endpoint of your choice.
-This avoids hard-coding hosts in the configuration, especially when you don't know the hosts at the startup.
+In addition to the automatic TLS functionality, Kamal Proxy can also dynamically obtain a TLS certificate 
+for any host allowed by an external API endpoint of your choice. This avoids hard-coding hosts in the configuration, especially when you don't know the hosts at startup.
 
     kamal-proxy deploy service1 --target web-1:3000 --host "" --tls --tls-on-demand-url="http://localhost:4567/check"
 
-The On-demand URL endpoint will have to answer a 200 HTTP status code. 
+The On-demand URL endpoint must return a 200 HTTP status code to allow certificate issuance. 
 Kamal Proxy will call the on-demand URL with a query string of `?host=` containing the host received by Kamal Proxy.
 
-It also must respond as fast as possible, a couple of milliseconds top.
+- The HTTP request to the on-demand URL will time out after 2 seconds. If the endpoint is unreachable or slow, certificate issuance will fail for that host.
+- If the endpoint returns any status other than 200, Kamal Proxy will log the status code and up to 256 bytes of the response body for debugging.
+- **Security note:** The on-demand URL acts as an authorization gate for certificate issuance. It should be protected and only allow trusted hosts. If compromised, unauthorized certificates could be issued.
+- If `--tls-on-demand-url` is not set, Kamal Proxy falls back to a static whitelist of hosts.
+
+**Best practice:**
+- Ensure your on-demand endpoint is fast, reliable, and protected (e.g., behind authentication or on a private network).
+- Only allow hosts you control to prevent abuse.
+
+Example endpoint logic (pseudo-code):
+
+    if host in allowed_hosts:
+        return 200 OK
+    else:
+        return 403 Forbidden
 
 
 ### Custom TLS certificate
