@@ -432,7 +432,7 @@ func (s *Service) createAutoCertHostPolicy(options ServiceOptions) (autocert.Hos
 			n, _ := resp.Body.Read(body)
 			msg := fmt.Sprintf("%s is not allowed to get a certificate (status: %d, body: %q)", host, resp.StatusCode, string(body[:n]))
 			slog.Warn("TLS on demand denied host", "host", host, "status", resp.StatusCode, "body", string(body[:n]))
-			return fmt.Errorf(msg)
+			return fmt.Errorf("%s", msg)
 		}
 
 		return nil
