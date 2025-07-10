@@ -101,6 +101,11 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if c.args.ServiceOptions.TLSEnabled {
+		if c.args.ServiceOptions.TLSOnDemandUrl != "" {
+			c.args.ServiceOptions.Hosts = []string{""}
+			return nil
+		}
+
 		if len(c.args.ServiceOptions.Hosts) == 0 {
 			return fmt.Errorf("host must be set when using TLS")
 		}
