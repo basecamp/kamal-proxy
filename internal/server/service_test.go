@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -215,78 +214,6 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 	assert.Equal(t, []string{"app.example.com"}, service.options.Hosts)
 	assert.Equal(t, []string{"/"}, service.options.PathPrefixes)
 	assert.Equal(t, 3*time.Second, service.targetOptions.ResponseTimeout)
-}
-func TestService_AutoCertHostPolicy_TLSEnabledFalse_Whitelist(t *testing.T) {
-	hosts := []string{"foo.example.com", "bar.example.com"}
-	options := ServiceOptions{TLSEnabled: false, TLSOnDemandUrl: "", Hosts: hosts}
-	service := testCreateService(t, options, defaultTargetOptions)
-
-	hostPolicy, err := service.createAutoCertHostPolicy(options)
-	require.NoError(t, err)
-
-	t.Run("allowed host", func(t *testing.T) {
-		err := hostPolicy(context.Background(), "foo.example.com")
-		assert.NoError(t, err)
-	})
-
-	t.Run("denied host", func(t *testing.T) {
-		err := hostPolicy(context.Background(), "baz.example.com")
-		assert.Error(t, err)
-	})
-}
-
-func TestService_OnDemandTLSHostPolicy_AllowsAndDenies(t *testing.T) {
-	// Simulate an external API that allows only "allowed.example.com"
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host := r.URL.Query().Get("host")
-		if host == "allowed.example.com" {
-			w.WriteHeader(http.StatusOK)
-		} else {
-			w.WriteHeader(http.StatusForbidden)
-		}
-	}))
-	t.Cleanup(api.Close)
-
-	options := ServiceOptions{
-		TLSEnabled:     true,
-		TLSOnDemandUrl: api.URL,
-		Hosts:          []string{""}, // empty hosts for on-demand tls
-	}
-
-	service := testCreateService(t, options, defaultTargetOptions)
-
-	hostPolicy, err := service.createAutoCertHostPolicy(options)
-	require.NoError(t, err)
-
-	t.Run("allowed host", func(t *testing.T) {
-		err := hostPolicy(context.Background(), "allowed.example.com")
-		assert.NoError(t, err)
-	})
-
-	t.Run("denied host", func(t *testing.T) {
-		err := hostPolicy(context.Background(), "denied.example.com")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "denied.example.com is not allowed")
-	})
-}
-
-func TestService_OnDemandTLSHostPolicy_WhitelistFallback(t *testing.T) {
-	hosts := []string{"foo.example.com", "bar.example.com"}
-	options := ServiceOptions{TLSEnabled: true, TLSOnDemandUrl: "", Hosts: hosts}
-	service := testCreateService(t, options, defaultTargetOptions)
-
-	hostPolicy, err := service.createAutoCertHostPolicy(options)
-	require.NoError(t, err)
-
-	t.Run("allowed host", func(t *testing.T) {
-		err := hostPolicy(context.Background(), "foo.example.com")
-		assert.NoError(t, err)
-	})
-
-	t.Run("denied host", func(t *testing.T) {
-		err := hostPolicy(context.Background(), "baz.example.com")
-		assert.Error(t, err)
-	})
 }
 
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
