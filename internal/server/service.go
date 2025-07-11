@@ -1,16 +1,13 @@
 package server
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"slices"
@@ -388,7 +385,7 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 		}
 	}
 
-	hostPolicy, err := s.createAutoCertHostPolicy(options)
+	hostPolicy, err := NewTLSOnDemandChecker(s).HostPolicy()
 	if err != nil {
 		return nil, err
 	}
@@ -398,44 +395,6 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 		Cache:      autocert.DirCache(options.ScopedCachePath()),
 		HostPolicy: hostPolicy,
 		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
-	}, nil
-}
-
-func (s *Service) createAutoCertHostPolicy(options ServiceOptions) (autocert.HostPolicy, error) {
-	if options.TLSOnDemandUrl == "" {
-		return autocert.HostWhitelist(options.Hosts...), nil
-	}
-
-	_, err := url.ParseRequestURI(options.TLSOnDemandUrl)
-	if err != nil {
-		slog.Error("Unable to parse the tls_on_demand_url URL")
-		return nil, err
-	}
-
-	slog.Info("Will use the tls_on_demand_url URL", "url", options.TLSOnDemandUrl)
-
-	client := &http.Client{Timeout: 2 * time.Second}
-
-	return func(ctx context.Context, host string) error {
-		slog.Info("Get a certificate", "host", host)
-
-		url := fmt.Sprintf("%s?host=%s", options.TLSOnDemandUrl, url.QueryEscape(host))
-		resp, err := client.Get(url)
-		if err != nil {
-			slog.Error("Unable to reach the TLS on demand URL", "host", host, "error", err)
-			return err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body := make([]byte, 256)
-			n, _ := resp.Body.Read(body)
-			msg := fmt.Sprintf("%s is not allowed to get a certificate (status: %d, body: %q)", host, resp.StatusCode, string(body[:n]))
-			slog.Warn("TLS on demand denied host", "host", host, "status", resp.StatusCode, "body", string(body[:n]))
-			return fmt.Errorf("%s", msg)
-		}
-
-		return nil
 	}, nil
 }
 
