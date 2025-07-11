@@ -165,6 +165,29 @@ your certificate file and the corresponding private key:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
 
 
+## TLSOnDemandUrl Option
+
+The `TLSOnDemandUrl` option can be set to either:
+
+- **An external URL** (e.g., `https://my-allow-service/allow-host`):
+  - The service will make an HTTP request to this external URL to determine if a certificate should be issued for a given host.
+
+- **A local path** (e.g., `/allow-host`):
+  - The service will internally route a request to this path using its own load balancer and handler. You must ensure your service responds to this path appropriately.
+
+### Example: External URL
+```yaml
+TLSOnDemandUrl: "https://my-allow-service/allow-host"
+```
+
+### Example: Local Path
+```yaml
+TLSOnDemandUrl: "/allow-host"
+```
+
+When using a local path, your service should implement a handler for the specified path (e.g., `/allow-host`) that returns `200 OK` to allow certificate issuance, or another status code to deny it.
+
+
 ## Specifying `run` options with environment variables
 
 In some environments, like when running a Docker container, it can be convenient
