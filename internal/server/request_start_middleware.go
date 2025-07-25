@@ -1,8 +1,8 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -22,7 +22,7 @@ func WithRequestStartMiddleware(next http.Handler) http.Handler {
 
 func (h *RequestStartMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get(requestStartHeader) == "" {
-		r.Header.Set(requestStartHeader, strconv.FormatInt(time.Now().UnixMilli(), 10))
+		r.Header.Set(requestStartHeader, fmt.Sprintf("t=%d", time.Now().UnixMilli()))
 	}
 	h.next.ServeHTTP(w, r)
 }

@@ -12,9 +12,12 @@ import (
 
 func TestRequestStartMiddleware_AddsUnixMilliWhenNotPresent(t *testing.T) {
 	handler := WithRequestStartMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestStartMilli, _ := strconv.ParseInt(r.Header.Get("X-Request-Start"), 10, 64)
-		requestStart := time.UnixMilli(requestStartMilli)
+		headerValue := r.Header.Get("X-Request-Start")
 
+		assert.Regexp(t, `^t=\d+$`, headerValue, "Value should be formatted as `t=<timestamp>`")
+
+		requestStartMilli, _ := strconv.ParseInt(headerValue[2:], 10, 64)
+		requestStart := time.UnixMilli(requestStartMilli)
 		assert.WithinDuration(t, time.Now(), requestStart, time.Second)
 	}))
 
@@ -27,11 +30,11 @@ func TestRequestStartMiddleware_AddsUnixMilliWhenNotPresent(t *testing.T) {
 
 func TestRequestStartMiddleware_PreservesExistingHeaderWhenPresent(t *testing.T) {
 	handler := WithRequestStartMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "1234", r.Header.Get("X-Request-Start"))
+		assert.Equal(t, "t=1234", r.Header.Get("X-Request-Start"))
 	}))
 
 	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set(requestStartHeader, "1234")
+	r.Header.Set(requestStartHeader, "t=1234")
 
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
