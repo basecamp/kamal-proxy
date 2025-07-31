@@ -1,11 +1,15 @@
 package server
 
 import (
+	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -401,6 +405,8 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 	}
 	if s.targetOptions.BufferRequests {
 		handler = WithRequestBufferMiddleware(s.targetOptions.MaxMemoryBufferSize, s.targetOptions.MaxRequestBodySize, handler)
+	} else if s.targetOptions.AllowReproxying || true { // TODO: wire this switch up properly (also not this enables request limits!)
+		handler = WithRewindableRequestMiddleware(s.targetOptions.MaxMemoryBufferSize, s.targetOptions.MaxRequestBodySize, handler)
 	}
 
 	if options.ErrorPagePath != "" {
@@ -438,15 +444,50 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	sendRequest := s.startLoadBalancerRequest(w, r)
-	if sendRequest != nil {
+	reproxyCount := 0
+	reproxyTarget := ""
+
+	for {
+		sw := newServiceReponseWriter(w)
+		sendRequest := s.startLoadBalancerRequest(sw, r, reproxyTarget)
+		if sendRequest == nil {
+			break
+		}
+
 		sendRequest()
+		if sw.reproxyTarget == "" {
+			break
+		}
+
+		reproxyCount++
+		if reproxyCount >= 3 {
+			slog.Warn("Maximum reproxy limit reached", "service", s.name, "path", r.URL.Path)
+			SetErrorResponse(w, r, http.StatusBadGateway, nil)
+			return
+		}
+
+		slog.Info("Reproxying request", "service", s.name, "path", r.URL.Path, "target", sw.reproxyTarget)
+		rewinder, ok := r.Body.(Rewindable)
+		if ok {
+			err := rewinder.Rewind()
+			if err != nil {
+				slog.Error("Unable to rewind response body when reproxying", "service", s.name, "path", r.URL.Path, "error", err)
+			}
+		} else {
+			slog.Warn("ResponseWriter does not support rewinding, reproxying may not work as expected", "service", s.name, "path", r.URL.Path)
+		}
+		reproxyTarget = sw.reproxyTarget
 	}
 }
 
-func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Request) func() {
+func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Request, reproxyTarget string) func() {
 	s.serviceLock.RLock()
 	defer s.serviceLock.RUnlock()
+
+	if reproxyTarget != "" {
+		ctx := context.WithValue(r.Context(), contextKeyReproxyTarget, reproxyTarget)
+		r = r.WithContext(ctx)
+	}
 
 	lb := s.loadBalancerForRequest(r)
 	return lb.StartRequest(w, r)
@@ -492,4 +533,68 @@ func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
 
 	url := "https://" + host + r.URL.RequestURI()
 	http.Redirect(w, r, url, http.StatusMovedPermanently)
+}
+
+type serviceResponseWriter struct {
+	http.ResponseWriter
+	header        http.Header
+	headerWritten bool
+	reproxyTarget string
+}
+
+func newServiceReponseWriter(w http.ResponseWriter) *serviceResponseWriter {
+	return &serviceResponseWriter{
+		ResponseWriter: w,
+		header:         http.Header{},
+		headerWritten:  false,
+	}
+}
+
+func (w *serviceResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *serviceResponseWriter) WriteHeader(statusCode int) {
+	w.extractReproxyTarget()
+
+	if w.reproxyTarget == "" {
+		maps.Copy(w.ResponseWriter.Header(), w.header)
+		w.ResponseWriter.WriteHeader(statusCode)
+	}
+	w.headerWritten = true
+}
+
+func (w *serviceResponseWriter) Write(b []byte) (int, error) {
+	if !w.headerWritten {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	if w.reproxyTarget != "" {
+		return io.Discard.Write(b) // Discard the response if we'll be reproxying the request
+	}
+
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *serviceResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
+	}
+
+	return hijacker.Hijack()
+}
+
+func (w *serviceResponseWriter) Flush() {
+	flusher, ok := w.ResponseWriter.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+}
+
+func (w *serviceResponseWriter) extractReproxyTarget() {
+	w.reproxyTarget = w.Header().Get("X-Reproxy")
+	if w.reproxyTarget != "" {
+		w.Header().Del("X-Reproxy")
+	}
 }

@@ -7,10 +7,19 @@ services:
     restart: unless-stopped
     command: [ "kamal-proxy", "run", "--debug", "--metrics-port=9000" ]
 
-  web:
+  web1:
     build: ./upstream
-    deploy:
-      replicas: 4
+    hostname: web1
+    restart: unless-stopped
+
+  web2:
+    build: ./upstream
+    hostname: web2
+    restart: unless-stopped
+
+  web3:
+    build: ./upstream
+    hostname: web3
     restart: unless-stopped
 
   prometheus:

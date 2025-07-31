@@ -22,6 +22,8 @@ const (
 	LoadBalancerWriteCookieName = "kamal-writer"
 )
 
+var contextKeyReproxyTarget = contextKey("reproxy-target")
+
 var ErrorNoHealthyTargets = errors.New("no healthy targets")
 
 type TargetList []*Target
@@ -219,9 +221,20 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 	readRequest := lb.isReadRequest(req)
 	treatAsReadRequest := readRequest && !lb.hasWriteCookie(req)
 
-	target := lb.nextTarget(treatAsReadRequest)
-	if target == nil {
-		return nil, nil, false, ErrorNoHealthyTargets
+	var target *Target
+
+	reproxyTarget, ok := req.Context().Value(contextKeyReproxyTarget).(string)
+	if ok {
+		target = lb.all.FromAddress(reproxyTarget)
+		if target == nil || target.State() != TargetStateHealthy {
+			slog.Info("Reproxy target not found or unhealthy", "target", reproxyTarget, "healthyTargets", lb.all.Names())
+			return nil, nil, false, ErrorNoHealthyTargets
+		}
+	} else {
+		target = lb.nextTarget(treatAsReadRequest)
+		if target == nil {
+			return nil, nil, false, ErrorNoHealthyTargets
+		}
 	}
 
 	req, err := target.StartRequest(req)
@@ -390,7 +403,6 @@ func (w *loadBalancerResponseWriter) Flush() {
 
 func (w *loadBalancerResponseWriter) setPinnedWriter() {
 	pinnedWriter := w.Header().Get(LoadBalancerWriterHeader)
-	slog.Info("Setting pinned writer", "pinnedWriter", pinnedWriter)
 	if pinnedWriter != "" {
 		w.pinnedWriterFn(pinnedWriter)
 		w.Header().Del(LoadBalancerWriterHeader)

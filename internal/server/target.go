@@ -73,6 +73,7 @@ type TargetOptions struct {
 	LogRequestHeaders   []string          `json:"log_request_headers"`
 	LogResponseHeaders  []string          `json:"log_response_headers"`
 	ForwardHeaders      bool              `json:"forward_headers"`
+	AllowReproxying     bool              `json:"allow_reproxying"`
 }
 
 func (to *TargetOptions) IsHealthCheckRequest(r *http.Request) bool {

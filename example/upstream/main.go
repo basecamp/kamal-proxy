@@ -1,8 +1,8 @@
 package main
 
 import (
-	"cmp"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,13 +10,16 @@ import (
 )
 
 func upHandler(w http.ResponseWriter, r *http.Request) {
-	slog.Info("Health request", "method", r.Method, "url", r.URL)
+	// slog.Info("Health request", "method", r.Method, "url", r.URL)
 	w.WriteHeader(http.StatusOK)
 }
 
 func helloHandler(host string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		host = cmp.Or(r.Header.Get("X-Kamal-Target"), host)
+		if host != "web1" {
+			slog.Info("Setting X-Reproxy header", "host", host)
+			w.Header().Set("X-Reproxy", "web1")
+		}
 
 		w.Header().Add("Content-Type", "text/html")
 		fmt.Fprintf(w, "<body>Hello from <strong>%s</strong> at <strong>%s</strong></body>\n",
@@ -25,6 +28,8 @@ func helloHandler(host string) http.HandlerFunc {
 		)
 
 		slog.Info("Request", "host", host, "request_id", r.Header.Get("X-Request-ID"), "method", r.Method, "url", r.URL)
+		body, err := io.ReadAll(r.Body)
+		slog.Info("Request body", "body", string(body), "error", err)
 	}
 }
 
