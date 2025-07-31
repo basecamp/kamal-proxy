@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,15 @@ func (tl TargetList) Names() []string {
 		names = append(names, target.Address())
 	}
 	return names
+}
+
+func (tl TargetList) FindByHost(host string) *Target {
+	for _, target := range tl {
+		if strings.EqualFold(host, target.targetURL.Host) {
+			return target
+		}
+	}
+	return nil
 }
 
 func (tl TargetList) HasReaders() bool {
@@ -198,13 +208,20 @@ func (lb *LoadBalancer) TargetStateChanged(target *Target) {
 // Private
 
 func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, bool, error) {
-	lb.lock.Lock()
-	defer lb.lock.Unlock()
-
+	reproxyTo, _ := req.Context().Value(contextKeyReproxyTo).(*url.URL)
 	readRequest := lb.isReadRequest(req)
 	treatAsReadRequest := readRequest && !lb.hasWriteCookie(req)
 
-	target := lb.nextTarget(treatAsReadRequest)
+	lb.lock.Lock()
+	defer lb.lock.Unlock()
+
+	var target *Target
+	if reproxyTo != nil {
+		target = lb.all.FindByHost(reproxyTo.Host)
+	} else {
+		target = lb.nextTarget(treatAsReadRequest)
+	}
+
 	if target == nil {
 		return nil, nil, false, ErrorNoHealthyTargets
 	}
