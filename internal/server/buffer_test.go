@@ -91,3 +91,62 @@ func TestBufferedWriteCloser_NothingWritten(t *testing.T) {
 
 	assert.Empty(t, result.String())
 }
+
+func TestRewindableReadCloser(t *testing.T) {
+	tests := map[string]struct {
+		maxBytes       int64
+		maxMemBytes    int64
+		expectOverflow bool
+	}{
+		"unlimited":                      {0, 0, false},
+		"unlimited disk":                 {0, 5, false},
+		"within memory limits":           {2048, 1024, false},
+		"exceeds memory limits":          {2048, 5, false},
+		"exceeds memory and disk limits": {8, 5, true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := io.NopCloser(strings.NewReader("Hello, World!"))
+			rrc := NewRewindableReadCloser(r, tc.maxBytes, tc.maxMemBytes)
+			out, err := io.ReadAll(rrc)
+
+			if tc.expectOverflow {
+				require.Equal(t, ErrMaximumSizeExceeded, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, "Hello, World!", string(out))
+			}
+		})
+	}
+}
+
+func TestRewindableReadCloser_Rewind(t *testing.T) {
+	tests := map[string]struct {
+		maxBytes    int64
+		maxMemBytes int64
+	}{
+		"unlimited":             {0, 0},
+		"unlimited disk":        {0, 5},
+		"within memory limits":  {2048, 1024},
+		"exceeds memory limits": {2048, 5},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := io.NopCloser(strings.NewReader("Hello, World!"))
+			rrc := NewRewindableReadCloser(r, tc.maxBytes, tc.maxMemBytes)
+			out, err := io.ReadAll(rrc)
+			require.NoError(t, err)
+			assert.Equal(t, "Hello, World!", string(out))
+
+			for range 2 {
+				rrc.Rewind()
+
+				out, err = io.ReadAll(rrc)
+				require.NoError(t, err)
+				assert.Equal(t, "Hello, World!", string(out))
+			}
+		})
+	}
+}

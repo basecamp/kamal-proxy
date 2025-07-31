@@ -120,13 +120,6 @@ func NewTarget(targetURL string, options TargetOptions) (*Target, error) {
 
 	target.proxyHandler = target.createProxyHandler()
 
-	if options.BufferResponses {
-		target.proxyHandler = WithResponseBufferMiddleware(options.MaxMemoryBufferSize, options.MaxResponseBodySize, target.proxyHandler)
-	}
-	if options.BufferRequests {
-		target.proxyHandler = WithRequestBufferMiddleware(options.MaxMemoryBufferSize, options.MaxRequestBodySize, target.proxyHandler)
-	}
-
 	return target, nil
 }
 
@@ -385,6 +378,10 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 }
 
 func (t *Target) isRequestEntityTooLarge(err error) bool {
+	if errors.Is(err, ErrMaximumSizeExceeded) {
+		return true
+	}
+
 	var maxBytesError *http.MaxBytesError
 	return errors.As(err, &maxBytesError)
 }
