@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"io"
 	"log/slog"
@@ -13,6 +14,10 @@ var (
 	ErrMaximumSizeExceeded = errors.New("maximum size exceeded")
 	ErrWriteAfterRead      = errors.New("write after read")
 )
+
+type Rewindable interface {
+	Rewind()
+}
 
 type Buffer struct {
 	maxBytes    int64
@@ -27,26 +32,11 @@ type Buffer struct {
 	closeOnce        sync.Once
 }
 
-func NewBufferedReadCloser(r io.ReadCloser, maxBytes, maxMemBytes int64) (io.ReadCloser, error) {
-	buf := &Buffer{
-		maxBytes:    maxBytes,
-		maxMemBytes: maxMemBytes,
-	}
-
-	_, err := io.Copy(buf, r)
-	if err != nil {
-		buf.Close()
-		return nil, err
-	}
-
-	return buf, nil
-}
-
-func NewBufferedWriteCloser(maxBytes, maxMemBytes int64) *Buffer {
-	return &Buffer{
-		maxBytes:    maxBytes,
-		maxMemBytes: maxMemBytes,
-	}
+type RewindableReadCloser struct {
+	rc                   io.ReadCloser
+	buffer               *Buffer
+	initialReadCompleted bool
+	atEnd                bool
 }
 
 func (b *Buffer) Write(p []byte) (int, error) {
@@ -100,6 +90,11 @@ func (b *Buffer) Send(w io.Writer) error {
 	return err
 }
 
+func (b *Buffer) Rewind() {
+	b.reader = nil
+	b.setReader()
+}
+
 func (b *Buffer) Close() error {
 	b.closeOnce.Do(func() {
 		b.discardSpill()
@@ -107,6 +102,79 @@ func (b *Buffer) Close() error {
 
 	return nil
 }
+
+func NewBufferedReadCloser(r io.ReadCloser, maxBytes, maxMemBytes int64) (io.ReadCloser, error) {
+	buf := &Buffer{
+		maxBytes:    maxBytes,
+		maxMemBytes: maxMemBytes,
+	}
+
+	_, err := io.Copy(buf, r)
+	if err != nil {
+		buf.Close()
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+func NewBufferedWriteCloser(maxBytes, maxMemBytes int64) *Buffer {
+	return &Buffer{
+		maxBytes:    maxBytes,
+		maxMemBytes: maxMemBytes,
+	}
+}
+
+func NewRewindableReadCloser(rc io.ReadCloser, maxBytes, maxMemBytes int64) *RewindableReadCloser {
+	buffer := &Buffer{
+		maxBytes:    maxBytes,
+		maxMemBytes: maxMemBytes,
+	}
+
+	return &RewindableReadCloser{
+		rc:     rc,
+		buffer: buffer,
+	}
+}
+
+func (r *RewindableReadCloser) Read(p []byte) (n int, err error) {
+	if r.initialReadCompleted {
+		if r.atEnd {
+			return 0, io.EOF
+		}
+		return r.buffer.Read(p)
+	} else {
+		n, err := r.rc.Read(p)
+		if n > 0 {
+			_, writeErr := r.buffer.Write(p[:n])
+			if writeErr != nil {
+				return 0, writeErr
+			}
+		}
+		if err == io.EOF {
+			r.initialReadCompleted = true
+			r.atEnd = true
+		}
+
+		return n, err
+	}
+}
+
+func (r *RewindableReadCloser) Close() error {
+	// Don't close underlying buffers, as we may still be rewound to read again
+	return nil
+}
+
+func (r *RewindableReadCloser) Dispose() error {
+	return cmp.Or(r.buffer.Close(), r.rc.Close())
+}
+
+func (r *RewindableReadCloser) Rewind() {
+	r.atEnd = false
+	r.buffer.Rewind()
+}
+
+// Private
 
 func (b *Buffer) writeToMemory(p []byte) (int, error) {
 	n, err := b.memoryBuffer.Write(p)
@@ -122,12 +190,13 @@ func (b *Buffer) writeToDisk(p []byte) (int, error) {
 
 func (b *Buffer) setReader() {
 	if b.reader == nil {
+		readers := []io.Reader{bytes.NewReader(b.memoryBuffer.Bytes())}
 		if b.diskBuffer != nil {
 			b.diskBuffer.Seek(0, 0)
-			b.reader = io.MultiReader(&b.memoryBuffer, b.diskBuffer)
-		} else {
-			b.reader = &b.memoryBuffer
+			readers = append(readers, b.diskBuffer)
 		}
+
+		b.reader = io.MultiReader(readers...)
 	}
 }
 

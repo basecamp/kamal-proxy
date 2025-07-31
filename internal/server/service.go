@@ -83,6 +83,7 @@ type ServiceOptions struct {
 	StripPrefix                 bool          `json:"strip_prefix"`
 	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
+	DynamicLoadBalancing        bool          `json:"dyanmic_load_balancing"`
 }
 
 func (so *ServiceOptions) Normalize() {
@@ -327,7 +328,7 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
-	middleware, err := s.createMiddleware(options, certManager)
+	middleware, err := s.createMiddleware(options, targetOptions, certManager)
 	if err != nil {
 		return err
 	}
@@ -392,9 +393,22 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 	}, nil
 }
 
-func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
+func (s *Service) createMiddleware(options ServiceOptions, targetOptions TargetOptions, certManager CertManager) (http.Handler, error) {
 	var err error
-	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
+	var handler http.Handler = http.HandlerFunc(s.serviceRequest)
+
+	if options.DynamicLoadBalancing {
+		handler = WithReproxyMiddleware(s.name, handler)
+	}
+
+	if targetOptions.BufferResponses {
+		handler = WithResponseBufferMiddleware(targetOptions.MaxMemoryBufferSize, targetOptions.MaxResponseBodySize, handler)
+	}
+	if targetOptions.BufferRequests {
+		handler = WithRequestBufferMiddleware(targetOptions.MaxMemoryBufferSize, targetOptions.MaxRequestBodySize, handler)
+	} else if options.DynamicLoadBalancing {
+		handler = WithRewindableBufferMiddleware(targetOptions.MaxMemoryBufferSize, targetOptions.MaxRequestBodySize, handler)
+	}
 
 	if options.ErrorPagePath != "" {
 		slog.Debug("Using custom error pages", "service", s.name, "path", options.ErrorPagePath)
@@ -414,7 +428,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 	return handler, nil
 }
 
-func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
+func (s *Service) serviceRequest(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
 	if s.shouldRedirectToHTTPS(r) {
