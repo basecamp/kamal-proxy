@@ -396,6 +396,13 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 	var err error
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
 
+	if s.targetOptions.BufferResponses {
+		handler = WithResponseBufferMiddleware(s.targetOptions.MaxMemoryBufferSize, s.targetOptions.MaxResponseBodySize, handler)
+	}
+	if s.targetOptions.BufferRequests {
+		handler = WithRequestBufferMiddleware(s.targetOptions.MaxMemoryBufferSize, s.targetOptions.MaxRequestBodySize, handler)
+	}
+
 	if options.ErrorPagePath != "" {
 		slog.Debug("Using custom error pages", "service", s.name, "path", options.ErrorPagePath)
 		errorPageFS := os.DirFS(options.ErrorPagePath)
