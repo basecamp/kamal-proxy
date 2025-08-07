@@ -540,6 +540,66 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	})
 }
 
+func TestTarget_buildHealthCheckURL(t *testing.T) {
+	tests := []struct {
+		name            string
+		targetURL       string
+		healthCheckPort int
+		healthCheckPath string
+		expectedURL     string
+	}{
+		{
+			name:            "default port - same as target",
+			targetURL:       "localhost:3000",
+			healthCheckPort: 0,
+			healthCheckPath: "/up",
+			expectedURL:     "http://localhost:3000/up",
+		},
+		{
+			name:            "custom health check port",
+			targetURL:       "localhost:3000",
+			healthCheckPort: 8080,
+			healthCheckPath: "/health",
+			expectedURL:     "http://localhost:8080/health",
+		},
+		{
+			name:            "target without port, custom health check port",
+			targetURL:       "localhost",
+			healthCheckPort: 9090,
+			healthCheckPath: "/status",
+			expectedURL:     "http://localhost:9090/status",
+		},
+		{
+			name:            "target without port, default health check",
+			targetURL:       "localhost",
+			healthCheckPort: 0,
+			healthCheckPath: "/up",
+			expectedURL:     "http://localhost/up",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			options := TargetOptions{
+				HealthCheckConfig: HealthCheckConfig{
+					Path: tt.healthCheckPath,
+					Port: tt.healthCheckPort,
+				},
+			}
+
+			target, err := NewTarget(tt.targetURL, options)
+			if err != nil {
+				t.Fatalf("Failed to create target: %v", err)
+			}
+
+			healthCheckURL := target.buildHealthCheckURL()
+			if healthCheckURL.String() != tt.expectedURL {
+				t.Errorf("buildHealthCheckURL() = %v, want %v", healthCheckURL.String(), tt.expectedURL)
+			}
+		})
+	}
+}
+
 // Helpers
 
 func testServeRequestWithTarget(t *testing.T, target *Target, w http.ResponseWriter, r *http.Request) {
