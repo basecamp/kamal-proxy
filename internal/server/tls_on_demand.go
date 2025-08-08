@@ -49,7 +49,7 @@ func (c *TLSOnDemandChecker) HostPolicy() (autocert.HostPolicy, error) {
 func (c *TLSOnDemandChecker) LocalHostPolicy() autocert.HostPolicy {
 	return func(ctx context.Context, host string) error {
 		path := c.buildURLOrPath(host)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, http.NoBody)
 		if err != nil {
 			return err
 		}
