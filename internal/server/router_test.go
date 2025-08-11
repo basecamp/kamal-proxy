@@ -1,6 +1,7 @@
 package server
 
 import (
+    "crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -205,6 +206,48 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://other.example.com/", strings.NewReader("Something longer than 10")))
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 	assert.Empty(t, body)
+}
+
+func TestRouter_CanonicalHostRedirect(t *testing.T) {
+    router := testRouter(t)
+    _, target := testBackend(t, "first", http.StatusOK)
+
+    serviceOptions := defaultServiceOptions
+    serviceOptions.Hosts = []string{"example.com", "www.example.com"}
+    serviceOptions.CanonicalHost = "example.com"
+
+    require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+    statusCode, _ := sendGETRequest(router, "http://www.example.com/")
+    assert.Equal(t, http.StatusMovedPermanently, statusCode)
+
+    statusCode, body := sendGETRequest(router, "http://example.com/")
+    assert.Equal(t, http.StatusOK, statusCode)
+    assert.Equal(t, "first", body)
+}
+
+func TestRouter_CanonicalHostRedirectWithTLS(t *testing.T) {
+    router := testRouter(t)
+    _, target := testBackend(t, "first", http.StatusOK)
+
+    serviceOptions := defaultServiceOptions
+    serviceOptions.Hosts = []string{"example.com", "www.example.com"}
+    serviceOptions.CanonicalHost = "example.com"
+    serviceOptions.TLSEnabled = true
+    serviceOptions.TLSRedirect = true
+
+    require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+    // Should go directly to https://example.com in a single redirect
+    statusCode, _ := sendGETRequest(router, "http://www.example.com/")
+    assert.Equal(t, http.StatusMovedPermanently, statusCode)
+
+    // HTTPS request to non-canonical host should redirect to canonical host but remain HTTPS
+    req := httptest.NewRequest(http.MethodGet, "https://www.example.com/", nil)
+    req.TLS = &tls.ConnectionState{}
+    w := httptest.NewRecorder()
+    router.ServeHTTP(w, req)
+    assert.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
 }
 
 func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
