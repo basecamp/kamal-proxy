@@ -35,6 +35,7 @@ const (
 	DefaultWriterAffinityTimeout = time.Second * 3
 
 	DefaultHealthCheckPath     = "/up"
+	DefaultHealthCheckPort     = 0
 	DefaultHealthCheckInterval = time.Second
 	DefaultHealthCheckTimeout  = time.Second * 5
 
@@ -64,6 +65,7 @@ const (
 
 type HealthCheckConfig struct {
 	Path     string        `json:"path"`
+	Port     int           `json:"port"`
 	Interval time.Duration `json:"interval"`
 	Timeout  time.Duration `json:"timeout"`
 }
