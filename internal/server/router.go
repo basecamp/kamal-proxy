@@ -309,8 +309,6 @@ func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options Ser
 }
 
 func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalancer, options ServiceOptions, getService func() (*Service, error)) (*LoadBalancer, error) {
-	defer r.saveStateSnapshot()
-
 	var replaced *LoadBalancer
 
 	err := r.withWriteLock(func() error {
@@ -329,6 +327,10 @@ func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalan
 		r.services.Set(service)
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	r.saveStateSnapshot()
 
 	return replaced, err
 }
