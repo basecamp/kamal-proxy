@@ -132,19 +132,20 @@ type Service struct {
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
 	service := &Service{
 		name:            name,
-		options:         options,
 		targetOptions:   targetOptions,
 		pauseController: NewPauseController(),
 	}
 
-	return service, service.initialize()
+	if err := service.initialize(options); err != nil {
+		return nil, err
+	}
+	return service, nil
 }
 
 func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOptions) error {
-	s.options = options
 	s.targetOptions = targetOptions
 
-	return s.initialize()
+	return s.initialize(options)
 }
 
 func (s *Service) Dispose() {
@@ -263,14 +264,13 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.name = ms.Name
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
-	s.options = ms.Options
 	s.targetOptions = ms.TargetOptions
 
 	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.ActiveReaders, ms.TargetOptions)
 	if err != nil {
 		return err
 	}
-	s.active = NewLoadBalancer(activeTargets, s.options.WriterAffinityTimeout, s.options.ReadTargetsAcceptWebsockets)
+	s.active = NewLoadBalancer(activeTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets)
 	s.active.MarkAllHealthy()
 
 	rolloutTargets, err := NewTargetList(ms.RolloutTargets, ms.RolloutReaders, ms.TargetOptions)
@@ -278,11 +278,11 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if len(rolloutTargets) > 0 {
-		s.rollout = NewLoadBalancer(rolloutTargets, s.options.WriterAffinityTimeout, s.options.ReadTargetsAcceptWebsockets)
+		s.rollout = NewLoadBalancer(rolloutTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets)
 		s.rollout.MarkAllHealthy()
 	}
 
-	return s.initialize()
+	return s.initialize(ms.Options)
 }
 
 func (s *Service) Stop(drainTimeout time.Duration, message string) error {
@@ -323,17 +323,18 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize() error {
-	certManager, err := s.createCertManager(s.options)
+func (s *Service) initialize(options ServiceOptions) error {
+	certManager, err := s.createCertManager(options)
 	if err != nil {
 		return err
 	}
 
-	middleware, err := s.createMiddleware(s.options, certManager)
+	middleware, err := s.createMiddleware(options, certManager)
 	if err != nil {
 		return err
 	}
 
+	s.options = options
 	s.certManager = certManager
 	s.middleware = middleware
 
