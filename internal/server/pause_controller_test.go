@@ -25,11 +25,9 @@ func TestPauseController_WaitBlocksWhenPaused(t *testing.T) {
 	require.NoError(t, p.Pause(time.Second))
 	assert.Equal(t, PauseStatePaused, p.GetState())
 
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		require.NoError(t, p.Resume())
-		wg.Done()
-	}()
+	})
 
 	action, message := p.Wait()
 	assert.Equal(t, PauseWaitActionProceed, action)
@@ -66,11 +64,9 @@ func TestPauseController_StoppingPausedRequestsFailsThemImmediately(t *testing.T
 	require.NoError(t, p.Pause(time.Second))
 	assert.Equal(t, PauseStatePaused, p.GetState())
 
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		require.NoError(t, p.Stop("Back in 15 mins!"))
-		wg.Done()
-	}()
+	})
 
 	action, message := p.Wait()
 	assert.Equal(t, PauseWaitActionStopped, action)
