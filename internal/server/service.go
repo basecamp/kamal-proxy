@@ -81,6 +81,7 @@ type ServiceOptions struct {
 	StripPrefix                 bool          `json:"strip_prefix"`
 	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
+	DynamicLoadBalancing        bool          `json:"dyanmic_load_balancing"`
 }
 
 func (so *ServiceOptions) Normalize() {
@@ -394,13 +395,19 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 
 func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
 	var err error
-	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
+	var handler http.Handler = http.HandlerFunc(s.serviceRequest)
+
+	if options.DynamicLoadBalancing {
+		handler = WithReproxyMiddleware(s.name, handler)
+	}
 
 	if s.targetOptions.BufferResponses {
 		handler = WithResponseBufferMiddleware(s.targetOptions.MaxMemoryBufferSize, s.targetOptions.MaxResponseBodySize, handler)
 	}
 	if s.targetOptions.BufferRequests {
 		handler = WithRequestBufferMiddleware(s.targetOptions.MaxMemoryBufferSize, s.targetOptions.MaxRequestBodySize, handler)
+	} else if options.DynamicLoadBalancing {
+		handler = WithRewindableBufferMiddleware(s.targetOptions.MaxMemoryBufferSize, s.targetOptions.MaxRequestBodySize, handler)
 	}
 
 	if options.ErrorPagePath != "" {
@@ -421,7 +428,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 	return handler, nil
 }
 
-func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
+func (s *Service) serviceRequest(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
 	if s.shouldRedirectToHTTPS(r) {

@@ -10,13 +10,20 @@ import (
 )
 
 func upHandler(w http.ResponseWriter, r *http.Request) {
-	slog.Info("Health request", "method", r.Method, "url", r.URL)
 	w.WriteHeader(http.StatusOK)
 }
 
 func helloHandler(host string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		host = cmp.Or(r.Header.Get("X-Kamal-Target"), host)
+		slog.Info("Request", "host", host, "request_id", r.Header.Get("X-Request-ID"), "method", r.Method, "url", r.URL)
+
+		reproxyTo := r.URL.Query().Get("rt")
+		if reproxyTo != "" {
+			w.Header().Add("X-Kamal-Reproxy-Location", "http://"+reproxyTo)
+			w.WriteHeader(http.StatusSeeOther)
+			return
+		}
 
 		w.Header().Add("Content-Type", "text/html")
 		fmt.Fprintf(w, "<body>Hello from <strong>%s</strong> at <strong>%s</strong></body>\n",
@@ -24,7 +31,6 @@ func helloHandler(host string) http.HandlerFunc {
 			time.Now().Format(time.RFC3339),
 		)
 
-		slog.Info("Request", "host", host, "request_id", r.Header.Get("X-Request-ID"), "method", r.Method, "url", r.URL)
 	}
 }
 

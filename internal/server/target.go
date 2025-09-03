@@ -363,6 +363,10 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 }
 
 func (t *Target) isRequestEntityTooLarge(err error) bool {
+	if errors.Is(err, ErrMaximumSizeExceeded) {
+		return true
+	}
+
 	var maxBytesError *http.MaxBytesError
 	return errors.As(err, &maxBytesError)
 }
