@@ -173,10 +173,17 @@ func (s *Server) startMetricsServer() error {
 		Addr:    addr,
 		Handler: handler,
 	}
+	if s.config.MetricsHttps {
+		s.metricsServer.TLSConfig = &tls.Config{
+			MinVersion:     tls.VersionTLS13,
+			GetCertificate: s.router.GetCertificate,
+		}
+		go s.metricsServer.ServeTLS(s.metricsListener, "", "")
+	} else {
+		go s.metricsServer.Serve(s.metricsListener)
+	}
 
-	go s.metricsServer.Serve(s.metricsListener)
-
-	slog.Info("Metrics enabled", "address", addr)
+	slog.Info("Metrics enabled", "port", s.config.MetricsPort, "https", s.config.MetricsHttps)
 
 	return nil
 }
