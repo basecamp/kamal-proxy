@@ -74,6 +74,7 @@ func NewPrometheusTracker() *prometheusTracker {
 }
 
 func (p *prometheusTracker) TrackRequest(service, method string, status int, duration time.Duration) {
+	method = normalizeMethod(method)
 	statusString := strconv.Itoa(status)
 
 	p.httpRequests.WithLabelValues(service, method, statusString).Inc()
@@ -86,4 +87,17 @@ func (p *prometheusTracker) AddInflightRequest(service string) {
 
 func (p *prometheusTracker) SubtractInflightRequest(service string) {
 	p.inflightRequests.WithLabelValues(service).Dec()
+}
+
+// Private
+
+func normalizeMethod(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost,
+		http.MethodPut, http.MethodPatch, http.MethodDelete,
+		http.MethodConnect, http.MethodOptions, http.MethodTrace:
+		return method
+	default:
+		return "OTHER"
+	}
 }
