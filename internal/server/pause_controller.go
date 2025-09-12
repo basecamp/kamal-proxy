@@ -49,8 +49,8 @@ func NewPauseController() *PauseController {
 }
 
 func (p *PauseController) UnmarshalJSON(data []byte) error {
-	type alias *PauseController // Avoid infinite recursion when we call Unmarshal
-	err := json.Unmarshal(data, alias(p))
+	type alias PauseController // Avoid infinite recursion when we call Unmarshal
+	err := json.Unmarshal(data, (*alias)(p))
 	if err != nil {
 		return err
 	}
