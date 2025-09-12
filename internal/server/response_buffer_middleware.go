@@ -83,8 +83,18 @@ func (w *bufferedResponseWriter) WriteHeader(statusCode int) {
 }
 
 func (w *bufferedResponseWriter) ShouldSwitchToUnbuffered() bool {
+	// Check for explicit streaming content types
 	contentType, _, _ := strings.Cut(w.Header().Get("Content-Type"), ";")
-	return contentType == "text/event-stream"
+	if contentType == "text/event-stream" {
+		return true
+	}
+
+	// Check for chunked transfer encoding - RFC 7230 indicates this is for streaming
+	if w.Header().Get("Transfer-Encoding") == "chunked" {
+		return true
+	}
+
+	return false
 }
 
 func (w *bufferedResponseWriter) SwitchToUnbuffered() {
