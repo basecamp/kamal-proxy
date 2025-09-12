@@ -65,12 +65,17 @@ request to `/up`, once per second. A `200` response is considered healthy.
 
 If you need to customize the health checks for your application, there are a
 few `deploy` flags you can use. See the help for `--health-check-path`,
-`--health-check-timeout`, and `--health-check-interval`.
+`--health-check-port`, `--health-check-timeout`, and `--health-check-interval`.
 
 For example, to change the health check path to something other than `/up`, you
 could:
 
     kamal-proxy deploy service1 --target web-1:3000 --health-check-path web/index.html
+
+To configure health checks to run on a different port than your main service
+(useful when your app exposes health endpoints on a dedicated port), you could:
+
+    kamal-proxy deploy service1 --target web-1:3000 --health-check-port 8080
 
 ### Host-based routing
 

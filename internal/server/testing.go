@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
+	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Port: DefaultHealthCheckPort, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
 	defaultEmptyReaders      = []string{}
 	defaultServiceOptions    = ServiceOptions{TLSRedirect: true}
 	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}

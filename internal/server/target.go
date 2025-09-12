@@ -219,8 +219,9 @@ func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 	t.stateConsumer = stateConsumer
 
 	t.withInflightLock(func() {
+		healthCheckURL := t.buildHealthCheckURL()
 		t.healthcheck = NewHealthCheck(t,
-			t.targetURL.JoinPath(t.options.HealthCheckConfig.Path),
+			healthCheckURL,
 			t.options.HealthCheckConfig.Interval,
 			t.options.HealthCheckConfig.Timeout,
 		)
@@ -272,6 +273,20 @@ func (t *Target) HealthCheckCompleted(success bool) {
 }
 
 // Private
+
+func (t *Target) buildHealthCheckURL() *url.URL {
+	healthCheckURL := *t.targetURL
+
+	if t.options.HealthCheckConfig.Port > 0 {
+		host, _, err := net.SplitHostPort(t.targetURL.Host)
+		if err != nil {
+			host = t.targetURL.Host
+		}
+		healthCheckURL.Host = fmt.Sprintf("%s:%d", host, t.options.HealthCheckConfig.Port)
+	}
+
+	return healthCheckURL.JoinPath(t.options.HealthCheckConfig.Path)
+}
 
 func (t *Target) createProxyHandler() http.Handler {
 	bufferPool := NewBufferPool(ProxyBufferSize)
