@@ -73,7 +73,11 @@ func (s *Server) Stop() {
 		func() { _ = s.commandHandler.Close() },
 		func() { s.stopHTTPServer(ctx, s.httpServer) },
 		func() { s.stopHTTPServer(ctx, s.httpsServer) },
-		func() { s.stopHTTPServer(ctx, s.http3Server) },
+		func() {
+			if s.http3Server != nil {
+				s.stopHTTPServer(ctx, s.http3Server)
+			}
+		},
 		func() {
 			if s.metricsServer != nil {
 				s.stopHTTPServer(ctx, s.metricsServer)
@@ -83,7 +87,10 @@ func (s *Server) Stop() {
 
 	s.httpListener.Close()
 	s.httpsListener.Close()
-	s.http3Listener.Close()
+
+	if s.http3Listener != nil {
+		s.http3Listener.Close()
+	}
 	if s.metricsListener != nil {
 		s.metricsListener.Close()
 	}
@@ -101,9 +108,29 @@ func (s *Server) HttpsPort() int {
 
 // Private
 
-func (s *Server) startHTTPServers() error {
+func (s *Server) startHTTP3Server(handler http.Handler, httpsAddr string) error {
 	os.Setenv("QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING", "true")
 
+	http3Listener, err := net.ListenPacket("udp", httpsAddr)
+	if err != nil {
+		return err
+	}
+
+	s.http3Listener = http3Listener
+	s.http3Server = &http3.Server{
+		Handler: handler,
+		TLSConfig: &tls.Config{
+			MinVersion:     tls.VersionTLS13,
+			NextProtos:     []string{"h3"},
+			GetCertificate: s.router.GetCertificate,
+		},
+	}
+
+	go s.http3Server.Serve(s.http3Listener)
+	return nil
+}
+
+func (s *Server) startHTTPServers() error {
 	httpAddr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.HttpPort)
 	httpsAddr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.HttpsPort)
 
@@ -118,28 +145,17 @@ func (s *Server) startHTTPServers() error {
 		Handler: handler,
 	}
 
-	http3Listener, err := net.ListenPacket("udp", httpsAddr)
-	if err != nil {
-		return err
-	}
-	s.http3Listener = http3Listener
-	s.http3Server = &http3.Server{
-		Handler: handler,
-		TLSConfig: &tls.Config{
-			MinVersion:     tls.VersionTLS13,
-			NextProtos:     []string{"h3"},
-			GetCertificate: s.router.GetCertificate,
-		},
-	}
-
-	httpsListener, err := net.Listen("tcp", http3Listener.LocalAddr().String())
+	httpsListener, err := net.Listen("tcp", httpsAddr)
 	if err != nil {
 		return err
 	}
 	s.httpsListener = httpsListener
 	s.httpsServer = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			s.http3Server.SetQUICHeaders(w.Header())
+			if s.config.HTTP3Enabled {
+				s.http3Server.SetQUICHeaders(w.Header())
+			}
+
 			handler.ServeHTTP(w, r)
 		}),
 		TLSConfig: &tls.Config{
@@ -150,7 +166,14 @@ func (s *Server) startHTTPServers() error {
 
 	go s.httpServer.Serve(s.httpListener)
 	go s.httpsServer.ServeTLS(s.httpsListener, "", "")
-	go s.http3Server.Serve(s.http3Listener)
+
+	if s.config.HTTP3Enabled {
+		http3Addr := httpsListener.Addr().String()
+		err = s.startHTTP3Server(handler, http3Addr)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
