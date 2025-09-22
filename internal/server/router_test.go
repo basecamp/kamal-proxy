@@ -222,8 +222,10 @@ func TestRouter_DeploymentsWithErrorsDoNotUpdateService(t *testing.T) {
 	serviceOptions := defaultServiceOptions
 	serviceOptions.Hosts = []string{"example.com"}
 
+	targetOptions := defaultTargetOptions
+
 	assert.NoFileExists(t, router.statePath)
-	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	ensureServiceIsHealthy()
 	require.FileExists(t, router.statePath)
 
@@ -239,15 +241,20 @@ func TestRouter_DeploymentsWithErrorsDoNotUpdateService(t *testing.T) {
 			sm.Set(service)
 		}
 		persistedOptions := sm.Get("service1").options
+		persistedTargetOptions := sm.Get("service1").targetOptions
+
 		assert.Equal(t, serviceOptions.TLSPrivateKeyPath, persistedOptions.TLSPrivateKeyPath)
 		assert.Equal(t, serviceOptions.TLSCertificatePath, persistedOptions.TLSCertificatePath)
 		assert.Equal(t, serviceOptions.TLSEnabled, persistedOptions.TLSEnabled)
 		assert.Equal(t, serviceOptions.ErrorPagePath, persistedOptions.ErrorPagePath)
+		assert.Equal(t, targetOptions.BufferRequests, persistedTargetOptions.BufferRequests)
 	}
 
 	t.Run("custom TLS that is not valid", func(t *testing.T) {
 		newServiceOptions := ServiceOptions{TLSEnabled: true, TLSCertificatePath: "not valid", TLSPrivateKeyPath: "not valid"}
-		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, newServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+		newTargetOptions := TargetOptions{BufferRequests: true, HealthCheckConfig: defaultHealthCheckConfig}
+
+		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, newServiceOptions, newTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 		ensureServiceIsHealthy()
 		ensureStateWasNotSaved()
@@ -255,7 +262,9 @@ func TestRouter_DeploymentsWithErrorsDoNotUpdateService(t *testing.T) {
 
 	t.Run("custom error pages that are not valid", func(t *testing.T) {
 		newServiceOptions := ServiceOptions{ErrorPagePath: "not valid"}
-		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, newServiceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+		newTargetOptions := TargetOptions{BufferRequests: true, HealthCheckConfig: defaultHealthCheckConfig}
+
+		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, newServiceOptions, newTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 		ensureServiceIsHealthy()
 		ensureStateWasNotSaved()

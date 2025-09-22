@@ -134,20 +134,17 @@ type Service struct {
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
 	service := &Service{
 		name:            name,
-		targetOptions:   targetOptions,
 		pauseController: NewPauseController(),
 	}
 
-	if err := service.initialize(options); err != nil {
+	if err := service.initialize(options, targetOptions); err != nil {
 		return nil, err
 	}
 	return service, nil
 }
 
 func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOptions) error {
-	s.targetOptions = targetOptions
-
-	return s.initialize(options)
+	return s.initialize(options, targetOptions)
 }
 
 func (s *Service) Dispose() {
@@ -266,7 +263,6 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	s.name = ms.Name
 	s.pauseController = ms.PauseController
 	s.rolloutController = ms.RolloutController
-	s.targetOptions = ms.TargetOptions
 
 	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.ActiveReaders, ms.TargetOptions)
 	if err != nil {
@@ -284,7 +280,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		s.rollout.MarkAllHealthy()
 	}
 
-	return s.initialize(ms.Options)
+	return s.initialize(ms.Options, ms.TargetOptions)
 }
 
 func (s *Service) Stop(drainTimeout time.Duration, message string) error {
@@ -325,7 +321,7 @@ func (s *Service) Resume() error {
 
 // Private
 
-func (s *Service) initialize(options ServiceOptions) error {
+func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions) error {
 	certManager, err := s.createCertManager(options)
 	if err != nil {
 		return err
@@ -337,6 +333,7 @@ func (s *Service) initialize(options ServiceOptions) error {
 	}
 
 	s.options = options
+	s.targetOptions = targetOptions
 	s.certManager = certManager
 	s.middleware = middleware
 
