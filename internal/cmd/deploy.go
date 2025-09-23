@@ -60,8 +60,8 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.TargetOptions.LogRequestHeaders, "log-request-header", nil, "Additional request header to log (may be specified multiple times)")
 	deployCommand.cmd.Flags().StringSliceVar(&deployCommand.args.TargetOptions.LogResponseHeaders, "log-response-header", nil, "Additional response header to log (may be specified multiple times)")
-
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.ForwardHeaders, "forward-headers", false, "Forward X-Forwarded headers to target (default false if TLS enabled; otherwise true)")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.ScopeCookiePaths, "scope-cookie-paths", false, "Scope cookie paths to match path prefix")
 
 	deployCommand.cmd.MarkFlagRequired("target")
 	deployCommand.cmd.MarkFlagsRequiredTogether("tls-certificate-path", "tls-private-key-path")

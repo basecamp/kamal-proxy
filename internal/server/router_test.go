@@ -372,6 +372,109 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 	assert.Equal(t, "second", body)
 }
 
+func TestRouter_PathBasedRoutingCookiePrefixPrefix(t *testing.T) {
+	checkRequest := func(scopeCookiePaths bool, path string, expectedCookiePath string) {
+		router := testRouter(t)
+		_, backend1 := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session",
+				Value:    "secret",
+				Path:     "/something",
+				HttpOnly: true,
+			})
+			w.WriteHeader(http.StatusOK)
+		})
+		_, backend2 := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session",
+				Value:    "secret",
+				Path:     "/",
+				HttpOnly: true,
+			})
+			w.WriteHeader(http.StatusOK)
+		})
+
+		serviceOptions := defaultServiceOptions
+		serviceOptions.StripPrefix = true
+		targetOptions := defaultTargetOptions
+		targetOptions.ScopeCookiePaths = scopeCookiePaths
+
+		serviceOptions.PathPrefixes = []string{"/api", "/app"}
+		require.NoError(t, router.DeployService("service1", []string{backend1}, defaultEmptyReaders, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+		serviceOptions.PathPrefixes = []string{"/chat"}
+		require.NoError(t, router.DeployService("service2", []string{backend2}, defaultEmptyReaders, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Result().StatusCode)
+		require.Len(t, w.Result().Cookies(), 1)
+
+		cookie := w.Result().Cookies()[0]
+		assert.Equal(t, expectedCookiePath, cookie.Path)
+	}
+
+	checkRequest(true, "/app", "/app/something")
+	checkRequest(true, "/api", "/api/something")
+	checkRequest(false, "/app", "/something")
+	checkRequest(false, "/api", "/something")
+
+	checkRequest(true, "/chat", "/chat")
+	checkRequest(false, "/chat", "/")
+}
+
+func TestRouter_PathBasedRoutingCookiePrefixThirdPartyDomain(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{
+			Name:   "first_party",
+			Value:  "value1",
+			Path:   "/original",
+			Domain: "example.com",
+		})
+		http.SetCookie(w, &http.Cookie{
+			Name:   "third_party",
+			Value:  "value2",
+			Path:   "/original",
+			Domain: "other.com",
+		})
+		http.SetCookie(w, &http.Cookie{
+			Name:  "no_domain",
+			Value: "value3",
+			Path:  "/original",
+		})
+		w.WriteHeader(http.StatusOK)
+	})
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.StripPrefix = true
+	serviceOptions.PathPrefixes = []string{"/api"}
+	targetOptions := defaultTargetOptions
+	targetOptions.ScopeCookiePaths = true
+
+	require.NoError(t, router.DeployService("service", []string{backend}, defaultEmptyReaders, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/test", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Len(t, w.Result().Cookies(), 3)
+
+	cookies := w.Result().Cookies()
+
+	// First-party cookie (domain matches request host) should be scoped
+	assert.Equal(t, "first_party", cookies[0].Name)
+	assert.Equal(t, "/api/original", cookies[0].Path)
+
+	// Third-party cookie (domain doesn't match) should NOT be scoped
+	assert.Equal(t, "third_party", cookies[1].Name)
+	assert.Equal(t, "/original", cookies[1].Path)
+
+	// Cookie without domain should be scoped
+	assert.Equal(t, "no_domain", cookies[2].Name)
+	assert.Equal(t, "/api/original", cookies[2].Path)
+}
+
 func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
 	router := testRouter(t)
 	_, backend := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
