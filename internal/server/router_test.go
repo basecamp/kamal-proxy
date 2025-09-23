@@ -372,6 +372,57 @@ func TestRouter_RoutingMultipleHosts(t *testing.T) {
 	assert.Equal(t, "second", body)
 }
 
+func TestRouter_PathBasedRoutingCookiePrefixPrefix(t *testing.T) {
+	checkRequest := func(cookiePathPrefix bool, path string, expectedCookiePath string) {
+		router := testRouter(t)
+		_, backend1 := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session",
+				Value:    "secret",
+				Path:     "/something",
+				HttpOnly: true,
+			})
+			w.WriteHeader(http.StatusOK)
+		})
+		_, backend2 := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session",
+				Value:    "secret",
+				Path:     "/",
+				HttpOnly: true,
+			})
+			w.WriteHeader(http.StatusOK)
+		})
+
+		serviceOptions := defaultServiceOptions
+		serviceOptions.StripPrefix = true
+		targetOptions := defaultTargetOptions
+		targetOptions.CookiePathPrefix = cookiePathPrefix
+
+		serviceOptions.PathPrefixes = []string{"/api", "/app"}
+		require.NoError(t, router.DeployService("service1", []string{backend1}, defaultEmptyReaders, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+		serviceOptions.PathPrefixes = []string{"/chat"}
+		require.NoError(t, router.DeployService("service2", []string{backend2}, defaultEmptyReaders, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Result().StatusCode)
+		require.Len(t, w.Result().Cookies(), 1)
+
+		cookie := w.Result().Cookies()[0]
+		assert.Equal(t, expectedCookiePath, cookie.Path)
+	}
+
+	checkRequest(true, "/app", "/app/something")
+	checkRequest(true, "/api", "/api/something")
+	checkRequest(false, "/app", "/something")
+	checkRequest(false, "/api", "/something")
+
+	checkRequest(true, "/chat", "/chat")
+	checkRequest(false, "/chat", "/")
+}
+
 func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
 	router := testRouter(t)
 	_, backend := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
