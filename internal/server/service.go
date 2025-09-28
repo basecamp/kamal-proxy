@@ -418,7 +418,6 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
-	// If TLS is not enabled for this service, reject TLS requests immediately
 	if !s.options.TLSEnabled && r.TLS != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return
@@ -473,7 +472,6 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 }
 
 func (s *Service) handleRedirectsIfNeeded(w http.ResponseWriter, r *http.Request) bool {
-	// Perform canonical host and/or TLS redirects in a single hop when needed
 	if url := s.redirectURLIfNeeded(r); url != "" {
 		w.Header().Set("Connection", "close")
 		http.Redirect(w, r, url, http.StatusMovedPermanently)
@@ -486,7 +484,6 @@ func (s *Service) handleRedirectsIfNeeded(w http.ResponseWriter, r *http.Request
 // TLS redirection or canonical host redirection should occur. If no redirect is
 // needed, it returns an empty string.
 func (s *Service) redirectURLIfNeeded(r *http.Request) string {
-	// Determine current host without port
 	host, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		host = r.Host

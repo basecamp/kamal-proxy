@@ -59,7 +59,6 @@ func TestDeployCommand_CanonicalHostValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := newDeployCommand()
 
-			// Set up the command with test values
 			cmd.args.ServiceOptions.Hosts = tt.hosts
 			cmd.args.ServiceOptions.CanonicalHost = tt.canonicalHost
 			cmd.args.ServiceOptions.TLSEnabled = false
