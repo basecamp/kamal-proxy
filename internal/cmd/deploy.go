@@ -110,5 +110,12 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Validate canonical host is present in hosts when both are specified
+	if c.args.ServiceOptions.CanonicalHost != "" && len(c.args.ServiceOptions.Hosts) > 0 && c.args.ServiceOptions.Hosts[0] != "" {
+		if !slices.Contains(c.args.ServiceOptions.Hosts, c.args.ServiceOptions.CanonicalHost) {
+			return fmt.Errorf("canonical-host '%s' must be present in the hosts list: %v", c.args.ServiceOptions.CanonicalHost, c.args.ServiceOptions.Hosts)
+		}
+	}
+
 	return nil
 }

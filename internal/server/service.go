@@ -75,7 +75,7 @@ type ServiceOptions struct {
 	TLSCertificatePath          string        `json:"tls_certificate_path"`
 	TLSPrivateKeyPath           string        `json:"tls_private_key_path"`
 	TLSRedirect                 bool          `json:"tls_redirect"`
-    CanonicalHost               string        `json:"canonical_host"`
+	CanonicalHost               string        `json:"canonical_host"`
 	ACMEDirectory               string        `json:"acme_directory"`
 	ACMECachePath               string        `json:"acme_cache_path"`
 	ErrorPagePath               string        `json:"error_page_path"`
@@ -418,18 +418,15 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
-    // If TLS is not enabled for this service, reject TLS requests immediately
-    if !s.options.TLSEnabled && r.TLS != nil {
+	// If TLS is not enabled for this service, reject TLS requests immediately
+	if !s.options.TLSEnabled && r.TLS != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return
 	}
 
-    // Perform canonical host and/or TLS redirects in a single hop when needed
-    if url := s.redirectURLIfNeeded(r); url != "" {
-        w.Header().Set("Connection", "close")
-        http.Redirect(w, r, url, http.StatusMovedPermanently)
-        return
-    }
+	if s.handleRedirectsIfNeeded(w, r) {
+		return
+	}
 
 	if s.handlePausedAndStoppedRequests(w, r) {
 		return
@@ -447,10 +444,6 @@ func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Reques
 
 	lb := s.loadBalancerForRequest(r)
 	return lb.StartRequest(w, r)
-}
-
-func (s *Service) shouldRedirectToHTTPS(r *http.Request) bool {
-    return s.options.TLSEnabled && s.options.TLSRedirect && r.TLS == nil
 }
 
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
@@ -479,47 +472,44 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 	return false
 }
 
-func (s *Service) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Connection", "close")
-
-    host, _, err := net.SplitHostPort(r.Host)
-    if err != nil {
-        host = r.Host
-    }
-
-    url := "https://" + host + r.URL.RequestURI()
-    http.Redirect(w, r, url, http.StatusMovedPermanently)
+func (s *Service) handleRedirectsIfNeeded(w http.ResponseWriter, r *http.Request) bool {
+	// Perform canonical host and/or TLS redirects in a single hop when needed
+	if url := s.redirectURLIfNeeded(r); url != "" {
+		w.Header().Set("Connection", "close")
+		http.Redirect(w, r, url, http.StatusMovedPermanently)
+		return true
+	}
+	return false
 }
 
 // redirectURLIfNeeded returns a full absolute URL to redirect to when either
 // TLS redirection or canonical host redirection should occur. If no redirect is
 // needed, it returns an empty string.
 func (s *Service) redirectURLIfNeeded(r *http.Request) string {
-    // Determine current host without port
-    host, _, err := net.SplitHostPort(r.Host)
-    if err != nil {
-        host = r.Host
-    }
+	// Determine current host without port
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+	}
 
-    // Determine current scheme
-    currentScheme := "http"
-    if r.TLS != nil {
-        currentScheme = "https"
-    }
+	currentScheme := "http"
+	if r.TLS != nil {
+		currentScheme = "https"
+	}
 
-    desiredScheme := currentScheme
-    if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" {
-        desiredScheme = "https"
-    }
+	desiredScheme := currentScheme
+	if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" {
+		desiredScheme = "https"
+	}
 
-    desiredHost := host
-    if s.options.CanonicalHost != "" && host != s.options.CanonicalHost {
-        desiredHost = s.options.CanonicalHost
-    }
+	desiredHost := host
+	if s.options.CanonicalHost != "" && host != s.options.CanonicalHost {
+		desiredHost = s.options.CanonicalHost
+	}
 
-    if desiredScheme != currentScheme || desiredHost != host {
-        return desiredScheme + "://" + desiredHost + r.URL.RequestURI()
-    }
+	if desiredScheme != currentScheme || desiredHost != host {
+		return desiredScheme + "://" + desiredHost + r.URL.RequestURI()
+	}
 
-    return ""
+	return ""
 }
