@@ -1,4 +1,4 @@
-from golang:1.24.4 as build
+from golang:1.25.1 as build
 workdir /app
 copy . .
 env CGO_ENABLED=0

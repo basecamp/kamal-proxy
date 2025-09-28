@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
+	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Port: DefaultHealthCheckPort, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
 	defaultEmptyReaders      = []string{}
 	defaultServiceOptions    = ServiceOptions{TLSRedirect: true}
 	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
@@ -68,7 +68,7 @@ func testBackendWithHandler(t testing.TB, handler http.HandlerFunc) (*httptest.S
 	return server, serverURL.Host
 }
 
-func testServer(t testing.TB) *Server {
+func testServer(t testing.TB, http3Enabled bool) *Server {
 	t.Helper()
 
 	config := &Config{
@@ -76,6 +76,7 @@ func testServer(t testing.TB) *Server {
 		HttpPort:           0,
 		HttpsPort:          0,
 		AlternateConfigDir: t.TempDir(),
+		HTTP3Enabled:       http3Enabled,
 	}
 	router := NewRouter(config.StatePath())
 	server := NewServer(config, router)

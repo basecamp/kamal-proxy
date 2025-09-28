@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/json"
     "crypto/tls"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -250,7 +252,7 @@ func TestRouter_CanonicalHostRedirectWithTLS(t *testing.T) {
     assert.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
 }
 
-func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
+func TestRouter_DeploymentsWithErrorsDoNotUpdateService(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
 
@@ -263,21 +265,52 @@ func TestRouter_DeploymmentsWithErrorsDoNotUpdateService(t *testing.T) {
 	serviceOptions := defaultServiceOptions
 	serviceOptions.Hosts = []string{"example.com"}
 
-	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+	targetOptions := defaultTargetOptions
+
+	assert.NoFileExists(t, router.statePath)
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, targetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 	ensureServiceIsHealthy()
+	require.FileExists(t, router.statePath)
+
+	ensureStateWasNotSaved := func() {
+		f, err := os.OpenFile(router.statePath, os.O_RDONLY, 0600)
+		require.NoError(t, err)
+
+		var services []*Service
+		require.NoError(t, json.NewDecoder(f).Decode(&services), "if this test failed it means an invalid config prevents the system from booting")
+
+		sm := NewServiceMap()
+		for _, service := range services {
+			sm.Set(service)
+		}
+		persistedOptions := sm.Get("service1").options
+		persistedTargetOptions := sm.Get("service1").targetOptions
+
+		assert.Equal(t, serviceOptions.TLSPrivateKeyPath, persistedOptions.TLSPrivateKeyPath)
+		assert.Equal(t, serviceOptions.TLSCertificatePath, persistedOptions.TLSCertificatePath)
+		assert.Equal(t, serviceOptions.TLSEnabled, persistedOptions.TLSEnabled)
+		assert.Equal(t, serviceOptions.ErrorPagePath, persistedOptions.ErrorPagePath)
+		assert.Equal(t, targetOptions.BufferRequests, persistedTargetOptions.BufferRequests)
+	}
 
 	t.Run("custom TLS that is not valid", func(t *testing.T) {
-		serviceOptions := ServiceOptions{TLSEnabled: true, TLSCertificatePath: "not valid", TLSPrivateKeyPath: "not valid"}
-		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+		newServiceOptions := ServiceOptions{TLSEnabled: true, TLSCertificatePath: "not valid", TLSPrivateKeyPath: "not valid"}
+		newTargetOptions := TargetOptions{BufferRequests: true, HealthCheckConfig: defaultHealthCheckConfig}
+
+		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, newServiceOptions, newTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 		ensureServiceIsHealthy()
+		ensureStateWasNotSaved()
 	})
 
 	t.Run("custom error pages that are not valid", func(t *testing.T) {
-		serviceOptions := ServiceOptions{ErrorPagePath: "not valid"}
-		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
+		newServiceOptions := ServiceOptions{ErrorPagePath: "not valid"}
+		newTargetOptions := TargetOptions{BufferRequests: true, HealthCheckConfig: defaultHealthCheckConfig}
+
+		require.Error(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, newServiceOptions, newTargetOptions, DefaultDeployTimeout, DefaultDrainTimeout))
 
 		ensureServiceIsHealthy()
+		ensureStateWasNotSaved()
 	})
 }
 
