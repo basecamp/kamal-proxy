@@ -153,6 +153,7 @@ func TestTarget_CancelledRequestsHaveStatus499(t *testing.T) {
 
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
 		cancel()
+		<-r.Context().Done()
 	})
 
 	testServeRequestWithTarget(t, target, w, req)
