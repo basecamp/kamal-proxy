@@ -76,6 +76,7 @@ type ServiceOptions struct {
 	TLSEnabled                  bool          `json:"tls_enabled"`
 	TLSCertificatePath          string        `json:"tls_certificate_path"`
 	TLSPrivateKeyPath           string        `json:"tls_private_key_path"`
+	TLSOnDemandUrl              string        `json:"tls_on_demand_url"`
 	TLSRedirect                 bool          `json:"tls_redirect"`
 	ACMEDirectory               string        `json:"acme_directory"`
 	ACMECachePath               string        `json:"acme_cache_path"`
@@ -384,10 +385,15 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 		}
 	}
 
+	hostPolicy, err := NewTLSOnDemandChecker(s).HostPolicy()
+	if err != nil {
+		return nil, err
+	}
+
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		Cache:      autocert.DirCache(options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(options.Hosts...),
+		HostPolicy: hostPolicy,
 		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
 	}, nil
 }
