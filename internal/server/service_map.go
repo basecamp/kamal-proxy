@@ -20,8 +20,9 @@ type pathBinding struct {
 type requestServiceMap map[string][]*pathBinding
 
 type ServiceMap struct {
-	services          map[string]*Service
-	requestServiceMap requestServiceMap
+	services           map[string]*Service
+	requestServiceMap  requestServiceMap
+	defaultTLSHostname string
 }
 
 func NewServiceMap() *ServiceMap {
@@ -38,11 +39,13 @@ func (m *ServiceMap) Get(name string) *Service {
 func (m *ServiceMap) Set(service *Service) {
 	m.services[service.name] = service
 	m.updateRequestServiceMap()
+	m.updateDefaultTLSHostname()
 }
 
 func (m *ServiceMap) Remove(name string) {
 	delete(m.services, name)
 	m.updateRequestServiceMap()
+	m.updateDefaultTLSHostname()
 }
 
 func (m *ServiceMap) All() iter.Seq2[string, *Service] {
@@ -53,6 +56,10 @@ func (m *ServiceMap) All() iter.Seq2[string, *Service] {
 			}
 		}
 	}
+}
+
+func (m *ServiceMap) DefaultTLSHostname() string {
+	return m.defaultTLSHostname
 }
 
 func (m *ServiceMap) CheckAvailability(name string, options ServiceOptions) *Service {
@@ -144,6 +151,15 @@ func (m *ServiceMap) updateRequestServiceMap() {
 
 	m.requestServiceMap = requestServiceMap
 	m.syncTLSOptionsFromRootDomain()
+}
+
+func (m *ServiceMap) updateDefaultTLSHostname() {
+	for _, service := range m.services {
+		if service.options.TLSEnabled && len(service.options.Hosts) > 0 {
+			m.defaultTLSHostname = service.options.Hosts[0]
+			return
+		}
+	}
 }
 
 func (m *ServiceMap) syncTLSOptionsFromRootDomain() {

@@ -260,13 +260,18 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 }
 
 func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	host := hello.ServerName
-	if host == "" {
-		slog.Debug("ACME: Unable to get certificate (no server name)")
-		return nil, ErrorNoServerName
+	if hello.ServerName == "" {
+		hello.ServerName = r.defaultTLSHostname()
+
+		if hello.ServerName == "" {
+			slog.Debug("ACME: Unable to get certificate (no server name)")
+			return nil, ErrorNoServerName
+		} else {
+			slog.Warn("No server name; using default TLS hostname", "host", hello.ServerName)
+		}
 	}
 
-	service := r.serviceForHost(host)
+	service := r.serviceForHost(hello.ServerName)
 	if service == nil {
 		slog.Debug("ACME: Unable to get certificate (unknown server name)")
 		return nil, ErrorUnknownServerName
@@ -376,6 +381,13 @@ func (r *Router) serviceForName(name string) *Service {
 	defer r.serviceLock.RUnlock()
 
 	return r.services.Get(name)
+}
+
+func (r *Router) defaultTLSHostname() string {
+	r.serviceLock.RLock()
+	defer r.serviceLock.RUnlock()
+
+	return r.services.DefaultTLSHostname()
 }
 
 func (r *Router) withReadLock(fn func() error) error {
