@@ -71,6 +71,16 @@ func TestServiceMap_CheckAvailability(t *testing.T) {
 	assert.Equal(t, "3", sm.CheckAvailability("4", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}, PathPrefixes: []string{"/api"}})).name)
 }
 
+func TestServiceMap_DefaultTLSHostname(t *testing.T) {
+	sm := NewServiceMap()
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}})})
+	assert.Empty(t, sm.DefaultTLSHostname())
+
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true})})
+	assert.Equal(t, "example.com", sm.DefaultTLSHostname())
+}
+
 func TestServiceMap_SyncingTLSSettingsFromRootPath(t *testing.T) {
 	sm := NewServiceMap()
 	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"1.example.com"}, TLSEnabled: true, TLSRedirect: false})})
