@@ -138,7 +138,7 @@ func TestService_MarshallingState(t *testing.T) {
 	}
 
 	service := testCreateService(t, defaultServiceOptions, targetOptions)
-	defer service.Dispose()
+	t.Cleanup(service.Dispose)
 	require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
 	service.UpdateLoadBalancer(NewLoadBalancer(service.active.Targets(), DefaultWriterAffinityTimeout, false), TargetSlotRollout)
 
@@ -151,7 +151,7 @@ func TestService_MarshallingState(t *testing.T) {
 	var service2 Service
 	err = json.NewDecoder(&buf).Decode(&service2)
 	require.NoError(t, err)
-	defer service2.Dispose()
+	t.Cleanup(service2.Dispose)
 
 	assert.Equal(t, service.name, service2.name)
 	assert.Equal(t, service.active.Targets().Names(), service2.active.Targets().Names())
@@ -207,7 +207,7 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 	var service Service
 	err := json.NewDecoder(strings.NewReader(state)).Decode(&service)
 	require.NoError(t, err)
-	defer service.Dispose()
+	t.Cleanup(service.Dispose)
 
 	assert.Equal(t, "my-app", service.name)
 	assert.Equal(t, []string{"localhost:3000"}, service.active.Targets().Names())

@@ -28,7 +28,7 @@ func TestLoadBalancer_Targets(t *testing.T) {
 	require.NoError(t, err)
 
 	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
-	defer lb.Dispose()
+	t.Cleanup(lb.Dispose)
 
 	assert.Equal(t, []string{"one", "two", "three"}, lb.Targets().Names())
 }

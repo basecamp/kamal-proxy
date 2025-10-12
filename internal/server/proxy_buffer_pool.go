@@ -5,7 +5,7 @@ import "sync"
 func NewBufferPool(bufferSize int64) *BufferPool {
 	return &BufferPool{
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				buf := make([]byte, bufferSize)
 				return &buf
 			},
