@@ -37,6 +37,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environment for certificate provisioning")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.TLSCertificatePath, "tls-certificate-path", "", "Configure custom TLS certificate path (PEM format)")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.TLSPrivateKeyPath, "tls-private-key-path", "", "Configure custom TLS private key path (PEM format)")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.ACMECachePath, "tls-acme-cache-path", globalConfig.CertificatePath(), "Location to store ACME assets")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.TLSRedirect, "tls-redirect", true, "Redirect HTTP traffic to HTTPS")
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
@@ -71,12 +72,8 @@ func newDeployCommand() *deployCommand {
 func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 	c.args.Service = args[0]
 
-	if c.args.ServiceOptions.TLSEnabled {
-		c.args.ServiceOptions.ACMECachePath = globalConfig.CertificatePath()
-
-		if c.tlsStaging {
-			c.args.ServiceOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
-		}
+	if c.tlsStaging {
+		c.args.ServiceOptions.ACMEDirectory = server.ACMEStagingDirectoryURL
 	}
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
