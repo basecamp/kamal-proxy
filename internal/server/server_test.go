@@ -43,7 +43,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 		server := startDeployment(true)
 
 		t.Run("http/1.1", func(t *testing.T) {
-			resp, err := testRequestUsingHTTP11(server)
+			resp, err := testRequestUsingHTTP11(t, server)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			assert.Equal(t, "HTTP/1.1", resp.Proto)
@@ -53,7 +53,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 		})
 
 		t.Run("http/2", func(t *testing.T) {
-			resp, err := testRequestUsingHTTP2(server)
+			resp, err := testRequestUsingHTTP2(t, server)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			assert.Equal(t, "HTTP/2.0", resp.Proto)
@@ -63,7 +63,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 		})
 
 		t.Run("http/3", func(t *testing.T) {
-			resp, err := testRequestUsingHTTP3(server)
+			resp, err := testRequestUsingHTTP3(t, server)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			assert.Equal(t, "HTTP/3.0", resp.Proto)
@@ -76,7 +76,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 		server := startDeployment(false)
 
 		t.Run("http/1.1", func(t *testing.T) {
-			resp, err := testRequestUsingHTTP11(server)
+			resp, err := testRequestUsingHTTP11(t, server)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			assert.Equal(t, "HTTP/1.1", resp.Proto)
@@ -85,7 +85,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 		})
 
 		t.Run("http/2", func(t *testing.T) {
-			resp, err := testRequestUsingHTTP2(server)
+			resp, err := testRequestUsingHTTP2(t, server)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			assert.Equal(t, "HTTP/2.0", resp.Proto)
@@ -105,7 +105,8 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 
 // Helpers
 
-func testDeployTarget(t *testing.T, target *Target, server *Server, serviceOptions ServiceOptions) {
+func testDeployTarget(tb testing.TB, target *Target, server *Server, serviceOptions ServiceOptions) {
+	tb.Helper()
 	var result bool
 	err := server.commandHandler.Deploy(DeployArgs{
 		TargetURLs:     []string{target.Address()},
@@ -115,10 +116,11 @@ func testDeployTarget(t *testing.T, target *Target, server *Server, serviceOptio
 		TargetOptions:  defaultTargetOptions,
 	}, &result)
 
-	require.NoError(t, err)
+	require.NoError(tb, err)
 }
 
-func testRequestUsingHTTP11(server *Server) (*http.Response, error) {
+func testRequestUsingHTTP11(tb testing.TB, server *Server) (*http.Response, error) {
+	tb.Helper()
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -128,7 +130,8 @@ func testRequestUsingHTTP11(server *Server) (*http.Response, error) {
 	return testRequestUsingTransport(server, transport)
 }
 
-func testRequestUsingHTTP2(server *Server) (*http.Response, error) {
+func testRequestUsingHTTP2(tb testing.TB, server *Server) (*http.Response, error) {
+	tb.Helper()
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -139,14 +142,15 @@ func testRequestUsingHTTP2(server *Server) (*http.Response, error) {
 	return testRequestUsingTransport(server, transport)
 }
 
-func testRequestUsingHTTP3(server *Server) (*http.Response, error) {
+func testRequestUsingHTTP3(tb testing.TB, server *Server) (*http.Response, error) {
+	tb.Helper()
 	transport := &http3.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 			NextProtos:         []string{"h3"},
 		},
 	}
-	defer transport.Close()
+	tb.Cleanup(func() { _ = transport.Close() })
 
 	return testRequestUsingTransport(server, transport)
 }

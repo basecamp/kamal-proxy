@@ -61,8 +61,8 @@ func TestTarget_ServeSSE(t *testing.T) {
 			require.NoError(t, err)
 			target.SendRequest(w, r)
 		}))
-		defer server.Close()
-		defer close(finishedReading)
+		t.Cleanup(server.Close)
+		t.Cleanup(func() { close(finishedReading) })
 
 		resp, err := http.Get(server.URL)
 		require.NoError(t, err)
@@ -103,14 +103,14 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 			c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 			require.NoError(t, err)
 
-			go func() {
-				kind, body, err := c.Read(context.Background())
+			go func(t *testing.T) {
+				kind, body, err := c.Read(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, websocket.MessageText, kind)
 
-				c.Write(context.Background(), websocket.MessageText, body)
+				c.Write(t.Context(), websocket.MessageText, body)
 				defer c.CloseNow()
-			}()
+			}(t)
 		})
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,17 +118,17 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 			require.NoError(t, err)
 			target.SendRequest(w, r)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
 
-		c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
+		c, _, err := websocket.Dial(t.Context(), websocketURL, nil)
 		require.NoError(t, err)
-		defer c.CloseNow()
+		t.Cleanup(func() { _ = c.CloseNow() })
 
-		c.Write(context.Background(), websocket.MessageText, []byte(body))
+		c.Write(t.Context(), websocket.MessageText, []byte(body))
 
-		return c.Read(context.Background())
+		return c.Read(t.Context())
 	}
 
 	t.Run("without buffering", func(t *testing.T) {
@@ -147,7 +147,7 @@ func TestTarget_ServeWebSocket(t *testing.T) {
 }
 
 func TestTarget_CancelledRequestsHaveStatus499(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
@@ -374,7 +374,7 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 		require.NoError(t, err)
 		defer c.CloseNow()
 
-		_, _, err = c.Read(context.Background())
+		_, _, err = c.Read(t.Context())
 		require.Error(t, err)
 	})
 
@@ -383,13 +383,13 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 		require.NoError(t, err)
 		target.SendRequest(w, r)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	websocketURL := strings.Replace(server.URL, "http:", "ws:", 1)
 
-	c, _, err := websocket.Dial(context.Background(), websocketURL, nil)
+	c, _, err := websocket.Dial(t.Context(), websocketURL, nil)
 	require.NoError(t, err)
-	defer c.CloseNow()
+	t.Cleanup(func() { _ = c.CloseNow() })
 
 	startedDraining := time.Now()
 	target.Drain(time.Second * 5)
