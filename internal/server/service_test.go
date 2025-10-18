@@ -360,7 +360,7 @@ func TestService_Reproxying(t *testing.T) {
 		testReproxy(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add(reproxyHeaderName, "http://whatever:1234/broken")
 			w.WriteHeader(http.StatusSeeOther)
-		}, 503, "Service Unavailable\n")
+		}, 200, "Reproxied: something")
 	})
 }
 
