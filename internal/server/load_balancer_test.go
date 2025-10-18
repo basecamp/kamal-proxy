@@ -269,11 +269,11 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, true)
 	require.NoError(t, lb.WaitUntilHealthy(time.Second))
 
-	check := func(expected []string, fn func(req *http.Request)) {
+	check := func(expected []string, method string, fn func(req *http.Request)) {
 		targets := []string{}
 		for range 10 {
 			w := httptest.NewRecorder()
-			req := httptest.NewRequest("POST", "/", nil)
+			req := httptest.NewRequest(method, "/", nil)
 			fn(req)
 			lb.StartRequest(w, req)()
 
@@ -289,13 +289,24 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 	t.Run("writes without cookie", func(t *testing.T) {
 		expected := []string{writer1.Address(), writer2.Address()}
 
-		check(expected, func(req *http.Request) {})
+		check(expected, http.MethodPost, func(req *http.Request) {})
 	})
 
 	t.Run("writes with valid writer cookie", func(t *testing.T) {
 		expected := []string{writer1.Address()}
 
-		check(expected, func(req *http.Request) {
+		check(expected, http.MethodPost, func(req *http.Request) {
+			req.AddCookie(&http.Cookie{
+				Name:  LoadBalancerWriterCookieName,
+				Value: writer1.Address(),
+			})
+		})
+	})
+
+	t.Run("reads with valid writer cookie", func(t *testing.T) {
+		expected := []string{reader1.Address()}
+
+		check(expected, http.MethodGet, func(req *http.Request) {
 			req.AddCookie(&http.Cookie{
 				Name:  LoadBalancerWriterCookieName,
 				Value: writer1.Address(),

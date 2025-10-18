@@ -224,6 +224,7 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 	reproxyTo, _ := req.Context().Value(contextKeyReproxyTo).(*url.URL)
 	readRequest := lb.isReadRequest(req)
 	treatAsReadRequest := readRequest && !lb.hasWriteCookie(req)
+	pinnedWriter := lb.pinnedWriter(req)
 
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
@@ -231,6 +232,8 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 	var target *Target
 	if reproxyTo != nil {
 		target = lb.all.FindByHost(reproxyTo.Host)
+	} else if pinnedWriter != "" && !treatAsReadRequest {
+		target = lb.all.FindByHost(pinnedWriter)
 	} else {
 		target = lb.nextTarget(treatAsReadRequest)
 	}
@@ -260,6 +263,14 @@ func (lb *LoadBalancer) nextTarget(useReader bool) *Target {
 func (lb *LoadBalancer) isReadRequest(req *http.Request) bool {
 	return (req.Method == http.MethodGet || req.Method == http.MethodHead) &&
 		(lb.readTargetsAcceptWebsockets || !lb.isWebSocketRequest(req))
+}
+
+func (lb *LoadBalancer) pinnedWriter(req *http.Request) string {
+	cookie, err := req.Cookie(LoadBalancerWriterCookieName)
+	if err == nil {
+		return cookie.Value
+	}
+	return ""
 }
 
 func (lb *LoadBalancer) isWebSocketRequest(req *http.Request) bool {
