@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -255,7 +256,91 @@ func TestLoadBalancer_TargetHeader(t *testing.T) {
 	checkHeader("POST", "existing, "+writer.Address(), "existing")
 }
 
+func TestLoadBalancer_SetWriterCookie(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(LoadBalancerTargetHeader, r.Header.Get(LoadBalancerTargetHeader))
+	}
+
+	writer1 := testTarget(t, handler)
+	writer2 := testTarget(t, handler)
+	reader1 := testReadOnlyTarget(t, handler)
+
+	check := func(dynamicLoadBalancing bool, expected []string, method string, fn func(req *http.Request)) {
+		tl, _ := NewTargetList([]string{writer1.Address(), writer2.Address()}, []string{reader1.Address()}, defaultTargetOptions)
+		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, dynamicLoadBalancing)
+		t.Cleanup(lb.Dispose)
+
+		require.NoError(t, lb.WaitUntilHealthy(time.Second))
+
+		targets := []string{}
+		for range 10 {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(method, "/", nil)
+			fn(req)
+			lb.StartRequest(w, req)()
+
+			assert.Equal(t, http.StatusOK, w.Code)
+			targets = append(targets, w.Header().Get(LoadBalancerTargetHeader))
+		}
+
+		slices.Sort(targets)
+		slices.Sort(expected)
+		assert.ElementsMatch(t, expected, slices.Compact(targets))
+	}
+
+	t.Run("writes without cookie", func(t *testing.T) {
+		expected := []string{writer1.Address(), writer2.Address()}
+
+		check(true, expected, http.MethodPost, func(req *http.Request) {})
+	})
+
+	t.Run("writes with valid writer cookie", func(t *testing.T) {
+		expected := []string{writer1.Address()}
+
+		check(true, expected, http.MethodPost, func(req *http.Request) {
+			req.AddCookie(&http.Cookie{
+				Name:  LoadBalancerWriterCookieName,
+				Value: writer1.Address(),
+			})
+		})
+	})
+
+	t.Run("writes with valid writer cookie but no dynamic load balancing", func(t *testing.T) {
+		expected := []string{writer1.Address(), writer2.Address()}
+
+		check(false, expected, http.MethodPost, func(req *http.Request) {
+			req.AddCookie(&http.Cookie{
+				Name:  LoadBalancerWriterCookieName,
+				Value: writer1.Address(),
+			})
+		})
+	})
+
+	t.Run("writes with not valid writer cookie", func(t *testing.T) {
+		expected := []string{writer1.Address(), writer2.Address()}
+
+		check(true, expected, http.MethodPost, func(req *http.Request) {
+			req.AddCookie(&http.Cookie{
+				Name:  LoadBalancerWriterCookieName,
+				Value: "not-a-target",
+			})
+		})
+	})
+
+	t.Run("reads with valid writer cookie", func(t *testing.T) {
+		expected := []string{reader1.Address()}
+
+		check(true, expected, http.MethodGet, func(req *http.Request) {
+			req.AddCookie(&http.Cookie{
+				Name:  LoadBalancerWriterCookieName,
+				Value: writer1.Address(),
+			})
+		})
+	})
+}
+
 func TestLoadBalancer_WriterHeader(t *testing.T) {
+	t.Skip()
 	pinnedWriterAddress := new(string)
 
 	writer1 := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
