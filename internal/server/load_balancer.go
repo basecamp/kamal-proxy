@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,9 +17,9 @@ import (
 const (
 	LoadBalancerAffinityOptOutHeader = "X-Writer-Affinity"
 	LoadBalancerTargetHeader         = "X-Kamal-Target"
-	LoadBalancerWriterHeader         = "X-Writer"
 
-	LoadBalancerWriteCookieName = "kamal-writer"
+	LoadBalancerWriteCookieName  = "kamal-written"
+	LoadBalancerWriterCookieName = "kamal-writer"
 )
 
 var ErrorNoHealthyTargets = errors.New("no healthy targets")
@@ -114,10 +113,9 @@ type LoadBalancer struct {
 	readTargetsAcceptWebsockets bool
 	dynamicLoadBalancing        bool
 
-	writerIndex  int
-	readerIndex  int
-	pinnedWriter string
-	lock         sync.Mutex
+	writerIndex int
+	readerIndex int
+	lock        sync.Mutex
 
 	multiTarget           bool
 	hasReaders            bool
@@ -205,7 +203,7 @@ func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) fun
 	}
 
 	setWriterAffinity := lb.writerAffinityTimeout > 0 && lb.hasReaders && !readRequest
-	w = newLoadBalancerReponseWriter(w, setWriterAffinity, lb.writerAffinityTimeout, lb.updatePinnedWriter, lb.dynamicLoadBalancing)
+	w = newLoadBalancerReponseWriter(w, setWriterAffinity, lb.writerAffinityTimeout)
 
 	lb.setTargetHeader(req, target)
 
@@ -270,17 +268,6 @@ func (lb *LoadBalancer) isWebSocketRequest(req *http.Request) bool {
 		strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
 }
 
-func (lb *LoadBalancer) updatePinnedWriter(pinnedWriter string) {
-	lb.lock.Lock()
-	defer lb.lock.Unlock()
-
-	if pinnedWriter != lb.pinnedWriter {
-		slog.Info("Pinning writer", "writer", pinnedWriter)
-		lb.pinnedWriter = pinnedWriter
-		lb.buildTargetLists()
-	}
-}
-
 func (lb *LoadBalancer) updateHealthyTargets() {
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
@@ -297,13 +284,7 @@ func (lb *LoadBalancer) buildTargetLists() {
 		if target.State() == TargetStateHealthy {
 			healthyCount++
 
-			reader := false
-			if lb.pinnedWriter != "" {
-				reader = target.Address() != lb.pinnedWriter
-			} else {
-				reader = target.ReadOnly()
-			}
-
+			reader := target.ReadOnly()
 			if reader {
 				lb.readers = append(lb.readers, target)
 			} else {
@@ -357,23 +338,18 @@ type loadBalancerResponseWriter struct {
 	headerWritten         bool
 	setWriterAffinity     bool
 	writerAffinityTimeout time.Duration
-	pinnedWriterFn        func(string)
-	dynamicLoadBalancing  bool
 }
 
-func newLoadBalancerReponseWriter(w http.ResponseWriter, setWriterAffinity bool, writerAffinityTimeout time.Duration, pinnedWriterFn func(string), dynamicLoadBalancing bool) *loadBalancerResponseWriter {
+func newLoadBalancerReponseWriter(w http.ResponseWriter, setWriterAffinity bool, writerAffinityTimeout time.Duration) *loadBalancerResponseWriter {
 	return &loadBalancerResponseWriter{
 		ResponseWriter:        w,
 		headerWritten:         false,
 		setWriterAffinity:     setWriterAffinity,
 		writerAffinityTimeout: writerAffinityTimeout,
-		pinnedWriterFn:        pinnedWriterFn,
-		dynamicLoadBalancing:  dynamicLoadBalancing,
 	}
 }
 
 func (w *loadBalancerResponseWriter) WriteHeader(statusCode int) {
-	w.setPinnedWriter()
 	w.setWriterAffinityCookie()
 
 	w.ResponseWriter.WriteHeader(statusCode)
@@ -401,16 +377,6 @@ func (w *loadBalancerResponseWriter) Flush() {
 	flusher, ok := w.ResponseWriter.(http.Flusher)
 	if ok {
 		flusher.Flush()
-	}
-}
-
-func (w *loadBalancerResponseWriter) setPinnedWriter() {
-	if w.dynamicLoadBalancing {
-		pinnedWriter := w.Header().Get(LoadBalancerWriterHeader)
-		if pinnedWriter != "" {
-			w.pinnedWriterFn(pinnedWriter)
-			w.Header().Del(LoadBalancerWriterHeader)
-		}
 	}
 }
 
