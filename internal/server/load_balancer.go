@@ -232,12 +232,13 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 	var target *Target
 	if reproxyTo != nil {
 		target = lb.all.FindByHost(reproxyTo.Host)
-	} else if pinnedWriter != "" && !treatAsReadRequest {
+	}
+	if target == nil && pinnedWriter != "" && !treatAsReadRequest {
 		target = lb.all.FindByHost(pinnedWriter)
-	} else {
+	}
+	if target == nil {
 		target = lb.nextTarget(treatAsReadRequest)
 	}
-
 	if target == nil {
 		return nil, nil, false, ErrorNoHealthyTargets
 	}

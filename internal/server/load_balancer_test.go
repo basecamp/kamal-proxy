@@ -303,6 +303,17 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 		})
 	})
 
+	t.Run("writes with not valid writer cookie", func(t *testing.T) {
+		expected := []string{writer1.Address(), writer2.Address()}
+
+		check(expected, http.MethodPost, func(req *http.Request) {
+			req.AddCookie(&http.Cookie{
+				Name:  LoadBalancerWriterCookieName,
+				Value: "not-a-target",
+			})
+		})
+	})
+
 	t.Run("reads with valid writer cookie", func(t *testing.T) {
 		expected := []string{reader1.Address()}
 
