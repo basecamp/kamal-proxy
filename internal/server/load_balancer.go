@@ -109,6 +109,7 @@ type LoadBalancer struct {
 	all                         TargetList
 	writers                     TargetList
 	readers                     TargetList
+	healthy                     TargetList
 	writerAffinityTimeout       time.Duration
 	readTargetsAcceptWebsockets bool
 	dynamicLoadBalancing        bool
@@ -130,6 +131,7 @@ func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration, re
 		all:                         targets,
 		writers:                     TargetList{},
 		readers:                     TargetList{},
+		healthy:                     TargetList{},
 		writerAffinityTimeout:       writerAffinityTimeout,
 		readTargetsAcceptWebsockets: readTargetsAcceptWebsockets,
 		dynamicLoadBalancing:        dynamicLoadBalancing,
@@ -231,14 +233,15 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 
 	var target *Target
 	if reproxyTo != nil {
-		target = lb.all.FindByHost(reproxyTo.Host)
+		target = lb.healthy.FindByHost(reproxyTo.Host)
+	} else if pinnedWriter != "" && !treatAsReadRequest {
+		target = lb.writers.FindByHost(pinnedWriter)
 	}
-	if target == nil && pinnedWriter != "" && !treatAsReadRequest {
-		target = lb.all.FindByHost(pinnedWriter)
-	}
+
 	if target == nil {
 		target = lb.nextTarget(treatAsReadRequest)
 	}
+
 	if target == nil {
 		return nil, nil, false, ErrorNoHealthyTargets
 	}
@@ -294,6 +297,7 @@ func (lb *LoadBalancer) updateHealthyTargets() {
 func (lb *LoadBalancer) buildTargetLists() {
 	lb.writers = TargetList{}
 	lb.readers = TargetList{}
+	lb.healthy = TargetList{}
 
 	healthyCount := 0
 	for _, target := range lb.all {
@@ -306,6 +310,7 @@ func (lb *LoadBalancer) buildTargetLists() {
 			} else {
 				lb.writers = append(lb.writers, target)
 			}
+			lb.healthy = append(lb.healthy, target)
 		}
 	}
 

@@ -10,16 +10,20 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 const (
-	reproxyLimit             = 5
+	reproxyLimit             = 30
+	reproxyDelayAfter        = 3
+	reproxyDelay             = time.Second
 	reproxyFeatureHeaderName = "X-Kamal-Reproxy"
 	reproxyHeaderName        = "X-Kamal-Reproxy-Location"
 )
 
 var (
-	contextKeyReproxyTo = contextKey("reproxy-to")
+	contextKeyReproxyTo                     = contextKey("reproxy-to")
+	reproxySleepFunc    func(time.Duration) = time.Sleep
 )
 
 type ReproxyMiddleware struct {
@@ -37,7 +41,11 @@ func WithReproxyMiddleware(serviceName string, next http.Handler) http.Handler {
 func (h *ReproxyMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reproxyUrl *url.URL
 
-	for range reproxyLimit {
+	for attempt := range reproxyLimit {
+		if attempt >= reproxyDelayAfter {
+			reproxySleepFunc(reproxyDelay)
+		}
+
 		ctx := context.WithValue(r.Context(), contextKeyReproxyTo, reproxyUrl)
 		req := r.Clone(ctx)                              // Use a fresh request each time
 		req.Header.Set(reproxyFeatureHeaderName, "true") // Advertise feature upstream
