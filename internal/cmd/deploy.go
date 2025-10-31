@@ -39,6 +39,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.TLSPrivateKeyPath, "tls-private-key-path", "", "Configure custom TLS private key path (PEM format)")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.ACMECachePath, "tls-acme-cache-path", globalConfig.CertificatePath(), "Location to store ACME assets")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.TLSRedirect, "tls-redirect", true, "Redirect HTTP traffic to HTTPS")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.CanonicalHost, "canonical-host", "", "Redirect all requests to this host (e.g., force root or www)")
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
@@ -104,6 +105,13 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 
 		if !slices.Contains(c.args.ServiceOptions.PathPrefixes, "/") {
 			return fmt.Errorf("TLS settings must be specified on the root path service")
+		}
+	}
+
+	// Validate canonical host is present in hosts when both are specified
+	if c.args.ServiceOptions.CanonicalHost != "" && len(c.args.ServiceOptions.Hosts) > 0 && c.args.ServiceOptions.Hosts[0] != "" {
+		if !slices.Contains(c.args.ServiceOptions.Hosts, c.args.ServiceOptions.CanonicalHost) {
+			return fmt.Errorf("canonical-host '%s' must be present in the hosts list: %v", c.args.ServiceOptions.CanonicalHost, c.args.ServiceOptions.Hosts)
 		}
 	}
 
