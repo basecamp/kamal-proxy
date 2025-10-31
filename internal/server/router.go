@@ -303,7 +303,7 @@ func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options Ser
 		return nil, err
 	}
 
-	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout, options.ReadTargetsAcceptWebsockets, options.DynamicLoadBalancing)
+	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout, options.ReadTargetsAcceptWebsockets, options.DynamicLoadBalancing, options.DynamicDefaultWriter)
 	err = lb.WaitUntilHealthy(deployTimeout)
 	if err != nil {
 		lb.Dispose()

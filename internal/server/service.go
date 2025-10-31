@@ -83,7 +83,8 @@ type ServiceOptions struct {
 	StripPrefix                 bool          `json:"strip_prefix"`
 	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
-	DynamicLoadBalancing        bool          `json:"dyanmic_load_balancing"`
+	DynamicLoadBalancing        bool          `json:"dynamic_load_balancing"`
+	DynamicDefaultWriter        string        `json:"dynamic_deafult_writer"`
 }
 
 func (so *ServiceOptions) Normalize() {
@@ -269,7 +270,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	s.active = NewLoadBalancer(activeTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets, ms.Options.DynamicLoadBalancing)
+	s.active = NewLoadBalancer(activeTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets, ms.Options.DynamicLoadBalancing, ms.Options.DynamicDefaultWriter)
 	s.active.MarkAllHealthy()
 
 	rolloutTargets, err := NewTargetList(ms.RolloutTargets, ms.RolloutReaders, ms.TargetOptions)
@@ -277,7 +278,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if len(rolloutTargets) > 0 {
-		s.rollout = NewLoadBalancer(rolloutTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets, ms.Options.DynamicLoadBalancing)
+		s.rollout = NewLoadBalancer(rolloutTargets, ms.Options.WriterAffinityTimeout, ms.Options.ReadTargetsAcceptWebsockets, ms.Options.DynamicLoadBalancing, ms.Options.DynamicDefaultWriter)
 		s.rollout.MarkAllHealthy()
 	}
 
