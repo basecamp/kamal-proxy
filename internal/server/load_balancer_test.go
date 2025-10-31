@@ -29,7 +29,7 @@ func TestLoadBalancer_Targets(t *testing.T) {
 	tl, err := NewTargetList([]string{"one", "two", "three"}, []string{}, defaultTargetOptions)
 	require.NoError(t, err)
 
-	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false, "")
 	t.Cleanup(lb.Dispose)
 
 	assert.Equal(t, []string{"one", "two", "three"}, lb.Targets().Names())
@@ -99,7 +99,7 @@ func TestLoadBalancer_Readers(t *testing.T) {
 		tl, err := NewTargetList([]string{writer.Address()}, readers, defaultTargetOptions)
 		require.NoError(t, err)
 
-		lb := NewLoadBalancer(tl, writerAffinityTimeout, readTargetsAcceptWebsockets, false)
+		lb := NewLoadBalancer(tl, writerAffinityTimeout, readTargetsAcceptWebsockets, false, "")
 		t.Cleanup(lb.Dispose)
 
 		lb.WaitUntilHealthy(time.Second)
@@ -230,7 +230,7 @@ func TestLoadBalancer_TargetHeader(t *testing.T) {
 	})
 
 	tl, _ := NewTargetList([]string{writer.Address()}, []string{reader.Address()}, defaultTargetOptions)
-	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false, "")
 	lb.WaitUntilHealthy(time.Second)
 
 	checkHeader := func(method string, expected string, priorHeader ...string) {
@@ -265,9 +265,9 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 	writer2 := testTarget(t, handler)
 	reader1 := testReadOnlyTarget(t, handler)
 
-	check := func(dynamicLoadBalancing bool, expected []string, method string, fn func(req *http.Request)) {
+	check := func(dynamicLoadBalancing bool, defaultWriter string, expected []string, method string, fn func(req *http.Request)) {
 		tl, _ := NewTargetList([]string{writer1.Address(), writer2.Address()}, []string{reader1.Address()}, defaultTargetOptions)
-		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, dynamicLoadBalancing)
+		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, dynamicLoadBalancing, defaultWriter)
 		t.Cleanup(lb.Dispose)
 
 		require.NoError(t, lb.WaitUntilHealthy(time.Second))
@@ -291,13 +291,13 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 	t.Run("writes without cookie", func(t *testing.T) {
 		expected := []string{writer1.Address(), writer2.Address()}
 
-		check(true, expected, http.MethodPost, func(req *http.Request) {})
+		check(true, "", expected, http.MethodPost, func(req *http.Request) {})
 	})
 
 	t.Run("writes with valid writer cookie", func(t *testing.T) {
 		expected := []string{writer1.Address()}
 
-		check(true, expected, http.MethodPost, func(req *http.Request) {
+		check(true, "", expected, http.MethodPost, func(req *http.Request) {
 			req.AddCookie(&http.Cookie{
 				Name:  LoadBalancerWriterCookieName,
 				Value: writer1.Address(),
@@ -308,7 +308,7 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 	t.Run("writes with valid writer cookie but no dynamic load balancing", func(t *testing.T) {
 		expected := []string{writer1.Address(), writer2.Address()}
 
-		check(false, expected, http.MethodPost, func(req *http.Request) {
+		check(false, "", expected, http.MethodPost, func(req *http.Request) {
 			req.AddCookie(&http.Cookie{
 				Name:  LoadBalancerWriterCookieName,
 				Value: writer1.Address(),
@@ -316,10 +316,27 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 		})
 	})
 
+	t.Run("writes with valid writer cookie and a default dynamic writer", func(t *testing.T) {
+		expected := []string{writer1.Address()}
+
+		check(true, writer2.Address(), expected, http.MethodPost, func(req *http.Request) {
+			req.AddCookie(&http.Cookie{
+				Name:  LoadBalancerWriterCookieName,
+				Value: writer1.Address(),
+			})
+		})
+	})
+
+	t.Run("writes with no valid writer cookie but a default dynamic writer", func(t *testing.T) {
+		expected := []string{writer2.Address()}
+
+		check(true, writer2.Address(), expected, http.MethodPost, func(req *http.Request) {})
+	})
+
 	t.Run("writes with not valid writer cookie", func(t *testing.T) {
 		expected := []string{writer1.Address(), writer2.Address()}
 
-		check(true, expected, http.MethodPost, func(req *http.Request) {
+		check(true, "", expected, http.MethodPost, func(req *http.Request) {
 			req.AddCookie(&http.Cookie{
 				Name:  LoadBalancerWriterCookieName,
 				Value: "not-a-target",
@@ -330,7 +347,7 @@ func TestLoadBalancer_SetWriterCookie(t *testing.T) {
 	t.Run("reads with valid writer cookie", func(t *testing.T) {
 		expected := []string{reader1.Address()}
 
-		check(true, expected, http.MethodGet, func(req *http.Request) {
+		check(true, "", expected, http.MethodGet, func(req *http.Request) {
 			req.AddCookie(&http.Cookie{
 				Name:  LoadBalancerWriterCookieName,
 				Value: writer1.Address(),
@@ -373,7 +390,7 @@ func TestLoadBalancer_WriterHeader(t *testing.T) {
 
 	t.Run("with a combination of writer and reader targets", func(t *testing.T) {
 		tl, _ := NewTargetList([]string{writer1.Address(), writer2.Address()}, []string{reader.Address()}, defaultTargetOptions)
-		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, true)
+		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, true, "")
 		lb.WaitUntilHealthy(time.Second)
 
 		checkTarget(lb, "GET", reader.Address(), writer2.Address())
@@ -383,7 +400,7 @@ func TestLoadBalancer_WriterHeader(t *testing.T) {
 
 	t.Run("with only writer targets", func(t *testing.T) {
 		tl, _ := NewTargetList([]string{writer1.Address(), writer2.Address()}, []string{}, defaultTargetOptions)
-		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, true)
+		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, true, "")
 		lb.WaitUntilHealthy(time.Second)
 
 		// Send a single read so the LB learns about the pinned writer
@@ -398,7 +415,7 @@ func TestLoadBalancer_WriterHeader(t *testing.T) {
 
 	t.Run("when dynamic load balancing is not enabled", func(t *testing.T) {
 		tl, _ := NewTargetList([]string{writer2.Address()}, []string{writer1.Address()}, defaultTargetOptions)
-		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false)
+		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false, "")
 		lb.WaitUntilHealthy(time.Second)
 
 		// Send a single read so the LB learns about the pinned writer
@@ -412,7 +429,7 @@ func TestLoadBalancer_WriterHeader(t *testing.T) {
 
 	t.Run("when the specified writer is missing", func(t *testing.T) {
 		tl, _ := NewTargetList([]string{reader.Address(), writer2.Address()}, []string{}, defaultTargetOptions)
-		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, true)
+		lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, true, "")
 		lb.WaitUntilHealthy(time.Second)
 
 		w := httptest.NewRecorder()
@@ -437,7 +454,7 @@ func testLoadBalancerWithHandlers(t *testing.T, handlers ...http.HandlerFunc) *L
 	tl, err := NewTargetList(targets, []string{}, defaultTargetOptions)
 	require.NoError(t, err)
 
-	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false)
+	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false, false, "")
 	t.Cleanup(lb.Dispose)
 
 	return lb

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -113,6 +114,7 @@ type LoadBalancer struct {
 	writerAffinityTimeout       time.Duration
 	readTargetsAcceptWebsockets bool
 	dynamicLoadBalancing        bool
+	dynamicDefaultWriter        string
 
 	writerIndex int
 	readerIndex int
@@ -124,7 +126,7 @@ type LoadBalancer struct {
 	markHealthy           context.CancelFunc
 }
 
-func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration, readTargetsAcceptWebsockets bool, dynamicLoadBalancing bool) *LoadBalancer {
+func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration, readTargetsAcceptWebsockets bool, dynamicLoadBalancing bool, dynamicDefaultWriter string) *LoadBalancer {
 	waitForHealthyContext, markHealthy := context.WithCancel(context.Background())
 
 	lb := &LoadBalancer{
@@ -135,6 +137,7 @@ func NewLoadBalancer(targets TargetList, writerAffinityTimeout time.Duration, re
 		writerAffinityTimeout:       writerAffinityTimeout,
 		readTargetsAcceptWebsockets: readTargetsAcceptWebsockets,
 		dynamicLoadBalancing:        dynamicLoadBalancing,
+		dynamicDefaultWriter:        dynamicDefaultWriter,
 
 		multiTarget:           len(targets) > 1,
 		hasReaders:            targets.HasReaders(),
@@ -223,19 +226,16 @@ func (lb *LoadBalancer) TargetStateChanged(target *Target) {
 // Private
 
 func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, bool, error) {
-	reproxyTo, _ := req.Context().Value(contextKeyReproxyTo).(*url.URL)
 	readRequest := lb.isReadRequest(req)
 	treatAsReadRequest := readRequest && !lb.hasWriteCookie(req)
-	pinnedWriter := lb.pinnedWriter(req)
 
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
 
 	var target *Target
-	if reproxyTo != nil {
-		target = lb.healthy.FindByHost(reproxyTo.Host)
-	} else if pinnedWriter != "" && !treatAsReadRequest {
-		target = lb.writers.FindByHost(pinnedWriter)
+
+	if lb.dynamicLoadBalancing {
+		target = lb.dynamicallyRouteRequest(req, treatAsReadRequest)
 	}
 
 	if target == nil {
@@ -248,6 +248,24 @@ func (lb *LoadBalancer) claimTarget(req *http.Request) (*Target, *http.Request, 
 
 	req, err := target.StartRequest(req)
 	return target, req, readRequest, err
+}
+
+func (lb *LoadBalancer) dynamicallyRouteRequest(req *http.Request, treatAsReadRequest bool) *Target {
+	reproxyTo, _ := req.Context().Value(contextKeyReproxyTo).(*url.URL)
+	pinnedWriter := lb.pinnedWriter(req)
+
+	if reproxyTo != nil {
+		return lb.healthy.FindByHost(reproxyTo.Host)
+	}
+
+	if !treatAsReadRequest {
+		writer := cmp.Or(pinnedWriter, lb.dynamicDefaultWriter)
+		if writer != "" {
+			return lb.writers.FindByHost(writer)
+		}
+	}
+
+	return nil
 }
 
 func (lb *LoadBalancer) nextTarget(useReader bool) *Target {

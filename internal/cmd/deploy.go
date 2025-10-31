@@ -63,6 +63,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.ForwardHeaders, "forward-headers", false, "Forward X-Forwarded headers to target (default false if TLS enabled; otherwise true)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.CookiePathPrefix, "cookie-path-prefix", true, "Scope cookie paths to match path prefix")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.DynamicLoadBalancing, "dynamic-load-balancing", false, "Enable dynamic load balancing features")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.DynamicDefaultWriter, "default-writer", "", "When using dynamic load balancing, default to this writer")
 
 	deployCommand.cmd.MarkFlagRequired("target")
 	deployCommand.cmd.MarkFlagsRequiredTogether("tls-certificate-path", "tls-private-key-path")
