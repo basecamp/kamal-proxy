@@ -279,7 +279,9 @@ func TestTarget_IsHealthCheckRequest(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up", nil)))
+	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodHead, "/up", nil)))
 	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up?one=two", nil)))
+	assert.True(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodHead, "/up?one=two", nil)))
 
 	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up/other", nil)))
 	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/health", nil)))

@@ -76,7 +76,7 @@ type TargetOptions struct {
 }
 
 func (to *TargetOptions) IsHealthCheckRequest(r *http.Request) bool {
-	return r.Method == http.MethodGet && r.URL.Path == to.HealthCheckConfig.Path
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == to.HealthCheckConfig.Path
 }
 
 func (to *TargetOptions) canonicalizeLogHeaders() {
