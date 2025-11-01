@@ -224,6 +224,7 @@ func testCreateService(t *testing.T, options ServiceOptions, targetOptions Targe
 
 func testCreateServiceWithHandler(t *testing.T, options ServiceOptions, targetOptions TargetOptions, handler http.Handler) *Service {
 	server := httptest.NewServer(handler)
+
 	t.Cleanup(server.Close)
 
 	serverURL, err := url.Parse(server.URL)

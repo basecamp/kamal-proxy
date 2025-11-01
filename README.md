@@ -134,6 +134,33 @@ root path. Services deployed to other paths on the same host will use the same
 TLS settings as those specified for the root path.
 
 
+### On-demand TLS
+
+In addition to the automatic TLS functionality, Kamal Proxy can also dynamically obtain a TLS certificate 
+for any host allowed by an external API endpoint of your choice. This avoids hard-coding hosts in the configuration, especially when you don't know the hosts at startup.
+
+    kamal-proxy deploy service1 --target web-1:3000 --host "" --tls --tls-on-demand-url="http://localhost:4567/check"
+
+The On-demand URL endpoint must return a 200 HTTP status code to allow certificate issuance. 
+Kamal Proxy will call the on-demand URL with a query string of `?host=` containing the host received by Kamal Proxy.
+
+- The HTTP request to the on-demand URL will time out after 2 seconds. If the endpoint is unreachable or slow, certificate issuance will fail for that host.
+- If the endpoint returns any status other than 200, Kamal Proxy will log the status code and up to 256 bytes of the response body for debugging.
+- **Security note:** The on-demand URL acts as an authorization gate for certificate issuance. It should be protected and only allow trusted hosts. If compromised, unauthorized certificates could be issued.
+- If `--tls-on-demand-url` is not set, Kamal Proxy falls back to a static whitelist of hosts.
+
+**Best practice:**
+- Ensure your on-demand endpoint is fast, reliable, and protected (e.g., behind authentication or on a private network).
+- Only allow hosts you control to prevent abuse.
+
+Example endpoint logic (pseudo-code):
+
+    if host in allowed_hosts:
+        return 200 OK
+    else:
+        return 403 Forbidden
+
+
 ### Custom TLS certificate
 
 When you obtained your TLS certificate manually, manage your own certificate authority,
@@ -141,6 +168,29 @@ or need to install Cloudflare origin certificate, you can manually specify path 
 your certificate file and the corresponding private key:
 
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
+
+
+## TLSOnDemandUrl Option
+
+The `TLSOnDemandUrl` option can be set to either:
+
+- **An external URL** (e.g., `https://my-allow-service/allow-host`):
+  - The service will make an HTTP request to this external URL to determine if a certificate should be issued for a given host.
+
+- **A local path** (e.g., `/allow-host`):
+  - The service will internally route a request to this path using its own load balancer and handler. You must ensure your service responds to this path appropriately.
+
+### Example: External URL
+```yaml
+TLSOnDemandUrl: "https://my-allow-service/allow-host"
+```
+
+### Example: Local Path
+```yaml
+TLSOnDemandUrl: "/allow-host"
+```
+
+When using a local path, your service should implement a handler for the specified path (e.g., `/allow-host`) that returns `200 OK` to allow certificate issuance, or another status code to deny it.
 
 
 ## Specifying `run` options with environment variables
