@@ -43,6 +43,7 @@ func newDeployCommand() *deployCommand {
 
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.Force, "force", false, "Skip health checks and force deployment")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
