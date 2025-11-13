@@ -105,11 +105,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
+func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration, force bool) error {
 	options.Normalize()
 	slog.Info("Deploying", "service", name, "targets", targetURLs, "hosts", options.Hosts, "paths", options.PathPrefixes, "tls", options.TLSEnabled)
 
-	lb, err := r.createLoadBalancer(targetURLs, readerURLs, options, targetOptions, deployTimeout)
+	lb, err := r.createLoadBalancer(targetURLs, readerURLs, options, targetOptions, deployTimeout, force)
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string,
 
 	slog.Info("Deploying for rollout", "service", name, "targets", targetURLs)
 
-	lb, err := r.createLoadBalancer(targetURLs, readerURLs, service.options, service.targetOptions, deployTimeout)
+	lb, err := r.createLoadBalancer(targetURLs, readerURLs, service.options, service.targetOptions, deployTimeout, false)
 	if err != nil {
 		return err
 	}
@@ -297,17 +297,20 @@ func (r *Router) createOrUpdateService(name string, options ServiceOptions, targ
 	return service, err
 }
 
-func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration) (*LoadBalancer, error) {
+func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, force bool) (*LoadBalancer, error) {
 	tl, err := NewTargetList(targetURLs, readerURLs, targetOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout, options.ReadTargetsAcceptWebsockets, options.DynamicLoadBalancing, options.DynamicDefaultWriter)
-	err = lb.WaitUntilHealthy(deployTimeout)
-	if err != nil {
-		lb.Dispose()
-		return nil, err
+
+	if !force {
+		err = lb.WaitUntilHealthy(deployTimeout)
+		if err != nil {
+			lb.Dispose()
+			return nil, err
+		}
 	}
 
 	return lb, nil

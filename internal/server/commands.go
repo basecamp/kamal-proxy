@@ -22,6 +22,7 @@ type DeployArgs struct {
 	ReaderURLs     []string
 	DeployTimeout  time.Duration
 	DrainTimeout   time.Duration
+	Force          bool
 	ServiceOptions ServiceOptions
 	TargetOptions  TargetOptions
 }
@@ -115,7 +116,7 @@ func (h *CommandHandler) Close() error {
 }
 
 func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
-	return h.router.DeployService(args.Service, args.TargetURLs, args.ReaderURLs, args.ServiceOptions, args.TargetOptions, args.DeployTimeout, args.DrainTimeout)
+	return h.router.DeployService(args.Service, args.TargetURLs, args.ReaderURLs, args.ServiceOptions, args.TargetOptions, args.DeployTimeout, args.DrainTimeout, args.Force)
 }
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {
