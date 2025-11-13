@@ -11,10 +11,11 @@ import (
 )
 
 var (
-	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Port: DefaultHealthCheckPort, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
-	defaultEmptyReaders      = []string{}
-	defaultServiceOptions    = ServiceOptions{TLSRedirect: true}
-	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
+	defaultHealthCheckConfig  = HealthCheckConfig{Path: DefaultHealthCheckPath, Port: DefaultHealthCheckPort, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
+	defaultEmptyReaders       = []string{}
+	defaultServiceOptions     = ServiceOptions{TLSRedirect: true}
+	defaultTargetOptions      = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
+	defaultDeploymentOptions  = DeploymentOptions{DeployTimeout: DefaultDeployTimeout, DrainTimeout: DefaultDrainTimeout, Force: false}
 )
 
 func testTarget(t testing.TB, handler http.HandlerFunc) *Target {

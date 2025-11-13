@@ -70,6 +70,12 @@ type HealthCheckConfig struct {
 	Timeout  time.Duration `json:"timeout"`
 }
 
+type DeploymentOptions struct {
+	DeployTimeout time.Duration
+	DrainTimeout  time.Duration
+	Force         bool
+}
+
 type ServiceOptions struct {
 	Hosts                       []string      `json:"hosts"`
 	PathPrefixes                []string      `json:"path_prefixes"`
