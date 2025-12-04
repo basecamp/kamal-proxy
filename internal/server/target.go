@@ -73,6 +73,7 @@ type TargetOptions struct {
 	LogRequestHeaders   []string          `json:"log_request_headers"`
 	LogResponseHeaders  []string          `json:"log_response_headers"`
 	ForwardHeaders      bool              `json:"forward_headers"`
+	ScopeCookiePaths    bool              `json:"scope_cookie_paths"`
 }
 
 func (to *TargetOptions) IsHealthCheckRequest(r *http.Request) bool {
@@ -179,7 +180,7 @@ func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
 	inflightRequest := t.getInflightRequest(req)
 	defer t.endInflightRequest(req)
 
-	tw := newTargetResponseWriter(w, inflightRequest)
+	tw := newTargetResponseWriter(w, inflightRequest, t.cookieScope(req))
 	t.proxyHandler.ServeHTTP(tw, req)
 }
 
@@ -445,6 +446,19 @@ func (t *Target) pendingRequestsToCancel() inflightMap {
 	return result
 }
 
+func (t *Target) cookieScope(r *http.Request) *CookieScope {
+	if !t.options.ScopeCookiePaths {
+		return nil
+	}
+
+	routingContext := RoutingContext(r)
+	if routingContext == nil || routingContext.MatchedPrefix == "" {
+		return nil
+	}
+
+	return NewCookieScope(routingContext.MatchedPrefix, r.Host)
+}
+
 func (t *Target) withInflightLock(fn func()) {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
@@ -463,11 +477,42 @@ func parseTargetURL(targetURL string) (*url.URL, error) {
 
 type targetResponseWriter struct {
 	http.ResponseWriter
+	header          http.Header
+	headerWritten   bool
 	inflightRequest *inflightRequest
+	cookieScope     *CookieScope
 }
 
-func newTargetResponseWriter(w http.ResponseWriter, inflightRequest *inflightRequest) *targetResponseWriter {
-	return &targetResponseWriter{w, inflightRequest}
+func newTargetResponseWriter(w http.ResponseWriter, inflightRequest *inflightRequest, cookieScope *CookieScope) *targetResponseWriter {
+	return &targetResponseWriter{
+		ResponseWriter:  w,
+		header:          http.Header{},
+		headerWritten:   false,
+		inflightRequest: inflightRequest,
+		cookieScope:     cookieScope,
+	}
+}
+
+func (w *targetResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *targetResponseWriter) WriteHeader(statusCode int) {
+	if w.cookieScope != nil {
+		w.cookieScope.ApplyToHeader(w.header)
+	}
+	maps.Copy(w.ResponseWriter.Header(), w.header)
+
+	w.ResponseWriter.WriteHeader(statusCode)
+	w.headerWritten = true
+}
+
+func (w *targetResponseWriter) Write(b []byte) (int, error) {
+	if !w.headerWritten {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	return w.ResponseWriter.Write(b)
 }
 
 func (r *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
