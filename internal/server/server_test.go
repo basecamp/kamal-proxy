@@ -109,11 +109,10 @@ func testDeployTarget(tb testing.TB, target *Target, server *Server, serviceOpti
 	tb.Helper()
 	var result bool
 	err := server.commandHandler.Deploy(DeployArgs{
-		TargetURLs:     []string{target.Address()},
-		DeployTimeout:  DefaultDeployTimeout,
-		DrainTimeout:   DefaultDrainTimeout,
-		ServiceOptions: serviceOptions,
-		TargetOptions:  defaultTargetOptions,
+		TargetURLs:        []string{target.Address()},
+		DeploymentOptions: defaultDeploymentOptions,
+		ServiceOptions:    serviceOptions,
+		TargetOptions:     defaultTargetOptions,
 	}, &result)
 
 	require.NoError(tb, err)

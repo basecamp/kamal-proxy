@@ -105,11 +105,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	service.ServeHTTP(w, req)
 }
 
-func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration, drainTimeout time.Duration) error {
+func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deploymentOptions DeploymentOptions) error {
 	options.Normalize()
 	slog.Info("Deploying", "service", name, "targets", targetURLs, "hosts", options.Hosts, "paths", options.PathPrefixes, "tls", options.TLSEnabled)
 
-	lb, err := r.createLoadBalancer(targetURLs, readerURLs, options, targetOptions, deployTimeout)
+	lb, err := r.createLoadBalancer(targetURLs, readerURLs, options, targetOptions, deploymentOptions)
 	if err != nil {
 		return err
 	}
@@ -123,14 +123,14 @@ func (r *Router) DeployService(name string, targetURLs, readerURLs []string, opt
 
 	if replaced != nil {
 		replaced.Dispose()
-		replaced.DrainAll(drainTimeout)
+		replaced.DrainAll(deploymentOptions.DrainTimeout)
 	}
 
 	slog.Info("Deployed", "service", name, "targets", targetURLs, "hosts", options.Hosts, "paths", options.PathPrefixes, "tls", options.TLSEnabled)
 	return nil
 }
 
-func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string, deployTimeout time.Duration, drainTimeout time.Duration) error {
+func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string, deploymentOptions DeploymentOptions) error {
 	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
@@ -138,7 +138,7 @@ func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string,
 
 	slog.Info("Deploying for rollout", "service", name, "targets", targetURLs)
 
-	lb, err := r.createLoadBalancer(targetURLs, readerURLs, service.options, service.targetOptions, deployTimeout)
+	lb, err := r.createLoadBalancer(targetURLs, readerURLs, service.options, service.targetOptions, deploymentOptions)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string,
 
 	if replaced != nil {
 		replaced.Dispose()
-		replaced.DrainAll(drainTimeout)
+		replaced.DrainAll(deploymentOptions.DrainTimeout)
 	}
 
 	slog.Info("Deployed for rollout", "service", name, "targets", targetURLs)
@@ -297,17 +297,20 @@ func (r *Router) createOrUpdateService(name string, options ServiceOptions, targ
 	return service, err
 }
 
-func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deployTimeout time.Duration) (*LoadBalancer, error) {
+func (r *Router) createLoadBalancer(targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deploymentOptions DeploymentOptions) (*LoadBalancer, error) {
 	tl, err := NewTargetList(targetURLs, readerURLs, targetOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	lb := NewLoadBalancer(tl, options.WriterAffinityTimeout, options.ReadTargetsAcceptWebsockets)
-	err = lb.WaitUntilHealthy(deployTimeout)
-	if err != nil {
-		lb.Dispose()
-		return nil, err
+
+	if !deploymentOptions.Force {
+		err = lb.WaitUntilHealthy(deploymentOptions.DeployTimeout)
+		if err != nil {
+			lb.Dispose()
+			return nil, err
+		}
 	}
 
 	return lb, nil
