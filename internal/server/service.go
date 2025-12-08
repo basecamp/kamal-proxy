@@ -68,6 +68,7 @@ type HealthCheckConfig struct {
 	Port     int           `json:"port"`
 	Interval time.Duration `json:"interval"`
 	Timeout  time.Duration `json:"timeout"`
+	Host     string        `json:"host"`
 }
 
 type DeploymentOptions struct {
