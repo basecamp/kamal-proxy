@@ -226,6 +226,8 @@ func TestLoadBalancer_TargetHeader(t *testing.T) {
 
 	tl, _ := NewTargetList([]string{writer.Address()}, []string{reader.Address()}, defaultTargetOptions)
 	lb := NewLoadBalancer(tl, DefaultWriterAffinityTimeout, false)
+	t.Cleanup(lb.Dispose)
+
 	lb.WaitUntilHealthy(time.Second)
 
 	checkHeader := func(method string, expected string, priorHeader ...string) {
