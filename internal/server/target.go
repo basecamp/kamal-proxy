@@ -225,6 +225,7 @@ func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 			healthCheckURL,
 			t.options.HealthCheckConfig.Interval,
 			t.options.HealthCheckConfig.Timeout,
+			t.options.HealthCheckConfig.Host,
 		)
 	})
 }

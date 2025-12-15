@@ -17,12 +17,12 @@ const (
 
 func TestHealthCheck(t *testing.T) {
 	run := func(t *testing.T, path string, expected []bool) {
-		serverURL := testHealthCheckTarget(t)
+		serverURL := testHealthCheckTarget(t, "")
 		consumer := make(mockHealthCheckConsumer)
 
 		serverURL.Path = path
 
-		hc := NewHealthCheck(consumer, serverURL, shortTimeout, shortTimeout)
+		hc := NewHealthCheck(consumer, serverURL, shortTimeout, shortTimeout, "")
 		t.Cleanup(hc.Close)
 
 		for _, exp := range expected {
@@ -48,6 +48,44 @@ func TestHealthCheck(t *testing.T) {
 	})
 }
 
+func TestHealthCheckWithCustomHost(t *testing.T) {
+	t.Run("Custom Host header is sent", func(t *testing.T) {
+		customHost := "example.com"
+		serverURL := testHealthCheckTarget(t, customHost)
+		consumer := make(mockHealthCheckConsumer)
+
+		hc := NewHealthCheck(consumer, serverURL, shortTimeout, shortTimeout, customHost)
+		t.Cleanup(hc.Close)
+
+		result := <-consumer
+		assert.True(t, result, "Health check should succeed with correct Host header")
+	})
+
+	t.Run("Health check fails with incorrect Host header", func(t *testing.T) {
+		expectedHost := "example.com"
+		wrongHost := "wrong.com"
+		serverURL := testHealthCheckTarget(t, expectedHost)
+		consumer := make(mockHealthCheckConsumer)
+
+		hc := NewHealthCheck(consumer, serverURL, shortTimeout, shortTimeout, wrongHost)
+		t.Cleanup(hc.Close)
+
+		result := <-consumer
+		assert.False(t, result, "Health check should fail when Host header doesn't match")
+	})
+
+	t.Run("Empty Host header uses default behavior", func(t *testing.T) {
+		serverURL := testHealthCheckTarget(t, "")
+		consumer := make(mockHealthCheckConsumer)
+
+		hc := NewHealthCheck(consumer, serverURL, shortTimeout, shortTimeout, "")
+		t.Cleanup(hc.Close)
+
+		result := <-consumer
+		assert.True(t, result, "Health check should succeed with default Host header")
+	})
+}
+
 // Mocks
 
 type mockHealthCheckConsumer chan bool
@@ -58,12 +96,18 @@ func (m mockHealthCheckConsumer) HealthCheckCompleted(success bool) {
 
 // Helpers
 
-func testHealthCheckTarget(t testing.TB) *url.URL {
+func testHealthCheckTarget(t testing.TB, expectedHost string) *url.URL {
 	t.Helper()
 
 	attempts := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify Host header if expectedHost is set
+		if expectedHost != "" && r.Host != expectedHost {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
 		switch r.URL.Path {
 		case "/error":
 			w.WriteHeader(http.StatusInternalServerError)

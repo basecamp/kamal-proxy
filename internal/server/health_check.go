@@ -29,12 +29,13 @@ type HealthCheck struct {
 	endpoint *url.URL
 	interval time.Duration
 	timeout  time.Duration
+	host     string
 
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-func NewHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval time.Duration, timeout time.Duration) *HealthCheck {
+func NewHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval time.Duration, timeout time.Duration, host string) *HealthCheck {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	hc := &HealthCheck{
@@ -42,6 +43,7 @@ func NewHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval ti
 		endpoint: endpoint,
 		interval: interval,
 		timeout:  timeout,
+		host:     host,
 
 		ctx:    ctx,
 		cancel: cancel,
@@ -84,6 +86,10 @@ func (hc *HealthCheck) check() {
 	}
 
 	req.Header.Set("User-Agent", healthCheckUserAgent)
+
+	if hc.host != "" {
+		req.Host = hc.host
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
