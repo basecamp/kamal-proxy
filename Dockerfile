@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 RUN make
 
-FROM ubuntu:noble-20250404 AS base
+FROM ubuntu:noble-20251013 AS base
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /app/bin/kamal-proxy /usr/local/bin/
