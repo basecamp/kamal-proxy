@@ -49,7 +49,6 @@ type bufferedResponseWriter struct {
 	hijacked      bool
 	headerWritten bool
 	bypass        bool
-	sent          bool
 }
 
 func (w *bufferedResponseWriter) Send() error {
@@ -57,15 +56,13 @@ func (w *bufferedResponseWriter) Send() error {
 		return ErrMaximumSizeExceeded
 	}
 
-	if w.hijacked || w.sent {
+	if w.hijacked || w.bypass {
 		return nil
 	}
 
 	if w.headerWritten {
 		w.ResponseWriter.WriteHeader(w.statusCode)
 	}
-
-	w.sent = true
 
 	return w.buffer.Send(w.ResponseWriter)
 }
@@ -101,8 +98,8 @@ func (w *bufferedResponseWriter) ShouldSwitchToUnbuffered() bool {
 }
 
 func (w *bufferedResponseWriter) SwitchToUnbuffered() {
-	w.bypass = true
 	_ = w.Send()
+	w.bypass = true
 }
 
 func (w *bufferedResponseWriter) Write(data []byte) (int, error) {

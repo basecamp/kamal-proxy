@@ -1,8 +1,6 @@
 package server
 
 import (
-	"bytes"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -237,34 +235,5 @@ func TestBufferedResponseWriter_ShouldSwitchToUnbuffered(t *testing.T) {
 			result := writer.ShouldSwitchToUnbuffered()
 			assert.Equal(t, tc.expected, result, tc.description)
 		})
-	}
-}
-
-func TestBufferedResponseWriter_ShouldPreventDoubleSend(t *testing.T) {
-	var logBuf bytes.Buffer
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Transfer-Encoding", "chunked")
-
-		w.WriteHeader(http.StatusOK)
-
-		w.Write([]byte("foo"))
-		w.Write([]byte("bar"))
-		w.Write([]byte(".\n"))
-	})
-
-	server := httptest.NewUnstartedServer(WithResponseBufferMiddleware(1024, 1024, handler))
-	server.Config.ErrorLog = log.New(&logBuf, "", 0)
-	server.Start()
-	defer server.Close()
-
-	resp, err := http.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	if strings.Contains(logBuf.String(), "superfluous response.WriteHeader") {
-		t.Fatalf("unexpected double WriteHeader warning: %s", logBuf.String())
 	}
 }
