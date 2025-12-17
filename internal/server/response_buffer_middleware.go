@@ -49,6 +49,7 @@ type bufferedResponseWriter struct {
 	hijacked      bool
 	headerWritten bool
 	bypass        bool
+	sent          bool
 }
 
 func (w *bufferedResponseWriter) Send() error {
@@ -56,13 +57,15 @@ func (w *bufferedResponseWriter) Send() error {
 		return ErrMaximumSizeExceeded
 	}
 
-	if w.hijacked {
+	if w.hijacked || w.sent {
 		return nil
 	}
 
 	if w.headerWritten {
 		w.ResponseWriter.WriteHeader(w.statusCode)
 	}
+
+	w.sent = true
 
 	return w.buffer.Send(w.ResponseWriter)
 }
