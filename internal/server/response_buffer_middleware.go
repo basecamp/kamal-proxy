@@ -56,7 +56,7 @@ func (w *bufferedResponseWriter) Send() error {
 		return ErrMaximumSizeExceeded
 	}
 
-	if w.hijacked {
+	if w.hijacked || w.bypass {
 		return nil
 	}
 
@@ -98,8 +98,8 @@ func (w *bufferedResponseWriter) ShouldSwitchToUnbuffered() bool {
 }
 
 func (w *bufferedResponseWriter) SwitchToUnbuffered() {
-	w.bypass = true
 	_ = w.Send()
+	w.bypass = true
 }
 
 func (w *bufferedResponseWriter) Write(data []byte) (int, error) {
