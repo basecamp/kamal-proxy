@@ -32,7 +32,7 @@ const (
 	DefaultDeployTimeout         = time.Second * 30
 	DefaultDrainTimeout          = time.Second * 30
 	DefaultPauseTimeout          = time.Second * 30
-	DefaultWriterAffinityTimeout = time.Second * 3
+	DefaultWriterAffinityTimeout = time.Second
 
 	DefaultHealthCheckPath     = "/up"
 	DefaultHealthCheckPort     = 0
