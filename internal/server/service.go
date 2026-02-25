@@ -331,18 +331,26 @@ func (s *Service) Resume() error {
 // Private
 
 func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions) error {
+	previousOptions := s.options
+	previousTargetOptions := s.targetOptions
+
+	s.options = options
+	s.targetOptions = targetOptions
+
 	certManager, err := s.createCertManager(options)
 	if err != nil {
+		s.options = previousOptions
+		s.targetOptions = previousTargetOptions
 		return err
 	}
 
 	middleware, err := s.createMiddleware(options, certManager)
 	if err != nil {
+		s.options = previousOptions
+		s.targetOptions = previousTargetOptions
 		return err
 	}
 
-	s.options = options
-	s.targetOptions = targetOptions
 	s.certManager = certManager
 	s.middleware = middleware
 
