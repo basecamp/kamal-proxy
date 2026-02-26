@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -53,6 +54,7 @@ func (c *TLSOnDemandChecker) LocalHostPolicy() autocert.HostPolicy {
 		if err != nil {
 			return err
 		}
+		req.TLS = &tls.ConnectionState{}
 
 		// We use httptest.NewRecorder here to route the request through the service's
 		// load balancer and handler, capturing the response in-memory without making

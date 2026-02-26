@@ -44,6 +44,36 @@ func TestTLSOnDemandChecker_LocalHostPolicy_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestTLSOnDemandChecker_LocalHostPolicy_WithTLSRedirect(t *testing.T) {
+	service := testCreateServiceWithHandler(
+		t,
+		ServiceOptions{
+			Hosts:          []string{"example.com"},
+			TLSEnabled:     true,
+			TLSRedirect:    true,
+			TLSOnDemandUrl: "/allow-host",
+		},
+		defaultTargetOptions,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/up" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			if r.URL.Path == "/allow-host" && r.URL.Query().Get("host") == "test.example.com" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusForbidden)
+		}),
+	)
+
+	checker := NewTLSOnDemandChecker(service)
+	policy := checker.LocalHostPolicy()
+
+	err := policy(context.Background(), "test.example.com")
+	assert.NoError(t, err)
+}
+
 func TestTLSOnDemandChecker_LocalHostPolicy_Denied(t *testing.T) {
 	// Create a mock service that returns 403 for /allow-host
 	service := &Service{
