@@ -45,6 +45,8 @@ func TestTLSOnDemandChecker_LocalHostPolicy_Success(t *testing.T) {
 }
 
 func TestTLSOnDemandChecker_LocalHostPolicy_WithTLSRedirect(t *testing.T) {
+	var forwardedProto string
+
 	service := testCreateServiceWithHandler(
 		t,
 		ServiceOptions{
@@ -60,6 +62,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_WithTLSRedirect(t *testing.T) {
 				return
 			}
 			if r.URL.Path == "/allow-host" && r.URL.Query().Get("host") == "test.example.com" {
+				forwardedProto = r.Header.Get("X-Forwarded-Proto")
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -72,6 +75,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_WithTLSRedirect(t *testing.T) {
 
 	err := policy(context.Background(), "test.example.com")
 	assert.NoError(t, err)
+	assert.Equal(t, "http", forwardedProto)
 }
 
 func TestTLSOnDemandChecker_LocalHostPolicy_Denied(t *testing.T) {

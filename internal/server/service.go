@@ -54,6 +54,8 @@ var (
 	ErrorRolloutTargetNotSet                 = errors.New("rollout target not set")
 	ErrorUnableToLoadErrorPages              = errors.New("unable to load error pages")
 	ErrorAutomaticTLSDoesNotSupportWildcards = errors.New("automatic TLS does not support wildcards")
+
+	contextKeyTLSOnDemandCheck = contextKey("tls-on-demand-check")
 )
 
 type TargetSlot int
@@ -516,7 +518,8 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 	}
 
 	desiredScheme := currentScheme
-	if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" {
+	isTLSOnDemandCheck, _ := r.Context().Value(contextKeyTLSOnDemandCheck).(bool)
+	if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" && !isTLSOnDemandCheck {
 		desiredScheme = "https"
 	}
 
