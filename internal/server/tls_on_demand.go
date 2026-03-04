@@ -36,13 +36,23 @@ func (c *TLSOnDemandChecker) HostPolicy() (autocert.HostPolicy, error) {
 	}
 
 	// Otherwise, treat as external URL
-	_, err := url.ParseRequestURI(c.options.TLSOnDemandURL)
-
+	u, err := url.ParseRequestURI(c.options.TLSOnDemandURL)
 	if err != nil {
 		slog.Error("Unable to parse the tls_on_demand_url URL", "error", err, "url", c.options.TLSOnDemandURL)
 		return nil, err
 	}
 
+	if u.Scheme != "http" && u.Scheme != "https" {
+		err = fmt.Errorf("unsupported scheme %q in tls_on_demand_url", u.Scheme)
+		slog.Error("Invalid scheme in tls_on_demand_url", "error", err, "url", c.options.TLSOnDemandURL)
+		return nil, err
+	}
+
+	if u.Host == "" {
+		err = fmt.Errorf("missing host in tls_on_demand_url")
+		slog.Error("Missing host in tls_on_demand_url", "error", err, "url", c.options.TLSOnDemandURL)
+		return nil, err
+	}
 	return c.ExternalHostPolicy(), nil
 }
 
