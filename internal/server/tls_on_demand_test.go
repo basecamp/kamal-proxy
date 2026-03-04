@@ -166,9 +166,10 @@ func TestTLSOnDemandChecker_HostPolicy_LocalPath(t *testing.T) {
 	})
 
 	checker := NewTLSOnDemandChecker(service)
-	policy, _ := checker.HostPolicy()
+	policy, err := checker.HostPolicy()
+	assert.NoError(t, err)
 
-	err := policy(context.Background(), "test.example.com")
+	err = policy(context.Background(), "test.example.com")
 	assert.NoError(t, err)
 }
 
@@ -180,9 +181,10 @@ func TestTLSOnDemandChecker_HostPolicy_ExternalURL(t *testing.T) {
 
 	service := &Service{options: ServiceOptions{TLSOnDemandUrl: server.URL}}
 	checker := NewTLSOnDemandChecker(service)
-	policy, _ := checker.HostPolicy()
+	policy, err := checker.HostPolicy()
+	assert.NoError(t, err)
 
-	err := policy(context.Background(), "test.example.com")
+	err = policy(context.Background(), "test.example.com")
 	assert.NoError(t, err)
 }
 

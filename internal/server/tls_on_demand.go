@@ -81,8 +81,8 @@ func (c *TLSOnDemandChecker) LocalHostPolicy() autocert.HostPolicy {
 func (c *TLSOnDemandChecker) ExternalHostPolicy() autocert.HostPolicy {
 	return func(ctx context.Context, host string) error {
 		client := &http.Client{Timeout: 2 * time.Second}
-		url := c.buildURLOrPath(host)
-		resp, err := client.Get(url)
+		requestURL := c.buildURLOrPath(host)
+		resp, err := client.Get(requestURL)
 		if err != nil {
 			return err
 		}

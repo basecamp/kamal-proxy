@@ -142,12 +142,13 @@ for any host allowed by an external API endpoint of your choice. This avoids har
     kamal-proxy deploy service1 --target web-1:3000 --host "" --tls --tls-on-demand-url="http://localhost:4567/check"
 
 The On-demand URL endpoint must return a 200 HTTP status code to allow certificate issuance. 
-Kamal Proxy will call the on-demand URL with a query string of `?host=` containing the host received by Kamal Proxy.
+Kamal Proxy will call the on-demand URL with a query string parameter `host` containing the hostname received by Kamal Proxy (for example, `?host=hostname.example.com`).
 
 - The HTTP request to the on-demand URL will time out after 2 seconds. If the endpoint is unreachable or slow, certificate issuance will fail for that host.
 - If the endpoint returns any status other than 200, Kamal Proxy will log the status code and up to 256 bytes of the response body for debugging.
 - **Security note:** The on-demand URL acts as an authorization gate for certificate issuance. It should be protected and only allow trusted hosts. If compromised, unauthorized certificates could be issued.
 - If `--tls-on-demand-url` is not set, Kamal Proxy falls back to a static whitelist of hosts.
+- If using a local path (for example, `/allow-host`), ensure that endpoint is reachable through your deployed app and returns quickly.
 
 **Best practice:**
 - Ensure your on-demand endpoint is fast, reliable, and protected (e.g., behind authentication or on a private network).
