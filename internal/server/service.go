@@ -519,7 +519,12 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 
 	desiredScheme := currentScheme
 	isTLSOnDemandCheck, _ := r.Context().Value(contextKeyTLSOnDemandCheck).(bool)
-	if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" && !isTLSOnDemandCheck {
+	if isTLSOnDemandCheck {
+		// During TLS-on-demand checks, avoid any redirects (TLS or canonical host)
+		// so that the internal probe sees the original endpoint response.
+		return ""
+	}
+	if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" {
 		desiredScheme = "https"
 	}
 
