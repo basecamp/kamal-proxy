@@ -48,7 +48,10 @@ func (c *TLSOnDemandChecker) HostPolicy() (autocert.HostPolicy, error) {
 
 func (c *TLSOnDemandChecker) LocalHostPolicy() autocert.HostPolicy {
 	return func(ctx context.Context, host string) error {
-		path := c.buildURLOrPath(host)
+		path, err := c.buildURLOrPath(host)
+		if err != nil {
+			return err
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, http.NoBody)
 		if err != nil {
 			return err
@@ -81,7 +84,10 @@ func (c *TLSOnDemandChecker) LocalHostPolicy() autocert.HostPolicy {
 func (c *TLSOnDemandChecker) ExternalHostPolicy() autocert.HostPolicy {
 	return func(ctx context.Context, host string) error {
 		client := &http.Client{Timeout: 2 * time.Second}
-		requestURL := c.buildURLOrPath(host)
+		requestURL, err := c.buildURLOrPath(host)
+		if err != nil {
+			return err
+		}
 		resp, err := client.Get(requestURL)
 		if err != nil {
 			return err
@@ -98,8 +104,17 @@ func (c *TLSOnDemandChecker) ExternalHostPolicy() autocert.HostPolicy {
 	}
 }
 
-func (c *TLSOnDemandChecker) buildURLOrPath(host string) string {
-	return fmt.Sprintf("%s?host=%s", c.options.TLSOnDemandURL, url.QueryEscape(host))
+func (c *TLSOnDemandChecker) buildURLOrPath(host string) (string, error) {
+	u, err := url.Parse(c.options.TLSOnDemandURL)
+	if err != nil {
+		return "", err
+	}
+
+	query := u.Query()
+	query.Set("host", host)
+	u.RawQuery = query.Encode()
+
+	return u.String(), nil
 }
 
 func (c *TLSOnDemandChecker) handleError(host string, status int, body string) error {

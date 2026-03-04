@@ -201,10 +201,26 @@ func TestTLSOnDemandChecker_buildURLOrPath(t *testing.T) {
 	service := &Service{options: ServiceOptions{TLSOnDemandURL: "/allow-host"}}
 	checker := NewTLSOnDemandChecker(service)
 
-	url := checker.buildURLOrPath("test.example.com")
+	url, err := checker.buildURLOrPath("test.example.com")
+	assert.NoError(t, err)
 	assert.Equal(t, "/allow-host?host=test.example.com", url)
 
 	// Test with special characters
-	url = checker.buildURLOrPath("test.example.com:8080")
+	url, err = checker.buildURLOrPath("test.example.com:8080")
+	assert.NoError(t, err)
 	assert.Equal(t, "/allow-host?host=test.example.com%3A8080", url)
+
+	// Keep existing query string on local path and append host correctly
+	service = &Service{options: ServiceOptions{TLSOnDemandURL: "/allow-host?token=abc"}}
+	checker = NewTLSOnDemandChecker(service)
+	url, err = checker.buildURLOrPath("test.example.com")
+	assert.NoError(t, err)
+	assert.Equal(t, "/allow-host?host=test.example.com&token=abc", url)
+
+	// Keep existing query string on external URL and append host correctly
+	service = &Service{options: ServiceOptions{TLSOnDemandURL: "https://example.com/check?token=abc"}}
+	checker = NewTLSOnDemandChecker(service)
+	url, err = checker.buildURLOrPath("test.example.com")
+	assert.NoError(t, err)
+	assert.Equal(t, "https://example.com/check?host=test.example.com&token=abc", url)
 }
