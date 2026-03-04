@@ -39,7 +39,7 @@ func (c *TLSOnDemandChecker) HostPolicy() (autocert.HostPolicy, error) {
 	_, err := url.ParseRequestURI(c.options.TLSOnDemandUrl)
 
 	if err != nil {
-		slog.Error("Unable to parse the tls_on_demand_url URL")
+		slog.Error("Unable to parse the tls_on_demand_url URL", "error", err, "url", c.options.TLSOnDemandUrl)
 		return nil, err
 	}
 
