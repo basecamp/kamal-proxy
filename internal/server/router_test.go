@@ -834,6 +834,64 @@ func TestRouter_RestoreLastSavedState_WithTLSOnDemandURL_HostPolicyUsesOnDemandC
 	assert.NoError(t, manager.HostPolicy(context.Background(), "tenant.example.com"))
 }
 
+func TestRouter_RestoreLastSavedState_WithTLSOnDemandURL_HostPolicyDeniesOnNon200(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state-deny.json")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	state := fmt.Sprintf(`[{
+	  "name":"ondemand-deny",
+	  "options":{
+	    "hosts":[""],
+	    "path_prefixes":["/"],
+	    "tls_enabled":true,
+	    "tls_certificate_path":"",
+	    "tls_private_key_path":"",
+	    "tls_on_demand_url":"%s",
+	    "tls_redirect":false,
+	    "canonical_host":"",
+	    "acme_directory":"",
+	    "acme_cache_path":"",
+	    "error_page_path":"",
+	    "strip_prefix":true,
+	    "writer_affinity_timeout":1000000000,
+	    "read_targets_accept_websockets":false
+	  },
+	  "target_options":{
+	    "health_check_config":{"path":"/up","port":0,"interval":1000000000,"timeout":5000000000,"host":""},
+	    "response_timeout":30000000000,
+	    "buffer_requests":false,
+	    "buffer_responses":false,
+	    "max_memory_buffer_size":1048576,
+	    "max_request_body_size":0,
+	    "max_response_body_size":0,
+	    "log_request_headers":null,
+	    "log_response_headers":null,
+	    "forward_headers":false,
+	    "scope_cookie_paths":false
+	  },
+	  "active_targets":["localhost:3000"],
+	  "active_readers":[],
+	  "rollout_targets":null,
+	  "rollout_readers":null,
+	  "pause_controller":{"state":0,"stop_message":"","fail_after":0},
+	  "rollout_controller":null
+	}]`, server.URL)
+	require.NoError(t, os.WriteFile(statePath, []byte(state), 0600))
+
+	router := NewRouter(statePath)
+	require.NoError(t, router.RestoreLastSavedState())
+
+	service := router.services.Get("ondemand-deny")
+	require.NotNil(t, service)
+	manager, ok := service.certManager.(*autocert.Manager)
+	require.True(t, ok)
+	require.NotNil(t, manager.HostPolicy)
+
+	assert.Error(t, manager.HostPolicy(context.Background(), "denied.example.com"))
+}
 func TestRouter_RestoreLastSavedState_WithTLSOnDemandURL_HostPolicyDeniesWhenCheckerRejects(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state-deny.json")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
