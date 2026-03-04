@@ -102,6 +102,10 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if c.args.ServiceOptions.TLSEnabled {
+		if !slices.Contains(c.args.ServiceOptions.PathPrefixes, "/") {
+			return fmt.Errorf("TLS settings must be specified on the root path service")
+		}
+
 		if c.args.ServiceOptions.TLSOnDemandUrl != "" {
 			c.args.ServiceOptions.Hosts = []string{""}
 			return nil
@@ -109,10 +113,6 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 
 		if len(c.args.ServiceOptions.Hosts) == 0 {
 			return fmt.Errorf("host must be set when using TLS")
-		}
-
-		if !slices.Contains(c.args.ServiceOptions.PathPrefixes, "/") {
-			return fmt.Errorf("TLS settings must be specified on the root path service")
 		}
 	}
 
