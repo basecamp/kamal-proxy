@@ -27,7 +27,7 @@ func TestTLSOnDemandChecker_HostPolicy_EmptyURL(t *testing.T) {
 func TestTLSOnDemandChecker_LocalHostPolicy_Success(t *testing.T) {
 	// Create a mock service that returns 200 for /allow-host
 	service := &Service{
-		options: ServiceOptions{TLSOnDemandUrl: "/allow-host"},
+		options: ServiceOptions{TLSOnDemandURL: "/allow-host"},
 	}
 	service.middleware = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/allow-host" && r.URL.Query().Get("host") == "test.example.com" {
@@ -53,7 +53,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_WithTLSRedirect(t *testing.T) {
 			Hosts:          []string{"example.com"},
 			TLSEnabled:     true,
 			TLSRedirect:    true,
-			TLSOnDemandUrl: "/allow-host",
+			TLSOnDemandURL: "/allow-host",
 		},
 		defaultTargetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +81,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_WithTLSRedirect(t *testing.T) {
 func TestTLSOnDemandChecker_LocalHostPolicy_Denied(t *testing.T) {
 	// Create a mock service that returns 403 for /allow-host
 	service := &Service{
-		options: ServiceOptions{TLSOnDemandUrl: "/allow-host"},
+		options: ServiceOptions{TLSOnDemandURL: "/allow-host"},
 	}
 	service.middleware = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -102,7 +102,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_LargeResponseBody(t *testing.T) {
 	largeBody := string(make([]byte, 500)) // 500 bytes
 
 	service := &Service{
-		options: ServiceOptions{TLSOnDemandUrl: "/allow-host"},
+		options: ServiceOptions{TLSOnDemandURL: "/allow-host"},
 	}
 	service.middleware = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -131,7 +131,7 @@ func TestTLSOnDemandChecker_ExternalHostPolicy_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{options: ServiceOptions{TLSOnDemandUrl: server.URL}}
+	service := &Service{options: ServiceOptions{TLSOnDemandURL: server.URL}}
 	checker := NewTLSOnDemandChecker(service)
 	policy := checker.ExternalHostPolicy()
 
@@ -147,7 +147,7 @@ func TestTLSOnDemandChecker_ExternalHostPolicy_Denied(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{options: ServiceOptions{TLSOnDemandUrl: server.URL}}
+	service := &Service{options: ServiceOptions{TLSOnDemandURL: server.URL}}
 	checker := NewTLSOnDemandChecker(service)
 	policy := checker.ExternalHostPolicy()
 
@@ -159,7 +159,7 @@ func TestTLSOnDemandChecker_ExternalHostPolicy_Denied(t *testing.T) {
 
 func TestTLSOnDemandChecker_HostPolicy_LocalPath(t *testing.T) {
 	service := &Service{
-		options: ServiceOptions{TLSOnDemandUrl: "/allow-host"},
+		options: ServiceOptions{TLSOnDemandURL: "/allow-host"},
 	}
 	service.middleware = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -179,7 +179,7 @@ func TestTLSOnDemandChecker_HostPolicy_ExternalURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{options: ServiceOptions{TLSOnDemandUrl: server.URL}}
+	service := &Service{options: ServiceOptions{TLSOnDemandURL: server.URL}}
 	checker := NewTLSOnDemandChecker(service)
 	policy, err := checker.HostPolicy()
 	assert.NoError(t, err)
@@ -189,7 +189,7 @@ func TestTLSOnDemandChecker_HostPolicy_ExternalURL(t *testing.T) {
 }
 
 func TestTLSOnDemandChecker_HostPolicy_InvalidExternalURL(t *testing.T) {
-	service := &Service{options: ServiceOptions{TLSOnDemandUrl: "://invalid-url"}}
+	service := &Service{options: ServiceOptions{TLSOnDemandURL: "://invalid-url"}}
 	checker := NewTLSOnDemandChecker(service)
 	_, err := checker.HostPolicy()
 
@@ -198,7 +198,7 @@ func TestTLSOnDemandChecker_HostPolicy_InvalidExternalURL(t *testing.T) {
 }
 
 func TestTLSOnDemandChecker_buildURLOrPath(t *testing.T) {
-	service := &Service{options: ServiceOptions{TLSOnDemandUrl: "/allow-host"}}
+	service := &Service{options: ServiceOptions{TLSOnDemandURL: "/allow-host"}}
 	checker := NewTLSOnDemandChecker(service)
 
 	url := checker.buildURLOrPath("test.example.com")

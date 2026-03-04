@@ -77,7 +77,7 @@ func TestDeployCommand_CanonicalHostValidation(t *testing.T) {
 	}
 }
 
-func TestDeployCommand_preRun_TLSOnDemandUrl(t *testing.T) {
+func TestDeployCommand_preRun_TLSOnDemandURL(t *testing.T) {
 	t.Run("TLS enabled with TLS on-demand URL should set hosts to empty string", func(t *testing.T) {
 		deployCmd := newDeployCommand()
 

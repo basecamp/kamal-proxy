@@ -26,20 +26,20 @@ func NewTLSOnDemandChecker(service *Service) *TLSOnDemandChecker {
 }
 
 func (c *TLSOnDemandChecker) HostPolicy() (autocert.HostPolicy, error) {
-	if c.options.TLSOnDemandUrl == "" {
+	if c.options.TLSOnDemandURL == "" {
 		return autocert.HostWhitelist(c.options.Hosts...), nil
 	}
 
 	// If the URL starts with '/', treat it as a local path
-	if len(c.options.TLSOnDemandUrl) > 0 && c.options.TLSOnDemandUrl[0] == '/' {
+	if len(c.options.TLSOnDemandURL) > 0 && c.options.TLSOnDemandURL[0] == '/' {
 		return c.LocalHostPolicy(), nil
 	}
 
 	// Otherwise, treat as external URL
-	_, err := url.ParseRequestURI(c.options.TLSOnDemandUrl)
+	_, err := url.ParseRequestURI(c.options.TLSOnDemandURL)
 
 	if err != nil {
-		slog.Error("Unable to parse the tls_on_demand_url URL", "error", err, "url", c.options.TLSOnDemandUrl)
+		slog.Error("Unable to parse the tls_on_demand_url URL", "error", err, "url", c.options.TLSOnDemandURL)
 		return nil, err
 	}
 
@@ -99,7 +99,7 @@ func (c *TLSOnDemandChecker) ExternalHostPolicy() autocert.HostPolicy {
 }
 
 func (c *TLSOnDemandChecker) buildURLOrPath(host string) string {
-	return fmt.Sprintf("%s?host=%s", c.options.TLSOnDemandUrl, url.QueryEscape(host))
+	return fmt.Sprintf("%s?host=%s", c.options.TLSOnDemandURL, url.QueryEscape(host))
 }
 
 func (c *TLSOnDemandChecker) handleError(host string, status int, body string) error {
