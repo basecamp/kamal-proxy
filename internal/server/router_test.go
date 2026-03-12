@@ -732,7 +732,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	_, second := testBackend(t, "second", http.StatusOK)
 	_, third := testBackend(t, "third", http.StatusOK)
 
-	router := NewRouter(statePath)
+	router := NewRouter(statePath, DefaultDockerSocketPath)
 	require.NoError(t, router.DeployService("default", []string{first}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
 
 	serviceOptions := defaultServiceOptions
@@ -756,7 +756,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "third", body)
 
-	router = NewRouter(statePath)
+	router = NewRouter(statePath, DefaultDockerSocketPath)
 	router.RestoreLastSavedState()
 
 	statusCode, body = sendGETRequest(router, "http://something.example.com/")
@@ -775,7 +775,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 
 func testRouter(t *testing.T) *Router {
 	statePath := filepath.Join(t.TempDir(), "state.json")
-	return NewRouter(statePath)
+	return NewRouter(statePath, DefaultDockerSocketPath)
 }
 
 func sendGETRequest(router *Router, url string) (int, string) {

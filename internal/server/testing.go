@@ -79,7 +79,7 @@ func testServer(t testing.TB, http3Enabled bool) *Server {
 		AlternateConfigDir: t.TempDir(),
 		HTTP3Enabled:       http3Enabled,
 	}
-	router := NewRouter(config.StatePath())
+	router := NewRouter(config.StatePath(), DefaultDockerSocketPath)
 	server := NewServer(config, router)
 	err := server.Start()
 	require.NoError(t, err)
