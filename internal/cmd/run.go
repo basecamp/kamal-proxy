@@ -29,6 +29,7 @@ func newRunCommand() *runCommand {
 	runCommand.cmd.Flags().IntVar(&globalConfig.HttpsPort, "https-port", getEnvInt("HTTPS_PORT", server.DefaultHttpsPort), "Port to serve HTTPS traffic on")
 	runCommand.cmd.Flags().IntVar(&globalConfig.MetricsPort, "metrics-port", getEnvInt("METRICS_PORT", 0), "Publish metrics on the specified port (default zero to disable)")
 	runCommand.cmd.Flags().BoolVar(&globalConfig.HTTP3Enabled, "http3", false, "Enable HTTP/3")
+	runCommand.cmd.Flags().StringVar(&globalConfig.DockerSocketPath, "docker-socket", getEnvString("DOCKER_SOCKET", server.DefaultDockerSocketPath), "Path to Docker socket")
 
 	return runCommand
 }
@@ -36,7 +37,7 @@ func newRunCommand() *runCommand {
 func (c *runCommand) run(cmd *cobra.Command, args []string) error {
 	c.setLogger()
 
-	router := server.NewRouter(globalConfig.StatePath())
+	router := server.NewRouter(globalConfig.StatePath(), globalConfig.DockerSocketPath)
 	router.RestoreLastSavedState()
 
 	s := server.NewServer(&globalConfig, router)

@@ -10,6 +10,7 @@ import (
 const (
 	DefaultHttpPort  = 80
 	DefaultHttpsPort = 443
+	DefaultDockerSocketPath = "/var/run/docker.sock"
 )
 
 type Config struct {
@@ -20,6 +21,7 @@ type Config struct {
 	HTTP3Enabled bool
 
 	AlternateConfigDir string
+	DockerSocketPath   string
 }
 
 func (c Config) SocketPath() string {

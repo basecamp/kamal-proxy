@@ -47,7 +47,9 @@ const (
 	DefaultTargetTimeout       = time.Second * 30
 	DefaultMaxMemoryBufferSize = 1 * MB
 	DefaultMaxRequestBodySize  = 0
-	DefaultMaxResponseBodySize = 0
+	DefaultMaxResponseBodySize  = 0
+
+	DefaultIdleWakeTimeout = 30 * time.Second
 
 	DefaultStopMessage = ""
 )
@@ -111,6 +113,8 @@ type ServiceOptions struct {
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
 	ExcludeMetricsPaths         []string      `json:"exclude_metrics_paths"`
 	ClientIPHeader              string        `json:"client_ip_header"`
+	IdleTimeout                 time.Duration `json:"idle_timeout"`
+	IdleWakeTimeout             time.Duration `json:"idle_wake_timeout"`
 }
 
 func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
@@ -203,15 +207,19 @@ type Service struct {
 	serviceLock sync.RWMutex
 
 	pauseController   *PauseController
+	idleController    *IdleController
 	rolloutController *RolloutController
+
+	docker *DockerClient
 
 	certManager CertManager
 	middleware  http.Handler
 }
 
-func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+func NewService(name string, options ServiceOptions, targetOptions TargetOptions, docker *DockerClient) (*Service, error) {
 	service := &Service{
 		name:            name,
+		docker:          docker,
 		pauseController: NewPauseController(),
 	}
 
@@ -226,6 +234,10 @@ func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOpti
 }
 
 func (s *Service) Dispose() {
+	if s.idleController != nil {
+		s.idleController.Close()
+	}
+
 	s.active.Dispose()
 	if s.rollout != nil {
 		s.rollout.Dispose()
@@ -244,6 +256,10 @@ func (s *Service) UpdateLoadBalancer(lb *LoadBalancer, slot TargetSlot) *LoadBal
 	} else {
 		replaced = s.active
 		s.active = lb
+		if s.idleController != nil {
+			s.idleController.lb = lb
+			s.idleController.UpdateContainers(lb.WriteTargets().Names())
+		}
 	}
 
 	return replaced
@@ -279,6 +295,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer metrics.Tracker.SubtractInflightRequest(s.name)
 	}
 
+	if s.idleController != nil && !s.targetOptions.IsHealthCheckRequest(r) {
+		s.idleController.TrackActivity()
+	}
+
 	s.middleware.ServeHTTP(w, r)
 }
 
@@ -291,6 +311,7 @@ type marshalledService struct {
 	RolloutTargets    []string           `json:"rollout_targets"`
 	RolloutReaders    []string           `json:"rollout_readers"`
 	PauseController   *PauseController   `json:"pause_controller"`
+	IdleController    *IdleController    `json:"idle_controller"`
 	RolloutController *RolloutController `json:"rollout_controller"`
 
 	LegacyActiveTarget  string   `json:"active_target,omitempty"`
@@ -316,6 +337,7 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 		Options:           s.options,
 		TargetOptions:     s.targetOptions,
 		PauseController:   s.pauseController,
+		IdleController:    s.idleController,
 		RolloutController: s.rolloutController,
 	})
 }
@@ -344,6 +366,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 
 	s.name = ms.Name
 	s.pauseController = ms.PauseController
+	s.idleController = ms.IdleController
 	s.rolloutController = ms.RolloutController
 
 	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.ActiveReaders, ms.TargetOptions)
@@ -366,6 +389,10 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 }
 
 func (s *Service) Stop(drainTimeout time.Duration, message string) error {
+	if s.idleController != nil {
+		s.idleController.Disable()
+	}
+
 	err := s.pauseController.Stop(message)
 	if err != nil {
 		return err
@@ -379,6 +406,10 @@ func (s *Service) Stop(drainTimeout time.Duration, message string) error {
 }
 
 func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) error {
+	if s.idleController != nil {
+		s.idleController.Disable()
+	}
+
 	err := s.pauseController.Pause(pauseTimeout)
 	if err != nil {
 		return err
@@ -392,6 +423,10 @@ func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) 
 }
 
 func (s *Service) Resume() error {
+	if s.idleController != nil {
+		s.idleController.Enable()
+	}
+
 	err := s.pauseController.Resume()
 	if err != nil {
 		return err
@@ -419,6 +454,22 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 	s.certManager = certManager
 	s.middleware = middleware
 
+	if s.options.IdleTimeout > 0 {
+		if s.idleController == nil {
+			s.idleController = NewIdleController(s.name, s.options.IdleTimeout, s.options.IdleWakeTimeout, s.activeTargets(), s.docker, s.active)
+		} else {
+			s.idleController.docker = s.docker
+			s.idleController.lb = s.active
+			s.idleController.serviceName = s.name
+			s.idleController.IdleTimeout = s.options.IdleTimeout
+			s.idleController.WakeTimeout = s.options.IdleWakeTimeout
+			s.idleController.UpdateContainers(s.activeTargets())
+		}
+	} else if s.idleController != nil {
+		s.idleController.Close()
+		s.idleController = nil
+	}
+
 	return nil
 }
 
@@ -443,6 +494,13 @@ func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 	}
 
 	return lb
+}
+
+func (s *Service) activeTargets() []string {
+	if s.active == nil {
+		return nil
+	}
+	return s.active.WriteTargets().Names()
 }
 
 func (s *Service) servesRootPath() bool {
@@ -535,10 +593,41 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if s.handleIdleRequests(w, r) {
+		return
+	}
+
 	sendRequest := s.startLoadBalancerRequest(w, r)
 	if sendRequest != nil {
 		sendRequest()
 	}
+}
+
+func (s *Service) handleIdleRequests(w http.ResponseWriter, r *http.Request) bool {
+	if s.idleController == nil {
+		return false
+	}
+
+	if s.targetOptions.IsHealthCheckRequest(r) {
+		// Health checks should not wake the service.
+		// If it's sleeping, just return 200.
+		icState := s.idleController.GetState()
+		if icState != IdleStateActive {
+			w.WriteHeader(http.StatusOK)
+			return true
+		}
+		return false
+	}
+
+	action := s.idleController.WaitIfSleeping()
+	if action == IdleWaitActionTimedOut {
+		slog.Warn("Rejecting request due to idle wake timeout", "service", s.name, "path", r.URL.Path)
+		w.Header().Set("Retry-After", "10")
+		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
+		return true
+	}
+
+	return false
 }
 
 func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Request) func() {

@@ -47,9 +47,10 @@ func RoutedTargetPath(r *http.Request) string {
 }
 
 type Router struct {
-	statePath   string
-	services    *ServiceMap
-	serviceLock sync.RWMutex
+	statePath    string
+	dockerClient *DockerClient
+	services     *ServiceMap
+	serviceLock  sync.RWMutex
 }
 
 type ServiceDescription struct {
@@ -62,10 +63,11 @@ type ServiceDescription struct {
 
 type ServiceDescriptionMap map[string]ServiceDescription
 
-func NewRouter(statePath string) *Router {
+func NewRouter(statePath string, dockerSocketPath string) *Router {
 	return &Router{
-		statePath: statePath,
-		services:  NewServiceMap(),
+		statePath:    statePath,
+		dockerClient: NewDockerClient(dockerSocketPath),
+		services:     NewServiceMap(),
 	}
 }
 
@@ -91,6 +93,8 @@ func (r *Router) RestoreLastSavedState() error {
 	r.withWriteLock(func() error {
 		r.services = NewServiceMap()
 		for _, service := range services {
+			service.docker = r.dockerClient
+			service.initialize(service.options, service.targetOptions)
 			r.services.Set(service)
 		}
 
@@ -259,12 +263,20 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 				path := strings.Join(service.options.PathPrefixes, ",")
 				target := strings.Join(service.active.Targets().Names(), ",")
 
+				state := service.pauseController.GetState().String()
+				if service.idleController != nil && service.pauseController.GetState() == PauseStateRunning {
+					icState := service.idleController.GetState()
+					if icState != IdleStateActive {
+						state = icState.String()
+					}
+				}
+
 				result[name] = ServiceDescription{
 					Host:   host,
 					Path:   path,
 					Target: target,
 					TLS:    service.options.TLSEnabled,
-					State:  service.pauseController.GetState().String(),
+					State:  state,
 				}
 			}
 		}
@@ -305,9 +317,10 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 func (r *Router) createOrUpdateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
 	service := r.services.Get(name)
 	if service == nil {
-		return NewService(name, options, targetOptions)
+		return NewService(name, options, targetOptions, r.dockerClient)
 	}
 
+	service.docker = r.dockerClient
 	err := service.UpdateOptions(options, targetOptions)
 	return service, err
 }
