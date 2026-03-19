@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	defaultHealthCheckConfig  = HealthCheckConfig{Path: DefaultHealthCheckPath, Port: DefaultHealthCheckPort, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
-	defaultEmptyReaders       = []string{}
-	defaultServiceOptions     = ServiceOptions{TLSRedirect: true}
-	defaultTargetOptions      = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
-	defaultDeploymentOptions  = DeploymentOptions{DeployTimeout: DefaultDeployTimeout, DrainTimeout: DefaultDrainTimeout, Force: false}
+	defaultHealthCheckConfig = HealthCheckConfig{Path: DefaultHealthCheckPath, Port: DefaultHealthCheckPort, Interval: DefaultHealthCheckInterval, Timeout: time.Second * 5}
+	defaultEmptyReaders      = []string{}
+	defaultServiceOptions    = ServiceOptions{TLSRedirect: true}
+	defaultTargetOptions     = TargetOptions{HealthCheckConfig: defaultHealthCheckConfig, ResponseTimeout: DefaultTargetTimeout}
+	defaultDeploymentOptions = DeploymentOptions{DeployTimeout: DefaultDeployTimeout, DrainTimeout: DefaultDrainTimeout, Force: false}
 )
 
 func testTarget(t testing.TB, handler http.HandlerFunc) *Target {
@@ -69,7 +69,7 @@ func testBackendWithHandler(t testing.TB, handler http.HandlerFunc) (*httptest.S
 	return server, serverURL.Host
 }
 
-func testServer(t testing.TB, http3Enabled bool) *Server {
+func testServer(t testing.TB, http3Enabled bool, minTLS13 bool) *Server {
 	t.Helper()
 
 	config := &Config{
@@ -78,6 +78,7 @@ func testServer(t testing.TB, http3Enabled bool) *Server {
 		HttpsPort:          0,
 		AlternateConfigDir: t.TempDir(),
 		HTTP3Enabled:       http3Enabled,
+		MinTLS13:           minTLS13,
 	}
 	router := NewRouter(config.StatePath())
 	server := NewServer(config, router)

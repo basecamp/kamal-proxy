@@ -150,6 +150,14 @@ func (s *Server) startHTTPServers() error {
 		return err
 	}
 	s.httpsListener = httpsListener
+	tlsConfig := &tls.Config{
+		NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
+		GetCertificate: s.router.GetCertificate,
+	}
+	if s.config.MinTLS13 {
+		tlsConfig.MinVersion = tls.VersionTLS13
+	}
+
 	s.httpsServer = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if s.config.HTTP3Enabled {
@@ -158,10 +166,7 @@ func (s *Server) startHTTPServers() error {
 
 			handler.ServeHTTP(w, r)
 		}),
-		TLSConfig: &tls.Config{
-			NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
-			GetCertificate: s.router.GetCertificate,
-		},
+		TLSConfig: tlsConfig,
 	}
 
 	go s.httpServer.Serve(s.httpListener)

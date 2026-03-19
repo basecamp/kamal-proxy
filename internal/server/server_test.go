@@ -14,7 +14,7 @@ import (
 
 func TestServer_Deploying(t *testing.T) {
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
-	server := testServer(t, true)
+	server := testServer(t, false, false)
 
 	testDeployTarget(t, target, server, defaultServiceOptions)
 
@@ -24,9 +24,9 @@ func TestServer_Deploying(t *testing.T) {
 }
 
 func TestServer_DeployingHTTPS(t *testing.T) {
-	startDeployment := func(http3Enabled bool) *Server {
+	startDeployment := func(http3Enabled bool, minTLS13 bool) *Server {
 		target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
-		server := testServer(t, http3Enabled)
+		server := testServer(t, http3Enabled, minTLS13)
 
 		certPath, keyPath := prepareTestCertificateFiles(t)
 		serviceOptions := defaultServiceOptions
@@ -40,7 +40,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 	}
 
 	t.Run("with HTTP/3 enabled", func(t *testing.T) {
-		server := startDeployment(true)
+		server := startDeployment(true, false)
 
 		t.Run("http/1.1", func(t *testing.T) {
 			resp, err := testRequestUsingHTTP11(t, server)
@@ -72,8 +72,20 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 		})
 	})
 
+	t.Run("with min TLS 1.3", func(t *testing.T) {
+		server := startDeployment(false, true)
+
+		t.Run("http/1.1", func(t *testing.T) {
+			resp, err := testRequestUsingHTTP11(t, server)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.Equal(t, "HTTP/1.1", resp.Proto)
+			assert.Equal(t, uint16(tls.VersionTLS13), resp.TLS.Version)
+		})
+	})
+
 	t.Run("with HTTP/3 disabled", func(t *testing.T) {
-		server := startDeployment(false)
+		server := startDeployment(false, false)
 
 		t.Run("http/1.1", func(t *testing.T) {
 			resp, err := testRequestUsingHTTP11(t, server)
