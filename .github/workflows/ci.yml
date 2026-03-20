@@ -1,8 +1,6 @@
 name: Go
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions: {}
 
 on:
   push:
@@ -14,6 +12,8 @@ jobs:
   lint-actions:
     name: GitHub Actions audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -30,8 +30,12 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      with:
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
