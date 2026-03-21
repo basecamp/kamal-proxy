@@ -1,6 +1,5 @@
 # Kamal Proxy - A minimal HTTP proxy for zero-downtime deployments
 
-
 ## What it does
 
 Kamal Proxy is a tiny HTTP proxy, designed to make it easy to coordinate
@@ -13,7 +12,6 @@ Kamal Proxy is designed to work as part of [Kamal](https://kamal-deploy.org/),
 which provides a complete deployment experience including container packaging
 and provisioning. However, Kamal Proxy could also be used standalone or as part
 of other deployment tooling.
-
 
 ## A quick overview
 
@@ -98,7 +96,6 @@ Only one service at a time can route a specific host:
     kamal-proxy remove service1
     kamal-proxy deploy service2 --target web-2:3000 --host app1.example.com # succeeds
 
-
 ### Path-based routing
 
 For applications that split their traffic to different services based on the
@@ -118,7 +115,6 @@ the original path (including the prefix), specify `--strip-path-prefix=false`:
 
     kamal-proxy deploy service1 --target web-1:3000 --path-prefix=/api --strip-path-prefix=false
 
-
 ### Automatic TLS
 
 Kamal Proxy can automatically obtain and renew TLS certificates for your
@@ -133,6 +129,33 @@ Additionally, when using path-based routing, TLS options must be set on the
 root path. Services deployed to other paths on the same host will use the same
 TLS settings as those specified for the root path.
 
+### On-demand TLS
+
+In addition to the automatic TLS functionality, Kamal Proxy can also dynamically obtain a TLS certificate
+for any host allowed by an external API endpoint of your choice. This avoids hard-coding hosts in the configuration, especially when you don't know the hosts at startup.
+
+    kamal-proxy deploy service1 --target web-1:3000 --host "" --tls --tls-on-demand-url="http://localhost:4567/check"
+
+The On-demand URL endpoint must return a 200 HTTP status code to allow certificate issuance.
+Kamal Proxy will call the on-demand URL with a query string parameter `host` containing the hostname received by Kamal Proxy (for example, `?host=hostname.example.com`).
+
+- The HTTP request to the on-demand URL will time out after 2 seconds. If the endpoint is unreachable or slow, certificate issuance will fail for that host.
+- If the endpoint returns any status other than 200, Kamal Proxy will log the status code and up to 256 bytes of the response body for debugging.
+- **Security note:** The on-demand URL acts as an authorization gate for certificate issuance. It should be protected and only allow trusted hosts. If compromised, unauthorized certificates could be issued.
+- If `--tls-on-demand-url` is not set, Kamal Proxy falls back to a static whitelist of hosts.
+- If using a local path (for example, `/allow-host`), ensure that endpoint is reachable through your deployed app and returns quickly.
+
+**Best practice:**
+
+- Ensure your on-demand endpoint is fast, reliable, and protected (e.g., behind authentication or on a private network).
+- Only allow hosts you control to prevent abuse.
+
+Example endpoint logic (pseudo-code):
+
+    if host in allowed_hosts:
+        return 200 OK
+    else:
+        return 403 Forbidden
 
 ### Custom TLS certificate
 
@@ -142,6 +165,29 @@ your certificate file and the corresponding private key:
 
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
 
+## TLSOnDemandURL Option
+
+The `TLSOnDemandURL` option can be set to either:
+
+- **An external URL** (e.g., `https://my-allow-service/allow-host`):
+  - The service will make an HTTP request to this external URL to determine if a certificate should be issued for a given host.
+
+- **A local path** (e.g., `/allow-host`):
+  - The service will internally route a request to this path using its own load balancer and handler. You must ensure your service responds to this path appropriately.
+
+### Example: External URL
+
+```yaml
+TLSOnDemandURL: "https://my-allow-service/allow-host"
+```
+
+### Example: Local Path
+
+```yaml
+TLSOnDemandURL: "/allow-host"
+```
+
+When using a local path, your service should implement a handler for the specified path (e.g., `/allow-host`) that returns `200 OK` to allow certificate issuance, or another status code to deny it.
 
 ## Specifying `run` options with environment variables
 
@@ -163,7 +209,6 @@ example:
 
     KAMAL_PROXY_HTTP_PORT=8080 kamal-proxy run
 
-
 ## Building
 
 To build Kamal Proxy locally, if you have a working Go environment you can:
@@ -173,7 +218,6 @@ To build Kamal Proxy locally, if you have a working Go environment you can:
 Alternatively, build as a Docker container:
 
     make docker
-
 
 ## Trying it out
 

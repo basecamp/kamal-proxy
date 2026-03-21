@@ -54,6 +54,8 @@ var (
 	ErrorRolloutTargetNotSet                 = errors.New("rollout target not set")
 	ErrorUnableToLoadErrorPages              = errors.New("unable to load error pages")
 	ErrorAutomaticTLSDoesNotSupportWildcards = errors.New("automatic TLS does not support wildcards")
+
+	contextKeyTLSOnDemandCheck = contextKey("tls-on-demand-check")
 )
 
 type TargetSlot int
@@ -83,6 +85,7 @@ type ServiceOptions struct {
 	TLSEnabled                  bool          `json:"tls_enabled"`
 	TLSCertificatePath          string        `json:"tls_certificate_path"`
 	TLSPrivateKeyPath           string        `json:"tls_private_key_path"`
+	TLSOnDemandURL              string        `json:"tls_on_demand_url"`
 	TLSRedirect                 bool          `json:"tls_redirect"`
 	CanonicalHost               string        `json:"canonical_host"`
 	ACMEDirectory               string        `json:"acme_directory"`
@@ -330,18 +333,26 @@ func (s *Service) Resume() error {
 // Private
 
 func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions) error {
+	previousOptions := s.options
+	previousTargetOptions := s.targetOptions
+
+	s.options = options
+	s.targetOptions = targetOptions
+
 	certManager, err := s.createCertManager(options)
 	if err != nil {
+		s.options = previousOptions
+		s.targetOptions = previousTargetOptions
 		return err
 	}
 
 	middleware, err := s.createMiddleware(options, certManager)
 	if err != nil {
+		s.options = previousOptions
+		s.targetOptions = previousTargetOptions
 		return err
 	}
 
-	s.options = options
-	s.targetOptions = targetOptions
 	s.certManager = certManager
 	s.middleware = middleware
 
@@ -392,10 +403,15 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 		}
 	}
 
+	hostPolicy, err := NewTLSOnDemandChecker(s).HostPolicy()
+	if err != nil {
+		return nil, err
+	}
+
 	return &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		Cache:      autocert.DirCache(options.ScopedCachePath()),
-		HostPolicy: autocert.HostWhitelist(options.Hosts...),
+		HostPolicy: hostPolicy,
 		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
 	}, nil
 }
@@ -502,6 +518,12 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 	}
 
 	desiredScheme := currentScheme
+	isTLSOnDemandCheck, _ := r.Context().Value(contextKeyTLSOnDemandCheck).(bool)
+	if isTLSOnDemandCheck {
+		// During TLS-on-demand checks, avoid any redirects (TLS or canonical host)
+		// so that the internal probe sees the original endpoint response.
+		return ""
+	}
 	if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" {
 		desiredScheme = "https"
 	}
