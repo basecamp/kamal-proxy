@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -396,6 +397,46 @@ func TestTarget_DrainHijackedConnectionsImmediately(t *testing.T) {
 	startedDraining := time.Now()
 	target.Drain(time.Second * 5)
 	assert.Less(t, time.Since(startedDraining).Seconds(), 1.0)
+}
+
+func TestTarget_DrainClosesIdleConnections(t *testing.T) {
+	var activeConns atomic.Int32
+
+	backend := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	backend.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		switch state {
+		case http.StateNew:
+			activeConns.Add(1)
+		case http.StateClosed:
+			activeConns.Add(-1)
+		}
+	}
+	backend.Start()
+	t.Cleanup(backend.Close)
+
+	backendURL, err := url.Parse(backend.URL)
+	require.NoError(t, err)
+
+	target, err := NewTarget(backendURL.Host, defaultTargetOptions)
+	require.NoError(t, err)
+
+	// Make a request to establish a connection in the pool.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	testServeRequestWithTarget(t, target, w, req)
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	// Connection should be idle in the pool.
+	require.Equal(t, int32(1), activeConns.Load())
+
+	target.Drain(time.Second)
+
+	// After draining, the idle connection should be closed.
+	require.Eventually(t, func() bool {
+		return activeConns.Load() == 0
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestTarget_EnforceMaxBodySizes(t *testing.T) {
