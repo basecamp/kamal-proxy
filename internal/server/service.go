@@ -226,6 +226,9 @@ type marshalledService struct {
 }
 
 func (s *Service) MarshalJSON() ([]byte, error) {
+	s.serviceLock.RLock()
+	defer s.serviceLock.RUnlock()
+
 	var rolloutTargets []string
 	var rolloutReaders []string
 	if s.rollout != nil {
