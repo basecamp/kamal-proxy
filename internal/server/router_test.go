@@ -778,6 +778,32 @@ func testRouter(t *testing.T) *Router {
 	return NewRouter(statePath)
 }
 
+func TestRouter_StateFileSurvivesRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	router := NewRouter(statePath)
+	require.NoError(t, router.DeployService("service1", []string{target},
+		defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	// Verify state file exists and is valid JSON
+	f, err := os.Open(statePath)
+	require.NoError(t, err)
+	defer f.Close()
+
+	var services []*Service
+	require.NoError(t, json.NewDecoder(f).Decode(&services))
+	assert.Len(t, services, 1)
+
+	// Verify no temp files left behind
+	entries, err := os.ReadDir(filepath.Dir(statePath))
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.False(t, strings.HasPrefix(entry.Name(), ".kamal-proxy.state."),
+			"temp file should not remain: %s", entry.Name())
+	}
+}
+
 func sendGETRequest(router *Router, url string) (int, string) {
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	return sendRequest(router, req)

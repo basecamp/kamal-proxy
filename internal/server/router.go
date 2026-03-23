@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -350,14 +351,31 @@ func (r *Router) saveStateSnapshot() error {
 		return nil
 	})
 
-	f, err := os.Create(r.statePath)
+	tmp, err := os.CreateTemp(filepath.Dir(r.statePath), ".kamal-proxy.state.*")
 	if err != nil {
+		slog.Error("Unable to create temp state file", "error", err)
+		return err
+	}
+	defer os.Remove(tmp.Name()) // clean up on any failure path
+
+	err = json.NewEncoder(tmp).Encode(services)
+	if err != nil {
+		tmp.Close()
+		slog.Error("Unable to save state", "error", err, "path", r.statePath)
 		return err
 	}
 
-	err = json.NewEncoder(f).Encode(services)
+	err = tmp.Sync()
 	if err != nil {
-		slog.Error("Unable to save state", "error", err, "path", r.statePath)
+		tmp.Close()
+		slog.Error("Unable to sync state file", "error", err)
+		return err
+	}
+	tmp.Close()
+
+	err = os.Rename(tmp.Name(), r.statePath)
+	if err != nil {
+		slog.Error("Unable to rename state file", "error", err)
 		return err
 	}
 
