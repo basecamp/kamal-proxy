@@ -385,6 +385,12 @@ func (m *SANCertManager) provisionCertificate(ctx context.Context, domain string
 
 	resource, err := m.client.Certificate.Obtain(request)
 	if err != nil {
+		// Re-add domains to pending so they can be retried
+		m.mu.Lock()
+		for _, d := range sortedDomains {
+			m.pendingDomains[d] = ""
+		}
+		m.mu.Unlock()
 		return nil, fmt.Errorf("failed to obtain certificate: %w", err)
 	}
 
