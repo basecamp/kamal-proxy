@@ -58,10 +58,6 @@ type SANCertManagerConfig struct {
 
 	// StatePath is where manager state is persisted
 	StatePath string
-
-	// BatchDelay is how long to wait for more domains before provisioning
-	// This allows batching multiple service deployments together
-	BatchDelay time.Duration
 }
 
 // SANCertManager manages SAN certificates with domain batching.
@@ -122,10 +118,6 @@ func NewSANCertManager(config SANCertManagerConfig) (*SANCertManager, error) {
 
 	if config.Directory == "" {
 		config.Directory = LetsEncryptProduction
-	}
-
-	if config.BatchDelay == 0 {
-		config.BatchDelay = 5 * time.Second
 	}
 
 	manager := &SANCertManager{
