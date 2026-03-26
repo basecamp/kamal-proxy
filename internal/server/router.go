@@ -60,12 +60,14 @@ func NewRouter(statePath string) *Router {
 }
 
 func (r *Router) SetSANCertManager(manager *SANCertManager) {
-	r.sanCertManager = manager
+	r.withWriteLock(func() error {
+		r.sanCertManager = manager
 
-	// Update any already-restored services to use the SAN cert manager
-	for _, service := range r.services.services {
-		service.SetSANCertManager(manager)
-	}
+		for _, service := range r.services.All() {
+			service.SetSANCertManager(manager)
+		}
+		return nil
+	})
 }
 
 func (r *Router) SANCertManager() *SANCertManager {
