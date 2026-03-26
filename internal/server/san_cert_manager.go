@@ -643,14 +643,21 @@ func (m *SANCertManager) persistState() error {
 	}
 
 	m.mu.RLock()
-	state := managerState{
-		Certificates: m.certificates,
-		DomainMap:    m.domainToCert,
-		SavedAt:      time.Now(),
+	certs := make(map[string]*ManagedCert, len(m.certificates))
+	for k, v := range m.certificates {
+		certs[k] = v
+	}
+	domainMap := make(map[string]string, len(m.domainToCert))
+	for k, v := range m.domainToCert {
+		domainMap[k] = v
 	}
 	m.mu.RUnlock()
 
-	return m.writeState(state)
+	return m.writeState(managerState{
+		Certificates: certs,
+		DomainMap:    domainMap,
+		SavedAt:      time.Now(),
+	})
 }
 
 func (m *SANCertManager) writeState(state managerState) error {
