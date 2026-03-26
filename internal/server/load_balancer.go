@@ -139,7 +139,7 @@ func (lb *LoadBalancer) WaitUntilHealthy(timeout time.Duration) error {
 
 	<-ctx.Done()
 
-	if ctx.Err() == context.DeadlineExceeded {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("%w (%s)", ErrorTargetFailedToBecomeHealthy, timeout)
 	}
 

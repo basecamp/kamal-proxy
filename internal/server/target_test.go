@@ -543,6 +543,43 @@ func TestTarget_EnforceMaxBodySizes(t *testing.T) {
 	})
 }
 
+func TestTarget_MalformedChunkedEncodingWithoutBuffering(t *testing.T) {
+	targetOptions := TargetOptions{
+		BufferRequests:    false,
+		HealthCheckConfig: defaultHealthCheckConfig,
+	}
+
+	target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r, err := target.StartRequest(r)
+		require.NoError(t, err)
+		target.SendRequest(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	rawRequest := "POST / HTTP/1.1\r\n" +
+		"Host: example.com\r\n" +
+		"Transfer-Encoding: chunked\r\n" +
+		"\r\n" +
+		"ZZ\r\n"
+
+	_, err = conn.Write([]byte(rawRequest))
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 func TestTarget_buildHealthCheckURL(t *testing.T) {
 	tests := []struct {
 		name            string

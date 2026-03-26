@@ -382,6 +382,12 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 		return
 	}
 
+	if isChunkedEncodingError(err) {
+		slog.Info("Malformed request", "target", t.Address(), "path", r.URL.Path, "error", err)
+		SetErrorResponse(w, r, http.StatusBadRequest, nil)
+		return
+	}
+
 	slog.Error("Error while proxying", "target", t.Address(), "path", r.URL.Path, "error", err)
 	SetErrorResponse(w, r, http.StatusBadGateway, nil)
 }
@@ -516,18 +522,18 @@ func (w *targetResponseWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-func (r *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	hijacker, ok := r.ResponseWriter.(http.Hijacker)
+func (w *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
 	if !ok {
 		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
 	}
 
-	r.inflightRequest.hijacked = true
+	w.inflightRequest.hijacked = true
 	return hijacker.Hijack()
 }
 
-func (r *targetResponseWriter) Flush() {
-	flusher, ok := r.ResponseWriter.(http.Flusher)
+func (w *targetResponseWriter) Flush() {
+	flusher, ok := w.ResponseWriter.(http.Flusher)
 	if ok {
 		flusher.Flush()
 	}

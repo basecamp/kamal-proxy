@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -31,12 +32,12 @@ func (h *ResponseBufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Requ
 
 	err := responseWriter.Send()
 	if err != nil {
-		if err == ErrMaximumSizeExceeded {
+		if errors.Is(err, ErrMaximumSizeExceeded) {
 			slog.Info("Response exceeded max response limit", "path", r.URL.Path)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			SetErrorResponse(w, r, http.StatusInternalServerError, nil)
 		} else {
 			slog.Error("Error sending response", "path", r.URL.Path, "error", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			SetErrorResponse(w, r, http.StatusInternalServerError, nil)
 		}
 		return
 	}
@@ -108,7 +109,7 @@ func (w *bufferedResponseWriter) Write(data []byte) (int, error) {
 	}
 
 	n, err := w.buffer.Write(data)
-	if err == ErrMaximumSizeExceeded {
+	if errors.Is(err, ErrMaximumSizeExceeded) {
 		// Returning an error here will cause the ReverseProxy to panic. If the
 		// error is that we're exceeding the limit, just pretend it was all
 		// fine. We'll handle the overflow condition when we send the buffer to
