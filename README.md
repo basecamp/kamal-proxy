@@ -145,9 +145,13 @@ your certificate file and the corresponding private key:
 
 ### SAN Certificate Batching
 
-Kamal Proxy automatically batches multiple domains into a single SAN (Subject
-Alternative Name) certificate. This dramatically reduces the number of certificates
-needed and helps avoid Let's Encrypt rate limits.
+When started with `--acme-email` (or the `ACME_EMAIL` environment variable),
+Kamal Proxy batches multiple domains into a single SAN (Subject Alternative Name)
+certificate. This dramatically reduces the number of certificates needed and helps
+avoid Let's Encrypt rate limits.
+
+Without `--acme-email`, Kamal Proxy falls back to issuing separate certificates
+per service using the standard autocert flow.
 
 **How it works:**
 
@@ -178,13 +182,13 @@ kamal-proxy deploy app3 --target web-3:3000 --host mysite.net --tls
 - **Dramatic reduction**: Up to 100 domains per certificate
 - **Rate limit friendly**: 1000 domains = 10 certs instead of 1000
 - **Any domains**: Works across different root domains
-- **Zero configuration**: Just deploy with `--tls` as usual
+- **Minimal configuration**: Set `--acme-email` once, then deploy with `--tls` as usual
 
 **Configuration options:**
 
 | Flag | Environment Variable | Default | Description |
 |------|---------------------|---------|-------------|
-| `--acme-email` | `ACME_EMAIL` | (required for TLS) | Contact email for Let's Encrypt |
+| `--acme-email` | `ACME_EMAIL` | (required for SAN batching) | Contact email for Let's Encrypt |
 | `--acme-directory` | `ACME_DIRECTORY` | Let's Encrypt production | ACME directory URL |
 
 **Using Let's Encrypt staging environment:**
