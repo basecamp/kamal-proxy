@@ -7,7 +7,9 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -408,8 +410,8 @@ func (m *SANCertManager) provisionCertificate(ctx context.Context, domain string
 	tlsCert.Leaf = leaf
 	notAfter := leaf.NotAfter
 
-	// Generate certificate ID from first domain (sorted)
-	certID := fmt.Sprintf("san:%d:%s", len(sortedDomains), sortedDomains[0])
+	// Generate collision-resistant certificate ID from full domain list
+	certID := sanCertID(sortedDomains)
 	managed := &ManagedCert{
 		Identifier:  certID,
 		Domains:     sortedDomains,
@@ -663,6 +665,15 @@ func (m *SANCertManager) writeState(state managerState) error {
 	}
 
 	return os.Rename(tmpPath, m.config.StatePath)
+}
+
+func sanCertID(domains []string) string {
+	h := sha256.New()
+	for _, d := range domains {
+		h.Write([]byte(d))
+		h.Write([]byte{0})
+	}
+	return "san:" + hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 func sanitizeFilename(s string) string {
