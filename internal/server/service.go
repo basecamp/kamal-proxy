@@ -158,9 +158,17 @@ func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOpti
 }
 
 func (s *Service) SetSANCertManager(manager *SANCertManager) {
+	prevCertManager := s.certManager
+	prevMiddleware := s.middleware
+
 	s.sanCertManager = manager
 	if s.options.TLSEnabled && s.options.TLSCertificatePath == "" {
-		s.initialize(s.options, s.targetOptions)
+		if err := s.initialize(s.options, s.targetOptions); err != nil {
+			slog.Error("Failed to reinitialize service with SAN cert manager, keeping previous TLS config",
+				"service", s.name, "error", err)
+			s.certManager = prevCertManager
+			s.middleware = prevMiddleware
+		}
 	}
 }
 
