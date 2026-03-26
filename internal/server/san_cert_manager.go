@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -60,15 +62,12 @@ type SANCertManagerConfig struct {
 	BatchDelay time.Duration
 }
 
-// SANCertManager manages SAN certificates with domain batching
-// It groups domains by their root domain and provisions a single certificate
-// for all subdomains, reducing the number of certificates needed
+// SANCertManager manages SAN certificates with domain batching.
+// It batches up to 100 domains into a single certificate,
+// reducing the number of certificates and avoiding rate limits.
 type SANCertManager struct {
 	mu     sync.RWMutex
 	config SANCertManagerConfig
-
-	// Domain grouper
-	grouper *DomainGrouper
 
 	// ACME client
 	client *lego.Client
@@ -129,7 +128,6 @@ func NewSANCertManager(config SANCertManagerConfig) (*SANCertManager, error) {
 
 	manager := &SANCertManager{
 		config:          config,
-		grouper:         NewDomainGrouper(),
 		certificates:    make(map[string]*ManagedCert),
 		domainToCert:    make(map[string]string),
 		pendingDomains:  make(map[string]string),
@@ -250,8 +248,11 @@ func (m *SANCertManager) RegisterDomain(domain string, service string) error {
 		}
 	}
 
-	// Check if domain is covered by an existing SAN certificate
+	// Check if domain is covered by an existing valid SAN certificate
 	for _, cert := range m.certificates {
+		if time.Until(cert.NotAfter) <= 24*time.Hour {
+			continue
+		}
 		for _, d := range cert.Domains {
 			if d == domain {
 				m.domainToCert[domain] = cert.Identifier
@@ -369,7 +370,7 @@ func (m *SANCertManager) provisionCertificate(ctx context.Context, domain string
 	// Sort domains for consistent certificate identifiers
 	sortedDomains := make([]string, len(domainsToProvision))
 	copy(sortedDomains, domainsToProvision)
-	sortStrings(sortedDomains)
+	slices.Sort(sortedDomains)
 
 	slog.Info("Provisioning SAN certificate",
 		"domains", sortedDomains,
@@ -393,13 +394,13 @@ func (m *SANCertManager) provisionCertificate(ctx context.Context, domain string
 		return nil, fmt.Errorf("failed to parse certificate: %w", err)
 	}
 
-	// Determine expiry from leaf certificate
-	var notAfter time.Time
-	if tlsCert.Leaf != nil {
-		notAfter = tlsCert.Leaf.NotAfter
-	} else {
-		notAfter = time.Now().Add(90 * 24 * time.Hour) // Approximate
+	// Parse the leaf certificate to get the actual expiry
+	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse leaf certificate: %w", err)
 	}
+	tlsCert.Leaf = leaf
+	notAfter := leaf.NotAfter
 
 	// Generate certificate ID from first domain (sorted)
 	certID := fmt.Sprintf("san:%d:%s", len(sortedDomains), sortedDomains[0])
@@ -422,8 +423,8 @@ func (m *SANCertManager) provisionCertificate(ctx context.Context, domain string
 		slog.Warn("Failed to save certificate", "error", err)
 	}
 
-	// Persist state
-	if err := m.saveState(); err != nil {
+	// Persist state (called without lock held)
+	if err := m.persistState(); err != nil {
 		slog.Warn("Failed to save state", "error", err)
 	}
 
@@ -437,16 +438,6 @@ func (m *SANCertManager) provisionCertificate(ctx context.Context, domain string
 	return &tlsCert, nil
 }
 
-// sortStrings sorts a slice of strings in place
-func sortStrings(s []string) {
-	for i := 0; i < len(s)-1; i++ {
-		for j := i + 1; j < len(s); j++ {
-			if s[i] > s[j] {
-				s[i], s[j] = s[j], s[i]
-			}
-		}
-	}
-}
 
 // getCertForDomain retrieves a certificate for a domain
 func (m *SANCertManager) getCertForDomain(domain string) (*tls.Certificate, error) {
@@ -466,8 +457,8 @@ func (m *SANCertManager) getCertForDomain(domain string) (*tls.Certificate, erro
 	return cert.Certificate, nil
 }
 
-// HTTPChallengeHandler returns the HTTP handler for ACME challenges
-func (m *SANCertManager) HTTPChallengeHandler(fallback http.Handler) http.Handler {
+// HTTPHandler returns the HTTP handler for ACME challenges
+func (m *SANCertManager) HTTPHandler(fallback http.Handler) http.Handler {
 	const challengePrefix = "/.well-known/acme-challenge/"
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -638,7 +629,7 @@ func (m *SANCertManager) loadState() error {
 	return nil
 }
 
-func (m *SANCertManager) saveState() error {
+func (m *SANCertManager) persistState() error {
 	if m.config.StatePath == "" {
 		return nil
 	}
@@ -651,6 +642,10 @@ func (m *SANCertManager) saveState() error {
 	}
 	m.mu.RUnlock()
 
+	return m.writeState(state)
+}
+
+func (m *SANCertManager) writeState(state managerState) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err

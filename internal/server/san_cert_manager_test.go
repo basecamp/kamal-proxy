@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,6 @@ func TestNewSANCertManager(t *testing.T) {
 	manager, err := NewSANCertManager(config)
 	require.NoError(t, err)
 	assert.NotNil(t, manager)
-	assert.NotNil(t, manager.grouper)
 }
 
 func TestNewSANCertManager_RequiresEmail(t *testing.T) {
@@ -136,27 +136,6 @@ func TestMaxSANsPerCertificate(t *testing.T) {
 	assert.Equal(t, 100, MaxSANsPerCertificate)
 }
 
-func TestSortStrings(t *testing.T) {
-	tests := []struct {
-		input    []string
-		expected []string
-	}{
-		{[]string{"c", "a", "b"}, []string{"a", "b", "c"}},
-		{[]string{"z.com", "a.com", "m.com"}, []string{"a.com", "m.com", "z.com"}},
-		{[]string{"single"}, []string{"single"}},
-		{[]string{}, []string{}},
-	}
-
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			input := make([]string, len(tt.input))
-			copy(input, tt.input)
-			sortStrings(input)
-			assert.Equal(t, tt.expected, input)
-		})
-	}
-}
-
 func TestSANCertManager_RegisterDomain_ExistingCert(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -169,10 +148,11 @@ func TestSANCertManager_RegisterDomain_ExistingCert(t *testing.T) {
 	require.NoError(t, err)
 	manager.ready = true
 
-	// Add an existing certificate
+	// Add an existing valid certificate
 	manager.certificates["san:example.com"] = &ManagedCert{
 		Identifier: "san:example.com",
 		Domains:    []string{"app.example.com", "api.example.com"},
+		NotAfter:   time.Now().Add(48 * time.Hour),
 	}
 	manager.domainToCert["app.example.com"] = "san:example.com"
 	manager.domainToCert["api.example.com"] = "san:example.com"
@@ -185,7 +165,35 @@ func TestSANCertManager_RegisterDomain_ExistingCert(t *testing.T) {
 	assert.NotContains(t, manager.pendingDomains, "app.example.com")
 }
 
-func TestSANCertManager_HTTPChallengeHandler(t *testing.T) {
+func TestSANCertManager_RegisterDomain_ExpiredCert(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	config := SANCertManagerConfig{
+		Email:     "test@example.com",
+		CachePath: filepath.Join(tmpDir, "certs"),
+	}
+
+	manager, err := NewSANCertManager(config)
+	require.NoError(t, err)
+	manager.ready = true
+
+	// Add an expired certificate
+	manager.certificates["san:example.com"] = &ManagedCert{
+		Identifier: "san:example.com",
+		Domains:    []string{"app.example.com", "api.example.com"},
+		NotAfter:   time.Now().Add(-1 * time.Hour),
+	}
+	manager.domainToCert["app.example.com"] = "san:example.com"
+
+	// Register a domain covered by the expired cert
+	err = manager.RegisterDomain("api.example.com", "service1")
+	require.NoError(t, err)
+
+	// Should be in pending since the cert is expired
+	assert.Contains(t, manager.pendingDomains, "api.example.com")
+}
+
+func TestSANCertManager_HTTPHandler(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := SANCertManagerConfig{
@@ -204,7 +212,7 @@ func TestSANCertManager_HTTPChallengeHandler(t *testing.T) {
 		w.Write([]byte("fallback"))
 	})
 
-	handler := manager.HTTPChallengeHandler(fallback)
+	handler := manager.HTTPHandler(fallback)
 
 	// Test challenge request
 	req := httptest.NewRequest("GET", "/.well-known/acme-challenge/test-token", nil)
