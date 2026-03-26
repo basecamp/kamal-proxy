@@ -562,7 +562,7 @@ func (m *SANCertManager) saveCertificate(certID string, resource *certificate.Re
 		return nil
 	}
 
-	certDir := filepath.Join(m.config.CachePath, "certs", sanitizeFilename(certID))
+	certDir := filepath.Join(m.config.CachePath, sanitizeFilename(certID))
 	if err := os.MkdirAll(certDir, 0700); err != nil {
 		return err
 	}
@@ -607,7 +607,7 @@ func (m *SANCertManager) loadState() error {
 	// Load certificates from disk
 	for id, cert := range state.Certificates {
 		if m.config.CachePath != "" {
-			certDir := filepath.Join(m.config.CachePath, "certs", sanitizeFilename(id))
+			certDir := filepath.Join(m.config.CachePath, sanitizeFilename(id))
 			certPath := filepath.Join(certDir, "cert.pem")
 			keyPath := filepath.Join(certDir, "key.pem")
 
