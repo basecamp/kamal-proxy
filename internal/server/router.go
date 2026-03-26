@@ -36,9 +36,10 @@ func RoutingContext(r *http.Request) *routingContext {
 }
 
 type Router struct {
-	statePath   string
-	services    *ServiceMap
-	serviceLock sync.RWMutex
+	statePath      string
+	services       *ServiceMap
+	serviceLock    sync.RWMutex
+	sanCertManager *SANCertManager
 }
 
 type ServiceDescription struct {
@@ -56,6 +57,19 @@ func NewRouter(statePath string) *Router {
 		statePath: statePath,
 		services:  NewServiceMap(),
 	}
+}
+
+func (r *Router) SetSANCertManager(manager *SANCertManager) {
+	r.sanCertManager = manager
+
+	// Update any already-restored services to use the SAN cert manager
+	for _, service := range r.services.services {
+		service.SetSANCertManager(manager)
+	}
+}
+
+func (r *Router) SANCertManager() *SANCertManager {
+	return r.sanCertManager
 }
 
 func (r *Router) RestoreLastSavedState() error {
@@ -290,7 +304,7 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 func (r *Router) createOrUpdateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
 	service := r.services.Get(name)
 	if service == nil {
-		return NewService(name, options, targetOptions)
+		return NewService(name, options, targetOptions, r.sanCertManager)
 	}
 
 	err := service.UpdateOptions(options, targetOptions)

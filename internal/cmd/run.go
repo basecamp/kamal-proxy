@@ -41,7 +41,26 @@ func (c *runCommand) run(cmd *cobra.Command, args []string) error {
 	c.setLogger()
 
 	router := server.NewRouter(globalConfig.StatePath())
+
 	router.RestoreLastSavedState()
+
+	if globalConfig.ACMEEmail != "" {
+		manager, err := server.NewSANCertManager(server.SANCertManagerConfig{
+			Email:     globalConfig.ACMEEmail,
+			Directory: globalConfig.ACMEDirectory,
+			CachePath: globalConfig.CertificatePath(),
+			StatePath: globalConfig.ACMEStatePath(),
+		})
+		if err != nil {
+			return err
+		}
+
+		if err := manager.Initialize(cmd.Context()); err != nil {
+			return err
+		}
+
+		router.SetSANCertManager(manager)
+	}
 
 	s := server.NewServer(&globalConfig, router)
 	err := s.Start()

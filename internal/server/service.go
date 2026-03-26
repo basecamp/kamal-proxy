@@ -135,14 +135,16 @@ type Service struct {
 	pauseController   *PauseController
 	rolloutController *RolloutController
 
-	certManager CertManager
-	middleware  http.Handler
+	sanCertManager *SANCertManager
+	certManager    CertManager
+	middleware     http.Handler
 }
 
-func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+func NewService(name string, options ServiceOptions, targetOptions TargetOptions, sanCertManager *SANCertManager) (*Service, error) {
 	service := &Service{
 		name:            name,
 		pauseController: NewPauseController(),
+		sanCertManager:  sanCertManager,
 	}
 
 	if err := service.initialize(options, targetOptions); err != nil {
@@ -153,6 +155,13 @@ func NewService(name string, options ServiceOptions, targetOptions TargetOptions
 
 func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOptions) error {
 	return s.initialize(options, targetOptions)
+}
+
+func (s *Service) SetSANCertManager(manager *SANCertManager) {
+	s.sanCertManager = manager
+	if s.options.TLSEnabled && s.options.TLSCertificatePath == "" {
+		s.initialize(s.options, s.targetOptions)
+	}
 }
 
 func (s *Service) Dispose() {
@@ -390,6 +399,16 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 		if strings.Contains(host, "*") {
 			return nil, ErrorAutomaticTLSDoesNotSupportWildcards
 		}
+	}
+
+	// Use the shared SAN certificate manager when available
+	if s.sanCertManager != nil {
+		for _, host := range options.Hosts {
+			if err := s.sanCertManager.RegisterDomain(host, s.name); err != nil {
+				slog.Warn("Failed to register domain with SAN cert manager", "host", host, "error", err)
+			}
+		}
+		return s.sanCertManager, nil
 	}
 
 	return &autocert.Manager{
