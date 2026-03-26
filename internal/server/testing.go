@@ -69,7 +69,7 @@ func testBackendWithHandler(t testing.TB, handler http.HandlerFunc) (*httptest.S
 	return server, serverURL.Host
 }
 
-func testServer(t testing.TB, http3Enabled bool, minTLS13 bool) *Server {
+func testServer(t testing.TB, http3Enabled bool, minTLS string) *Server {
 	t.Helper()
 
 	config := &Config{
@@ -78,7 +78,7 @@ func testServer(t testing.TB, http3Enabled bool, minTLS13 bool) *Server {
 		HttpsPort:          0,
 		AlternateConfigDir: t.TempDir(),
 		HTTP3Enabled:       http3Enabled,
-		MinTLS13:           minTLS13,
+		MinTLS:             minTLS,
 	}
 	router := NewRouter(config.StatePath())
 	server := NewServer(config, router)

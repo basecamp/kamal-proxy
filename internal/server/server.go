@@ -154,8 +154,19 @@ func (s *Server) startHTTPServers() error {
 		NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
 		GetCertificate: s.router.GetCertificate,
 	}
-	if s.config.MinTLS13 {
+	switch s.config.MinTLS {
+	case "tls1_0":
+		tlsConfig.MinVersion = tls.VersionTLS10
+	case "tls1_1":
+		tlsConfig.MinVersion = tls.VersionTLS11
+	case "tls1_2":
+		tlsConfig.MinVersion = tls.VersionTLS12
+	case "tls1_3":
 		tlsConfig.MinVersion = tls.VersionTLS13
+	case "":
+		// No minimum TLS version set
+	default:
+		return fmt.Errorf("unsupported minimum TLS version: %q (use tls1_0, tls1_1, tls1_2, or tls1_3)", s.config.MinTLS)
 	}
 
 	s.httpsServer = &http.Server{

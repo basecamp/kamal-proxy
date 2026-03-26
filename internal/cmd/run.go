@@ -29,7 +29,7 @@ func newRunCommand() *runCommand {
 	runCommand.cmd.Flags().IntVar(&globalConfig.HttpsPort, "https-port", getEnvInt("HTTPS_PORT", server.DefaultHttpsPort), "Port to serve HTTPS traffic on")
 	runCommand.cmd.Flags().IntVar(&globalConfig.MetricsPort, "metrics-port", getEnvInt("METRICS_PORT", 0), "Publish metrics on the specified port (default zero to disable)")
 	runCommand.cmd.Flags().BoolVar(&globalConfig.HTTP3Enabled, "http3", false, "Enable HTTP/3")
-	runCommand.cmd.Flags().BoolVar(&globalConfig.MinTLS13, "min-tls13", getEnvBool("MIN_TLS13", false), "Set TLS 1.3 as the minimum TLS version on the HTTPS server")
+	runCommand.cmd.Flags().StringVar(&globalConfig.MinTLS, "min-tls", getEnvString("MIN_TLS", ""), "Set minimum TLS version (tls1_0, tls1_1, tls1_2, tls1_3)")
 
 	return runCommand
 }

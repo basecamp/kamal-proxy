@@ -18,7 +18,7 @@ type Config struct {
 	HttpsPort    int
 	MetricsPort  int
 	HTTP3Enabled bool
-	MinTLS13     bool
+	MinTLS       string
 
 	AlternateConfigDir string
 }
