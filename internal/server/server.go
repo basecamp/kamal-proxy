@@ -120,9 +120,10 @@ func (s *Server) startHTTP3Server(handler http.Handler, httpsAddr string) error 
 	s.http3Server = &http3.Server{
 		Handler: handler,
 		TLSConfig: &tls.Config{
-			MinVersion:     tls.VersionTLS13,
-			NextProtos:     []string{"h3"},
-			GetCertificate: s.router.GetCertificate,
+			MinVersion:         tls.VersionTLS13,
+			NextProtos:         []string{"h3"},
+			GetCertificate:     s.router.GetCertificate,
+			GetConfigForClient: s.createGetConfigForClient(),
 		},
 	}
 
@@ -158,7 +159,7 @@ func (s *Server) startHTTPServers() error {
 
 			handler.ServeHTTP(w, r)
 		}),
-		TLSConfig: httpsTLSConfig(s.router.GetCertificate),
+		TLSConfig: httpsTLSConfig(s.router.GetCertificate, s.createGetConfigForClient()),
 	}
 
 	go s.httpServer.Serve(s.httpListener)
@@ -208,6 +209,21 @@ func (s *Server) startCommandHandler() error {
 	return s.commandHandler.Start(s.config.SocketPath())
 }
 
+func (s *Server) createGetConfigForClient() func(*tls.ClientHelloInfo) (*tls.Config, error) {
+	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		if hello.ServerName != "" {
+			if pool := s.router.clientCACertPool(hello.ServerName); pool != nil {
+				return &tls.Config{
+					GetCertificate: s.router.GetCertificate,
+					ClientAuth:     tls.RequireAndVerifyClientCert,
+					ClientCAs:      pool,
+				}, nil
+			}
+		}
+		return nil, nil
+	}
+}
+
 func (s *Server) buildHandler() http.Handler {
 	var handler http.Handler
 
@@ -238,12 +254,13 @@ func (s *Server) stopHTTPServer(ctx context.Context, server shutdownable) {
 	}
 }
 
-func httpsTLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)) *tls.Config {
+func httpsTLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error), getConfigForClient func(*tls.ClientHelloInfo) (*tls.Config, error)) *tls.Config {
 	return &tls.Config{
-		MinVersion:     tls.VersionTLS12,
-		CipherSuites:   aeadCipherSuites,
-		NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
-		GetCertificate: getCertificate,
+		MinVersion:         tls.VersionTLS12,
+		CipherSuites:       aeadCipherSuites,
+		NextProtos:         []string{"h2", "http/1.1", acme.ALPNProto},
+		GetCertificate:     getCertificate,
+		GetConfigForClient: getConfigForClient,
 	}
 }
 
