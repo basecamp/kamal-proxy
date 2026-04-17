@@ -143,6 +143,18 @@ your certificate file and the corresponding private key:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
 
 
+### Mutual TLS (mTLS)
+
+To require clients to present a certificate signed by a trusted CA, pass the CA
+certificate via `--tls-client-ca-path`. Connections from clients without a valid
+certificate are rejected at the TLS layer.
+
+    kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem --tls-client-ca-path ca.pem
+
+This can be used to implement [Cloudflare Authenticated Origin Pull](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/),
+ensuring only Cloudflare can reach your origin.
+
+
 ## Specifying `run` options with environment variables
 
 In some environments, like when running a Docker container, it can be convenient

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -283,6 +284,14 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 	}
 
 	return service.certManager.GetCertificate(hello)
+}
+
+func (r *Router) clientCACertPool(hostname string) *x509.CertPool {
+	service := r.serviceForHost(hostname)
+	if service == nil {
+		return nil
+	}
+	return service.clientCACertPool
 }
 
 // Private
