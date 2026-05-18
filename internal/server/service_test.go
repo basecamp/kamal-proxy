@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basecamp/kamal-proxy/internal/metrics"
 )
 
 func TestService_ServeRequest(t *testing.T) {
@@ -215,6 +219,42 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 	assert.Equal(t, []string{"/"}, service.options.PathPrefixes)
 	assert.Equal(t, 3*time.Second, service.targetOptions.ResponseTimeout)
 }
+
+func TestService_DoesNotEmitMetricsForHealthCheckRequests(t *testing.T) {
+	tracker := &recordingTracker{}
+	original := metrics.Tracker
+	metrics.Tracker = tracker
+	t.Cleanup(func() { metrics.Tracker = original })
+
+	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
+	handler := WithLoggingMiddleware(
+		slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		80, 443,
+		service,
+	)
+
+	handler.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "http://example.com/", nil))
+
+	handler.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "http://example.com/up", nil))
+
+	assert.Equal(t, 1, tracker.trackRequest)
+	assert.Equal(t, 1, tracker.addInflightRequest)
+	assert.Equal(t, 1, tracker.subInflightRequest)
+}
+
+type recordingTracker struct {
+	trackRequest       int
+	addInflightRequest int
+	subInflightRequest int
+}
+
+func (r *recordingTracker) TrackRequest(string, string, int, time.Duration) {
+	r.trackRequest++
+}
+func (r *recordingTracker) AddInflightRequest(string)      { r.addInflightRequest++ }
+func (r *recordingTracker) SubtractInflightRequest(string) { r.subInflightRequest++ }
 
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
 	return testCreateServiceWithHandler(t, options, targetOptions,

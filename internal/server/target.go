@@ -173,9 +173,10 @@ func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
 }
 
 func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
-	LoggingRequestContext(req).Target = t.Address()
-	LoggingRequestContext(req).RequestHeaders = t.options.LogRequestHeaders
-	LoggingRequestContext(req).ResponseHeaders = t.options.LogResponseHeaders
+	lrc := LoggingRequestContext(req)
+	lrc.Target = t.Address()
+	lrc.RequestHeaders = t.options.LogRequestHeaders
+	lrc.ResponseHeaders = t.options.LogResponseHeaders
 
 	inflightRequest := t.getInflightRequest(req)
 	defer t.endInflightRequest(req)
@@ -221,7 +222,8 @@ func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 
 	t.withInflightLock(func() {
 		healthCheckURL := t.buildHealthCheckURL()
-		t.healthcheck = NewHealthCheck(t,
+		t.healthcheck = NewHealthCheck(
+			t,
 			healthCheckURL,
 			t.options.HealthCheckConfig.Interval,
 			t.options.HealthCheckConfig.Timeout,

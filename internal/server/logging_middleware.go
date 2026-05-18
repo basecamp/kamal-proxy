@@ -22,6 +22,7 @@ type loggingRequestContext struct {
 	Target          string
 	RequestHeaders  []string
 	ResponseHeaders []string
+	SuppressMetrics bool
 }
 
 type LoggingMiddleware struct {
@@ -105,7 +106,9 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.ResponseHeaders, writer.Header(), "resp")...)
 		h.logger.LogAttrs(context.Background(), slog.LevelInfo, "Request", attrs...)
 
-		metrics.Tracker.TrackRequest(loggingRequestContext.Service, r.Method, writer.statusCode, elapsed)
+		if !loggingRequestContext.SuppressMetrics {
+			metrics.Tracker.TrackRequest(loggingRequestContext.Service, r.Method, writer.statusCode, elapsed)
+		}
 	}()
 
 	h.next.ServeHTTP(writer, r)

@@ -202,8 +202,13 @@ func (s *Service) StopRollout() error {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	metrics.Tracker.AddInflightRequest(s.name)
-	defer metrics.Tracker.SubtractInflightRequest(s.name)
+	lrc := LoggingRequestContext(r)
+	lrc.SuppressMetrics = s.targetOptions.IsHealthCheckRequest(r)
+
+	if !lrc.SuppressMetrics {
+		metrics.Tracker.AddInflightRequest(s.name)
+		defer metrics.Tracker.SubtractInflightRequest(s.name)
+	}
 
 	s.middleware.ServeHTTP(w, r)
 }
