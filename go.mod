@@ -6,7 +6,7 @@ require (
 	github.com/coder/websocket v1.8.12
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.23.2
-	github.com/quic-go/quic-go v0.57.1
+	github.com/quic-go/quic-go v0.59.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.46.0
