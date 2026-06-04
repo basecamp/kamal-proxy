@@ -91,6 +91,8 @@ type ServiceOptions struct {
 	StripPrefix                 bool          `json:"strip_prefix"`
 	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
+	BasicAuthUsername           string        `json:"basic_auth_username"`
+	BasicAuthPasswordHash       string        `json:"basic_auth_password_hash"`
 }
 
 func (so *ServiceOptions) Normalize() {
@@ -403,6 +405,11 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
 	var err error
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
+
+	if options.BasicAuthUsername != "" {
+		slog.Debug("Using basic auth", "service", s.name)
+		handler = WithBasicAuthMiddleware(options.BasicAuthUsername, options.BasicAuthPasswordHash, handler)
+	}
 
 	if options.ErrorPagePath != "" {
 		slog.Debug("Using custom error pages", "service", s.name, "path", options.ErrorPagePath)
