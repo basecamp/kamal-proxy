@@ -18,19 +18,22 @@ func HashBasicAuthCredential(value string) string {
 }
 
 type BasicAuthMiddleware struct {
-	username     string
+	usernameHash [sha256.Size]byte
 	passwordHash []byte
 	next         http.Handler
 }
 
 func WithBasicAuthMiddleware(username, passwordHash string, next http.Handler) http.Handler {
+	// If the stored hash is malformed (bad hex or not a SHA-256 digest), fall back
+	// to a fixed-length zero hash. No real password hashes to all zeroes, so every
+	// request fails closed while comparisons still run over equal-length inputs.
 	decoded, err := hex.DecodeString(passwordHash)
-	if err != nil {
-		decoded = nil
+	if err != nil || len(decoded) != sha256.Size {
+		decoded = make([]byte, sha256.Size)
 	}
 
 	return &BasicAuthMiddleware{
-		username:     username,
+		usernameHash: sha256.Sum256([]byte(username)),
 		passwordHash: decoded,
 		next:         next,
 	}
@@ -56,11 +59,10 @@ func (h *BasicAuthMiddleware) authenticated(r *http.Request) bool {
 
 	// Hash both sides so the comparisons run in constant time over equal-length
 	// inputs, regardless of the supplied credential lengths.
-	expectedUser := sha256.Sum256([]byte(h.username))
 	givenUser := sha256.Sum256([]byte(username))
 	givenPassword := sha256.Sum256([]byte(password))
 
-	userMatch := subtle.ConstantTimeCompare(givenUser[:], expectedUser[:]) == 1
+	userMatch := subtle.ConstantTimeCompare(givenUser[:], h.usernameHash[:]) == 1
 	passwordMatch := subtle.ConstantTimeCompare(givenPassword[:], h.passwordHash) == 1
 
 	return userMatch && passwordMatch

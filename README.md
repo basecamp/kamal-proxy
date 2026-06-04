@@ -155,6 +155,10 @@ Requests without valid credentials receive a `401 Unauthorized` response with a
 credentials are compared in constant time. Because credentials are sent on every
 request, enable TLS when using basic auth.
 
+> **Note:** the credentials are passed on the command line, so they may be
+> visible in shell history, process listings (`ps`), and CI logs. Treat them as
+> a secret and supply them from your secret store rather than hard-coding them.
+
 
 ## Specifying `run` options with environment variables
 

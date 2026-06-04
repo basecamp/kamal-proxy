@@ -56,3 +56,28 @@ func TestBasicAuthMiddleware(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 }
+
+func TestBasicAuthMiddleware_FailsClosedWithInvalidHash(t *testing.T) {
+	for name, passwordHash := range map[string]string{
+		"non-hex hash":      "not-a-valid-hash",
+		"wrong-length hash": "abcd",
+		"empty hash":        "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			reached := false
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reached = true
+			})
+			handler := WithBasicAuthMiddleware("admin", passwordHash, next)
+
+			r := httptest.NewRequest("GET", "/", nil)
+			r.SetBasicAuth("admin", "secret")
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+
+			assert.False(t, reached, "request must not reach the backend")
+			assert.Equal(t, http.StatusUnauthorized, w.Code)
+			assert.Equal(t, basicAuthRealm, w.Header().Get("WWW-Authenticate"))
+		})
+	}
+}

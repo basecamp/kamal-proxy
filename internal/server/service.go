@@ -100,6 +100,13 @@ func (so *ServiceOptions) Normalize() {
 	so.PathPrefixes = NormalizePathPrefixes(so.PathPrefixes)
 }
 
+// BasicAuthEnabled reports whether Basic Auth should be enforced. Both the
+// username and the password hash must be set; otherwise we leave it disabled
+// rather than installing a middleware that can never authenticate.
+func (so *ServiceOptions) BasicAuthEnabled() bool {
+	return so.BasicAuthUsername != "" && so.BasicAuthPasswordHash != ""
+}
+
 func (so *ServiceOptions) WithHosts(hosts []string) ServiceOptions {
 	options := *so
 	options.Hosts = hosts
@@ -406,7 +413,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 	var err error
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
 
-	if options.BasicAuthUsername != "" {
+	if options.BasicAuthEnabled() {
 		slog.Debug("Using basic auth", "service", s.name)
 		handler = WithBasicAuthMiddleware(options.BasicAuthUsername, options.BasicAuthPasswordHash, handler)
 	}
