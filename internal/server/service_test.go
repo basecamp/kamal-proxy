@@ -73,6 +73,54 @@ func TestService_RedirectPrefersCanonicalHostOverSpoofedHost(t *testing.T) {
 	require.Equal(t, "https://www.example.com/path", w.Result().Header.Get("Location"))
 }
 
+func TestService_HostMatchesPattern(t *testing.T) {
+	cases := []struct {
+		host, pattern string
+		want          bool
+	}{
+		{"example.com", "example.com", true},
+		{"EXAMPLE.com", "example.com", true},        // case-insensitive
+		{"app.example.com", "*.example.com", true},  // single-label wildcard
+		{"example.com", "*.example.com", false},     // apex doesn't match wildcard
+		{"a.b.example.com", "*.example.com", false}, // multi-label (mirrors bindingsForHost)
+		{"evil.net", "example.com", false},
+		{"example.com", "*.other.com", false},
+	}
+	for _, c := range cases {
+		require.Equal(t, c.want, hostMatchesPattern(c.host, c.pattern), "hostMatchesPattern(%q, %q)", c.host, c.pattern)
+	}
+}
+
+func TestService_SafeRedirectHost(t *testing.T) {
+	cases := []struct {
+		name    string
+		options ServiceOptions
+		host    string
+		want    string
+	}{
+		{"configured host kept", ServiceOptions{Hosts: []string{"example.com"}}, "example.com", "example.com"},
+		{"unconfigured host pinned to configured", ServiceOptions{Hosts: []string{"example.com"}}, "evil.example.net", "example.com"},
+		{"wildcard preserves concrete subdomain", ServiceOptions{Hosts: []string{"*.example.com"}}, "app.example.com", "app.example.com"},
+		{"wildcard-only, non-matching host skips", ServiceOptions{Hosts: []string{"*.example.com"}}, "evil.net", ""},
+		{"canonical preferred over spoof", ServiceOptions{Hosts: []string{"example.com"}, CanonicalHost: "www.example.com"}, "evil.net", "www.example.com"},
+		{"catch-all only skips (no reflect)", ServiceOptions{Hosts: []string{""}}, "evil.net", ""},
+		{"no hosts skips", ServiceOptions{}, "evil.net", ""},
+	}
+	for _, c := range cases {
+		service := &Service{options: c.options}
+		require.Equal(t, c.want, service.safeRedirectHost(c.host), c.name)
+	}
+}
+
+func TestService_RedirectURLSkippedWhenNoSafeHost(t *testing.T) {
+	// A catch-all service (no concrete configured host) with TLS redirect must
+	// not emit a malformed https:/// Location built from the client Host — it
+	// skips the redirect instead.
+	service := &Service{options: ServiceOptions{Hosts: []string{""}, TLSEnabled: true, TLSRedirect: true}}
+	req := httptest.NewRequest(http.MethodGet, "http://evil.example.net/path", nil)
+	require.Equal(t, "", service.redirectURLIfNeeded(req))
+}
+
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 	var forwardedProto string
 
