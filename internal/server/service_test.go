@@ -43,6 +43,36 @@ func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestService_RedirectDoesNotReflectUnconfiguredHost(t *testing.T) {
+	// A request can reach a service via a catch-all binding carrying an
+	// arbitrary Host header. The HTTPS redirect must not echo that host into
+	// the Location header, or it becomes an open redirect (CWE-601). The
+	// redirect target must be pinned to a host we are configured to serve.
+	service := testCreateService(t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: true}, defaultTargetOptions)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/path?q=1", nil)
+	req.Host = "evil.example.net"
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
+	require.Equal(t, "https://example.com/path?q=1", w.Result().Header.Get("Location"))
+}
+
+func TestService_RedirectPrefersCanonicalHostOverSpoofedHost(t *testing.T) {
+	// With a canonical host configured, a spoofed Host must still resolve to the
+	// canonical host rather than being reflected.
+	service := testCreateService(t, ServiceOptions{Hosts: []string{"example.com"}, CanonicalHost: "www.example.com", TLSEnabled: true, TLSRedirect: true}, defaultTargetOptions)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
+	req.Host = "evil.example.net"
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
+	require.Equal(t, "https://www.example.com/path", w.Result().Header.Get("Location"))
+}
+
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 	var forwardedProto string
 

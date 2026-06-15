@@ -511,9 +511,42 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 		desiredHost = s.options.CanonicalHost
 	}
 
-	if desiredScheme != currentScheme || desiredHost != host {
-		return desiredScheme + "://" + desiredHost + r.URL.RequestURI()
+	if desiredScheme == currentScheme && desiredHost == host {
+		return ""
 	}
 
-	return ""
+	// Never reflect an unvalidated, client-supplied Host header into the
+	// redirect target. A request can reach a service via a catch-all binding
+	// with an arbitrary Host, and echoing it here would turn the HTTPS or
+	// canonical-host redirect into an open redirect (CWE-601). Pin the redirect
+	// to a host we are actually configured to serve.
+	desiredHost = s.safeRedirectHost(desiredHost)
+
+	return desiredScheme + "://" + desiredHost + r.URL.RequestURI()
+}
+
+// safeRedirectHost returns a host we are configured to serve, so that a
+// redirect's Location header can never be set to an arbitrary, client-supplied
+// Host. The explicit canonical host is always trusted; otherwise the host must
+// match one of the service's configured hosts. When it doesn't, we fall back to
+// the canonical host or the first configured host rather than reflecting the
+// request's Host header.
+func (s *Service) safeRedirectHost(host string) string {
+	if s.options.CanonicalHost != "" && strings.EqualFold(host, s.options.CanonicalHost) {
+		return host
+	}
+	for _, h := range s.options.Hosts {
+		if h != "" && strings.EqualFold(host, h) {
+			return host
+		}
+	}
+	if s.options.CanonicalHost != "" {
+		return s.options.CanonicalHost
+	}
+	for _, h := range s.options.Hosts {
+		if h != "" {
+			return h
+		}
+	}
+	return host
 }
