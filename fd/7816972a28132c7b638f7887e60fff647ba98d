@@ -1,0 +1,22 @@
+internal/server/service_test.go
+  s_51416398de441d::t_79a9cea2b92580 76-123
+internal/server/service.go
+  s_51416398de441d::t_a25135ade47011 536-540,542,546,550,555,559-574
+  s_51416398de441d::t_c46d94cc13dfd6 524-529
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "fd7816972a28132c7b638f7887e60fff647ba98d",
+  "prompts": {},
+  "sessions": {
+    "s_51416398de441d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "18d39ae1-f0cc-4446-ab6d-8aa17d39b3a9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Jeremy Daer <jeremy@37signals.com>"
+    }
+  }
+}
