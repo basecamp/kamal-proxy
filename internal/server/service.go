@@ -507,8 +507,8 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 	}
 
 	desiredHost := host
-	if s.options.CanonicalHost != "" && host != s.options.CanonicalHost {
-		desiredHost = s.options.CanonicalHost
+	if c := s.options.CanonicalHost; c != "" && !isWildcardHost(c) && host != c {
+		desiredHost = c
 	}
 
 	if desiredScheme == currentScheme && desiredHost == host {
@@ -533,35 +533,53 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 
 // safeRedirectHost returns a host we are configured to serve, so that a
 // redirect's Location header can never be set to an arbitrary, client-supplied
-// Host. The explicit canonical host is always trusted; a request host that
-// matches one of the configured hosts (including a wildcard pattern) is kept
-// as-is. Otherwise we fall back to the canonical host or the first concrete
-// configured host, and if there is none we return an empty string so the caller
+// Host. A request host we serve (the canonical host or a configured host,
+// including a wildcard pattern) is kept as-is. Otherwise we fall back to a
+// concrete host we control — the canonical host or the first configured host —
+// never a wildcard pattern, which is a match rule rather than a valid redirect
+// target. If there is no concrete host we return an empty string so the caller
 // skips the redirect rather than reflecting the request's Host.
 func (s *Service) safeRedirectHost(host string) string {
-	if s.options.CanonicalHost != "" && hostMatchesPattern(host, s.options.CanonicalHost) {
+	if s.hostIsServed(host) {
 		return host
 	}
-	for _, h := range s.options.Hosts {
-		if h != "" && hostMatchesPattern(host, h) {
-			return host
-		}
-	}
 
-	if s.options.CanonicalHost != "" {
-		return s.options.CanonicalHost
+	if c := s.options.CanonicalHost; c != "" && !isWildcardHost(c) {
+		return c
 	}
 	for _, h := range s.options.Hosts {
-		if h != "" && !strings.HasPrefix(h, "*.") {
+		if h != "" && !isWildcardHost(h) {
 			return h
 		}
 	}
 	return ""
 }
 
-// hostMatchesPattern reports whether host matches a configured host pattern,
-// mirroring ServiceMap.bindingsForHost: an exact (case-insensitive) match, or a
-// single-label wildcard such as "*.example.com" matching "<label>.example.com".
+// hostIsServed reports whether host is one this service is configured to serve:
+// the canonical host or a configured host, matched by hostMatchesPattern.
+func (s *Service) hostIsServed(host string) bool {
+	if host == "" {
+		return false
+	}
+	if s.options.CanonicalHost != "" && hostMatchesPattern(host, s.options.CanonicalHost) {
+		return true
+	}
+	for _, h := range s.options.Hosts {
+		if h != "" && hostMatchesPattern(host, h) {
+			return true
+		}
+	}
+	return false
+}
+
+func isWildcardHost(host string) bool {
+	return strings.HasPrefix(host, "*.")
+}
+
+// hostMatchesPattern reports whether host matches a configured host pattern: an
+// exact match, or a single-label wildcard such as "*.example.com" matching
+// "<label>.example.com" — the same wildcard structure ServiceMap.bindingsForHost
+// uses for routing. Matching is case-insensitive, as host names are.
 func hostMatchesPattern(host, pattern string) bool {
 	if strings.EqualFold(host, pattern) {
 		return true

@@ -105,6 +105,7 @@ func TestService_SafeRedirectHost(t *testing.T) {
 		{"canonical preferred over spoof", ServiceOptions{Hosts: []string{"example.com"}, CanonicalHost: "www.example.com"}, "evil.net", "www.example.com"},
 		{"catch-all only skips (no reflect)", ServiceOptions{Hosts: []string{""}}, "evil.net", ""},
 		{"no hosts skips", ServiceOptions{}, "evil.net", ""},
+		{"wildcard canonical never returned as literal", ServiceOptions{Hosts: []string{"example.com"}, CanonicalHost: "*.example.com"}, "evil.net", "example.com"},
 	}
 	for _, c := range cases {
 		service := &Service{options: c.options}
@@ -119,6 +120,15 @@ func TestService_RedirectURLSkippedWhenNoSafeHost(t *testing.T) {
 	service := &Service{options: ServiceOptions{Hosts: []string{""}, TLSEnabled: true, TLSRedirect: true}}
 	req := httptest.NewRequest(http.MethodGet, "http://evil.example.net/path", nil)
 	require.Equal(t, "", service.redirectURLIfNeeded(req))
+}
+
+func TestService_RedirectIgnoresWildcardCanonicalHost(t *testing.T) {
+	// A wildcard is a match rule, not a redirect target: a (mis)configured
+	// wildcard CanonicalHost must never appear in the Location.
+	service := &Service{options: ServiceOptions{Hosts: []string{"example.com"}, CanonicalHost: "*.example.com", TLSEnabled: true, TLSRedirect: true}}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/p", nil)
+	require.Equal(t, "https://example.com/p", service.redirectURLIfNeeded(req))
 }
 
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
