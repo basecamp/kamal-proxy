@@ -43,6 +43,14 @@ func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestServiceOptions_HasConfiguredHosts(t *testing.T) {
+	require.False(t, ServiceOptions{}.HasConfiguredHosts())
+	require.False(t, ServiceOptions{Hosts: []string{""}}.HasConfiguredHosts())
+	require.False(t, ServiceOptions{Hosts: []string{"*.example.com", ""}}.HasConfiguredHosts())
+	require.True(t, ServiceOptions{Hosts: []string{"example.com"}}.HasConfiguredHosts())
+	require.True(t, ServiceOptions{Hosts: []string{"*.example.com"}}.HasConfiguredHosts())
+}
+
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 	var forwardedProto string
 

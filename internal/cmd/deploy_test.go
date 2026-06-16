@@ -8,6 +8,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDeployCommand_TLSRequiresHost(t *testing.T) {
+	assertTLSHostValidation := func(t *testing.T, hosts []string, allowed bool) {
+		t.Helper()
+
+		cmd := newDeployCommand()
+		cmd.args.ServiceOptions.Hosts = hosts
+		cmd.args.ServiceOptions.TLSEnabled = true
+
+		err := cmd.preRun(cmd.cmd, []string{"test-service"})
+
+		if allowed {
+			require.NoError(t, err)
+		} else {
+			require.EqualError(t, err, "host must be set when using TLS")
+		}
+	}
+
+	assertTLSHostValidation(t, nil, false)
+	assertTLSHostValidation(t, []string{""}, false)
+	assertTLSHostValidation(t, []string{"*.example.com", ""}, false)
+
+	assertTLSHostValidation(t, []string{"example.com"}, true)
+	assertTLSHostValidation(t, []string{"example.com", "*.example.com"}, true)
+}
+
 func TestDeployCommand_CanonicalHostValidation(t *testing.T) {
 	tests := []struct {
 		name          string

@@ -104,6 +104,10 @@ func (so *ServiceOptions) WithHosts(hosts []string) ServiceOptions {
 	return options
 }
 
+func (so ServiceOptions) HasConfiguredHosts() bool {
+	return len(so.Hosts) > 0 && !slices.Contains(so.Hosts, "")
+}
+
 func (so *ServiceOptions) WithPathPrefixes(pathPrefixes []string) ServiceOptions {
 	options := *so
 	options.PathPrefixes = pathPrefixes
