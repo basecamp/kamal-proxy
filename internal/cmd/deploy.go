@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/rpc"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +15,7 @@ type deployCommand struct {
 	cmd        *cobra.Command
 	args       server.DeployArgs
 	tlsStaging bool
+	basicAuth  string
 }
 
 func newDeployCommand() *deployCommand {
@@ -66,6 +68,8 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.ForwardHeaders, "forward-headers", false, "Forward X-Forwarded headers to target (default false if TLS enabled; otherwise true)")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.ScopeCookiePaths, "scope-cookie-paths", false, "Scope cookie paths to match path prefix")
 
+	deployCommand.cmd.Flags().StringVar(&deployCommand.basicAuth, "basic-auth", "", "Require HTTP Basic Auth, in the form username:password")
+
 	deployCommand.cmd.MarkFlagRequired("target")
 	deployCommand.cmd.MarkFlagsRequiredTogether("tls-certificate-path", "tls-private-key-path")
 
@@ -87,6 +91,15 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 
 func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 	c.args.ServiceOptions.Normalize()
+
+	if c.basicAuth != "" {
+		username, password, found := strings.Cut(c.basicAuth, ":")
+		if !found || username == "" || password == "" {
+			return fmt.Errorf("basic-auth must be in the form username:password")
+		}
+		c.args.ServiceOptions.BasicAuthUsername = username
+		c.args.ServiceOptions.BasicAuthPasswordHash = server.HashBasicAuthCredential(password)
+	}
 
 	if cmd.Flags().Changed("max-request-body") && !cmd.Flags().Changed("buffer-requests") {
 		return fmt.Errorf("max-request-body can only be set when request buffering is enabled")

@@ -91,11 +91,20 @@ type ServiceOptions struct {
 	StripPrefix                 bool          `json:"strip_prefix"`
 	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
+	BasicAuthUsername           string        `json:"basic_auth_username"`
+	BasicAuthPasswordHash       string        `json:"basic_auth_password_hash"`
 }
 
 func (so *ServiceOptions) Normalize() {
 	so.Hosts = NormalizeHosts(so.Hosts)
 	so.PathPrefixes = NormalizePathPrefixes(so.PathPrefixes)
+}
+
+// BasicAuthEnabled reports whether Basic Auth should be enforced. Both the
+// username and the password hash must be set; otherwise we leave it disabled
+// rather than installing a middleware that can never authenticate.
+func (so *ServiceOptions) BasicAuthEnabled() bool {
+	return so.BasicAuthUsername != "" && so.BasicAuthPasswordHash != ""
 }
 
 func (so *ServiceOptions) WithHosts(hosts []string) ServiceOptions {
@@ -407,6 +416,11 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
 	var err error
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
+
+	if options.BasicAuthEnabled() {
+		slog.Debug("Using basic auth", "service", s.name)
+		handler = WithBasicAuthMiddleware(options.BasicAuthUsername, options.BasicAuthPasswordHash, handler)
+	}
 
 	if options.ErrorPagePath != "" {
 		slog.Debug("Using custom error pages", "service", s.name, "path", options.ErrorPagePath)

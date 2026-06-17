@@ -143,6 +143,23 @@ your certificate file and the corresponding private key:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
 
 
+### Basic authentication
+
+You can require HTTP Basic Authentication for a service by passing the
+`--basic-auth` flag with a `username:password` pair when deploying:
+
+    kamal-proxy deploy service1 --target web-1:3000 --basic-auth admin:secret
+
+Requests without valid credentials receive a `401 Unauthorized` response with a
+`WWW-Authenticate` challenge. The password is hashed before it is stored, and
+credentials are compared in constant time. Because credentials are sent on every
+request, enable TLS when using basic auth.
+
+> **Note:** the credentials are passed on the command line, so they may be
+> visible in shell history, process listings (`ps`), and CI logs. Treat them as
+> a secret and supply them from your secret store rather than hard-coding them.
+
+
 ## Specifying `run` options with environment variables
 
 In some environments, like when running a Docker container, it can be convenient
