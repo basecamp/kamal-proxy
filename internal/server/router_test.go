@@ -1,8 +1,8 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/json"
-    "crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -211,45 +211,45 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 }
 
 func TestRouter_CanonicalHostRedirect(t *testing.T) {
-    router := testRouter(t)
-    _, target := testBackend(t, "first", http.StatusOK)
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
 
-    serviceOptions := defaultServiceOptions
-    serviceOptions.Hosts = []string{"example.com", "www.example.com"}
-    serviceOptions.CanonicalHost = "example.com"
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com", "www.example.com"}
+	serviceOptions.CanonicalHost = "example.com"
 
-    require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
 
-    statusCode, _ := sendGETRequest(router, "http://www.example.com/")
-    assert.Equal(t, http.StatusMovedPermanently, statusCode)
+	statusCode, _ := sendGETRequest(router, "http://www.example.com/")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 
-    statusCode, body := sendGETRequest(router, "http://example.com/")
-    assert.Equal(t, http.StatusOK, statusCode)
-    assert.Equal(t, "first", body)
+	statusCode, body := sendGETRequest(router, "http://example.com/")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
 }
 
 func TestRouter_CanonicalHostRedirectWithTLS(t *testing.T) {
-    router := testRouter(t)
-    _, target := testBackend(t, "first", http.StatusOK)
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
 
-    serviceOptions := defaultServiceOptions
-    serviceOptions.Hosts = []string{"example.com", "www.example.com"}
-    serviceOptions.CanonicalHost = "example.com"
-    serviceOptions.TLSEnabled = true
-    serviceOptions.TLSRedirect = true
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com", "www.example.com"}
+	serviceOptions.CanonicalHost = "example.com"
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSRedirect = true
 
-    require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
 
-    // Should go directly to https://example.com in a single redirect
-    statusCode, _ := sendGETRequest(router, "http://www.example.com/")
-    assert.Equal(t, http.StatusMovedPermanently, statusCode)
+	// Should go directly to https://example.com in a single redirect
+	statusCode, _ := sendGETRequest(router, "http://www.example.com/")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 
-    // HTTPS request to non-canonical host should redirect to canonical host but remain HTTPS
-    req := httptest.NewRequest(http.MethodGet, "https://www.example.com/", nil)
-    req.TLS = &tls.ConnectionState{}
-    w := httptest.NewRecorder()
-    router.ServeHTTP(w, req)
-    assert.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
+	// HTTPS request to non-canonical host should redirect to canonical host but remain HTTPS
+	req := httptest.NewRequest(http.MethodGet, "https://www.example.com/", nil)
+	req.TLS = &tls.ConnectionState{}
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusMovedPermanently, w.Result().StatusCode)
 }
 
 func TestRouter_DeploymentsWithErrorsDoNotUpdateService(t *testing.T) {
