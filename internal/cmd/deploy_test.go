@@ -6,6 +6,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basecamp/kamal-proxy/internal/server"
 )
 
 func TestDeployCommand_TLSRequiresHost(t *testing.T) {
@@ -21,7 +23,8 @@ func TestDeployCommand_TLSRequiresHost(t *testing.T) {
 		if allowed {
 			require.NoError(t, err)
 		} else {
-			require.EqualError(t, err, "host must be set when using TLS")
+			require.ErrorContains(t, err, "host must be set when using TLS")
+			require.ErrorIs(t, err, server.ErrServiceOptionsInvalid)
 		}
 	}
 

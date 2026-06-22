@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"net/rpc"
-	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -86,8 +85,6 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 }
 
 func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
-	c.args.ServiceOptions.Normalize()
-
 	if cmd.Flags().Changed("max-request-body") && !cmd.Flags().Changed("buffer-requests") {
 		return fmt.Errorf("max-request-body can only be set when request buffering is enabled")
 	}
@@ -100,21 +97,8 @@ func (c *deployCommand) preRun(cmd *cobra.Command, args []string) error {
 		c.args.TargetOptions.ForwardHeaders = !c.args.ServiceOptions.TLSEnabled
 	}
 
-	if c.args.ServiceOptions.TLSEnabled {
-		if !c.args.ServiceOptions.HasConfiguredHosts() {
-			return fmt.Errorf("host must be set when using TLS")
-		}
-
-		if !slices.Contains(c.args.ServiceOptions.PathPrefixes, "/") {
-			return fmt.Errorf("TLS settings must be specified on the root path service")
-		}
-	}
-
-	// Validate canonical host is present in hosts when both are specified
-	if c.args.ServiceOptions.CanonicalHost != "" && len(c.args.ServiceOptions.Hosts) > 0 && c.args.ServiceOptions.Hosts[0] != "" {
-		if !slices.Contains(c.args.ServiceOptions.Hosts, c.args.ServiceOptions.CanonicalHost) {
-			return fmt.Errorf("canonical-host '%s' must be present in the hosts list: %v", c.args.ServiceOptions.CanonicalHost, c.args.ServiceOptions.Hosts)
-		}
+	if err := c.args.ServiceOptions.Validate(); err != nil {
+		return err
 	}
 
 	return nil
