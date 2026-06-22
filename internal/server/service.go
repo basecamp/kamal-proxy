@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -54,6 +55,7 @@ var (
 	ErrorRolloutTargetNotSet                 = errors.New("rollout target not set")
 	ErrorUnableToLoadErrorPages              = errors.New("unable to load error pages")
 	ErrorAutomaticTLSDoesNotSupportWildcards = errors.New("automatic TLS does not support wildcards")
+	ErrServiceOptionsInvalid                 = errors.New("service options invalid")
 )
 
 type TargetSlot int
@@ -96,6 +98,28 @@ type ServiceOptions struct {
 func (so *ServiceOptions) Normalize() {
 	so.Hosts = NormalizeHosts(so.Hosts)
 	so.PathPrefixes = NormalizePathPrefixes(so.PathPrefixes)
+}
+
+func (so ServiceOptions) Validate() error {
+	so.Normalize()
+
+	if so.TLSEnabled {
+		if !so.HasConfiguredHosts() {
+			return fmt.Errorf("%w: host must be set when using TLS", ErrServiceOptionsInvalid)
+		}
+
+		if !slices.Contains(so.PathPrefixes, rootPath) {
+			return fmt.Errorf("%w: TLS settings must be specified on the root path service", ErrServiceOptionsInvalid)
+		}
+	}
+
+	if so.CanonicalHost != "" && len(so.Hosts) > 0 && so.Hosts[0] != "" {
+		if !slices.Contains(so.Hosts, so.CanonicalHost) {
+			return fmt.Errorf("%w: canonical-host '%s' must be present in the hosts list: %v", ErrServiceOptionsInvalid, so.CanonicalHost, so.Hosts)
+		}
+	}
+
+	return nil
 }
 
 func (so *ServiceOptions) WithHosts(hosts []string) ServiceOptions {

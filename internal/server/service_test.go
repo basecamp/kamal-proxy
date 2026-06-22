@@ -51,10 +51,38 @@ func TestServiceOptions_HasConfiguredHosts(t *testing.T) {
 	require.True(t, ServiceOptions{Hosts: []string{"*.example.com"}}.HasConfiguredHosts())
 }
 
+func TestServiceOptions_Validate(t *testing.T) {
+	assertValid := func(options ServiceOptions) {
+		t.Helper()
+		require.NoError(t, options.Validate())
+	}
+
+	assertNotValid := func(options ServiceOptions, expected string) {
+		t.Helper()
+		err := options.Validate()
+		require.ErrorContains(t, err, expected)
+		require.ErrorIs(t, err, ErrServiceOptionsInvalid)
+	}
+
+	assertNotValid(ServiceOptions{TLSEnabled: true}, "host must be set when using TLS")
+	assertNotValid(ServiceOptions{Hosts: []string{""}, TLSEnabled: true}, "host must be set when using TLS")
+	assertNotValid(ServiceOptions{Hosts: []string{"*.example.com", ""}, TLSEnabled: true}, "host must be set when using TLS")
+
+	assertValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true})
+	assertValid(ServiceOptions{Hosts: []string{"example.com", "*.example.com"}, TLSEnabled: true})
+
+	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/api"}, TLSEnabled: true}, "TLS settings must be specified on the root path service")
+	assertValid(ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/"}, TLSEnabled: true})
+
+	assertNotValid(ServiceOptions{Hosts: []string{"example.com", "www.example.com"}, CanonicalHost: "api.example.com"}, "canonical-host 'api.example.com' must be present in the hosts list: [example.com www.example.com]")
+	assertValid(ServiceOptions{Hosts: []string{"example.com", "www.example.com"}, CanonicalHost: "www.example.com"})
+}
+
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 	var forwardedProto string
 
-	service := testCreateServiceWithHandler(t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: false}, defaultTargetOptions,
+	service := testCreateServiceWithHandler(
+		t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: false}, defaultTargetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			forwardedProto = r.Header.Get("X-Forwarded-Proto")
 		}),
@@ -225,7 +253,8 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 }
 
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
-	return testCreateServiceWithHandler(t, options, targetOptions,
+	return testCreateServiceWithHandler(
+		t, options, targetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 	)
 }

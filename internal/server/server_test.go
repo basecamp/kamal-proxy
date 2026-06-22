@@ -30,6 +30,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 
 		certPath, keyPath := prepareTestCertificateFiles(t)
 		serviceOptions := defaultServiceOptions
+		serviceOptions.Hosts = []string{"localhost"}
 		serviceOptions.TLSEnabled = true
 		serviceOptions.TLSCertificatePath = certPath
 		serviceOptions.TLSPrivateKeyPath = keyPath
