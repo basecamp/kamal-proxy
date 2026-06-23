@@ -9,60 +9,60 @@ import (
 
 func TestCookieScope_ApplyToHeader(t *testing.T) {
 	tests := []struct {
-		name           string
-		pathPrefix     string
-		host           string
-		inputCookies   []string
-		expectedPaths  []string
+		name          string
+		pathPrefix    string
+		host          string
+		inputCookies  []string
+		expectedPaths []string
 	}{
 		{
-			name:           "scopes cookie with root path",
-			pathPrefix:     "/api",
-			host:           "example.com",
-			inputCookies:   []string{"session=abc; Path=/"},
-			expectedPaths:  []string{"/api"},
+			name:          "scopes cookie with root path",
+			pathPrefix:    "/api",
+			host:          "example.com",
+			inputCookies:  []string{"session=abc; Path=/"},
+			expectedPaths: []string{"/api"},
 		},
 		{
-			name:           "scopes cookie with subpath",
-			pathPrefix:     "/api",
-			host:           "example.com",
-			inputCookies:   []string{"session=abc; Path=/admin"},
-			expectedPaths:  []string{"/api/admin"},
+			name:          "scopes cookie with subpath",
+			pathPrefix:    "/api",
+			host:          "example.com",
+			inputCookies:  []string{"session=abc; Path=/admin"},
+			expectedPaths: []string{"/api/admin"},
 		},
 		{
-			name:           "scopes cookie without path",
-			pathPrefix:     "/api",
-			host:           "example.com",
-			inputCookies:   []string{"session=abc"},
-			expectedPaths:  []string{"/api"},
+			name:          "scopes cookie without path",
+			pathPrefix:    "/api",
+			host:          "example.com",
+			inputCookies:  []string{"session=abc"},
+			expectedPaths: []string{"/api"},
 		},
 		{
-			name:           "scopes first-party cookie with matching domain",
-			pathPrefix:     "/api",
-			host:           "example.com",
-			inputCookies:   []string{"session=abc; Path=/; Domain=example.com"},
-			expectedPaths:  []string{"/api"},
+			name:          "scopes first-party cookie with matching domain",
+			pathPrefix:    "/api",
+			host:          "example.com",
+			inputCookies:  []string{"session=abc; Path=/; Domain=example.com"},
+			expectedPaths: []string{"/api"},
 		},
 		{
-			name:           "does not scope third-party cookie",
-			pathPrefix:     "/api",
-			host:           "example.com",
-			inputCookies:   []string{"tracking=xyz; Path=/; Domain=other.com"},
-			expectedPaths:  []string{"/"},
+			name:          "does not scope third-party cookie",
+			pathPrefix:    "/api",
+			host:          "example.com",
+			inputCookies:  []string{"tracking=xyz; Path=/; Domain=other.com"},
+			expectedPaths: []string{"/"},
 		},
 		{
-			name:           "handles multiple cookies",
-			pathPrefix:     "/app",
-			host:           "example.com",
-			inputCookies:   []string{"a=1; Path=/", "b=2; Path=/foo", "c=3; Path=/; Domain=third.com"},
-			expectedPaths:  []string{"/app", "/app/foo", "/"},
+			name:          "handles multiple cookies",
+			pathPrefix:    "/app",
+			host:          "example.com",
+			inputCookies:  []string{"a=1; Path=/", "b=2; Path=/foo", "c=3; Path=/; Domain=third.com"},
+			expectedPaths: []string{"/app", "/app/foo", "/"},
 		},
 		{
-			name:           "handles host with port",
-			pathPrefix:     "/api",
-			host:           "example.com:8080",
-			inputCookies:   []string{"session=abc; Path=/; Domain=example.com"},
-			expectedPaths:  []string{"/api"},
+			name:          "handles host with port",
+			pathPrefix:    "/api",
+			host:          "example.com:8080",
+			inputCookies:  []string{"session=abc; Path=/; Domain=example.com"},
+			expectedPaths: []string{"/api"},
 		},
 	}
 
