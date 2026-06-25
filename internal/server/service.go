@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -85,6 +86,7 @@ type ServiceOptions struct {
 	TLSEnabled                  bool          `json:"tls_enabled"`
 	TLSCertificatePath          string        `json:"tls_certificate_path"`
 	TLSPrivateKeyPath           string        `json:"tls_private_key_path"`
+	TLSClientCACertificatePath  string        `json:"tls_client_ca_certificate_path"`
 	TLSRedirect                 bool          `json:"tls_redirect"`
 	CanonicalHost               string        `json:"canonical_host"`
 	ACMEDirectory               string        `json:"acme_directory"`
@@ -163,8 +165,9 @@ type Service struct {
 	pauseController   *PauseController
 	rolloutController *RolloutController
 
-	certManager CertManager
-	middleware  http.Handler
+	certManager      CertManager
+	clientCACertPool *x509.CertPool
+	middleware       http.Handler
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -363,6 +366,11 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
+	caPool, err := s.createClientCACertPool(options)
+	if err != nil {
+		return err
+	}
+
 	middleware, err := s.createMiddleware(options, certManager)
 	if err != nil {
 		return err
@@ -371,6 +379,7 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 	s.options = options
 	s.targetOptions = targetOptions
 	s.certManager = certManager
+	s.clientCACertPool = caPool
 	s.middleware = middleware
 
 	return nil
@@ -426,6 +435,14 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 		HostPolicy: autocert.HostWhitelist(options.Hosts...),
 		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
 	}, nil
+}
+
+func (s *Service) createClientCACertPool(options ServiceOptions) (*x509.CertPool, error) {
+	if !options.TLSEnabled || options.TLSClientCACertificatePath == "" {
+		return nil, nil
+	}
+
+	return loadCACertPool(options.TLSClientCACertificatePath)
 }
 
 func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {

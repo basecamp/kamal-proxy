@@ -36,6 +36,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.tlsStaging, "tls-staging", false, "Use Let's Encrypt staging environment for certificate provisioning")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.TLSCertificatePath, "tls-certificate-path", "", "Configure custom TLS certificate path (PEM format)")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.TLSPrivateKeyPath, "tls-private-key-path", "", "Configure custom TLS private key path (PEM format)")
+	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.TLSClientCACertificatePath, "tls-client-ca-path", "", "Path to CA certificate used to verify client certificates (mTLS, requires --tls)")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.ACMECachePath, "tls-acme-cache-path", globalConfig.CertificatePath(), "Location to store ACME assets")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.TLSRedirect, "tls-redirect", true, "Redirect HTTP traffic to HTTPS")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.ServiceOptions.CanonicalHost, "canonical-host", "", "Redirect all requests to this host (e.g., force root or www)")
