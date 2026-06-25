@@ -1,10 +1,13 @@
-.PHONY: build test bench docker
+.PHONY: build test test-race bench docker
 
 build:
 	CGO_ENABLED=0 go build -trimpath -o bin/ ./cmd/...
 
 test:
 	go test ./...
+
+test-race:
+	go test -race ./...
 
 lint:
 	golangci-lint run
