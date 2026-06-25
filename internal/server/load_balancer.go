@@ -74,6 +74,12 @@ func (tl TargetList) StopHealthChecks() {
 	}
 }
 
+func (tl TargetList) CloseIdleConnections() {
+	for _, target := range tl {
+		target.transport.CloseIdleConnections()
+	}
+}
+
 func (tl TargetList) targetsMatchingReadonly(readonly bool) TargetList {
 	result := TargetList{}
 	for _, target := range tl {
@@ -155,6 +161,7 @@ func (lb *LoadBalancer) MarkAllHealthy() {
 
 func (lb *LoadBalancer) Dispose() {
 	lb.all.StopHealthChecks()
+	lb.all.CloseIdleConnections()
 }
 
 func (lb *LoadBalancer) DrainAll(timeout time.Duration) {

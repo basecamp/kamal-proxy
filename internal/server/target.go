@@ -93,6 +93,7 @@ type Target struct {
 	targetURL    *url.URL
 	readonly     bool
 	options      TargetOptions
+	transport    *http.Transport
 	proxyHandler http.Handler
 
 	state        TargetState
@@ -214,6 +215,8 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 	for _, inflight := range toCancel {
 		inflight.cancel(ErrorDraining)
 	}
+
+	t.transport.CloseIdleConnections()
 }
 
 func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
@@ -293,14 +296,16 @@ func (t *Target) buildHealthCheckURL() *url.URL {
 func (t *Target) createProxyHandler() http.Handler {
 	bufferPool := NewBufferPool(ProxyBufferSize)
 
+	t.transport = &http.Transport{
+		MaxIdleConnsPerHost:   MaxIdleConnsPerHost,
+		ResponseHeaderTimeout: t.options.ResponseTimeout,
+	}
+
 	return &httputil.ReverseProxy{
 		BufferPool:   bufferPool,
 		Rewrite:      t.rewrite,
 		ErrorHandler: t.handleProxyError,
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost:   MaxIdleConnsPerHost,
-			ResponseHeaderTimeout: t.options.ResponseTimeout,
-		},
+		Transport:    t.transport,
 	}
 }
 
