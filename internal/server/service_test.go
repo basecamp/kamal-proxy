@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -164,6 +165,40 @@ func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 	service.Resume()
 	assert.Equal(t, http.StatusOK, checkRequest("/up"))
 	assert.Equal(t, http.StatusOK, checkRequest("/other"))
+}
+
+func TestServiceOptions_IsMetricsExcluded(t *testing.T) {
+	options := ServiceOptions{ExcludeMetricsPaths: []string{"/up", "/healthz"}}
+
+	assert.True(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/up", nil)))
+	assert.True(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodPost, "/healthz", nil)))
+	assert.False(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/api/users", nil)))
+	assert.False(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/up/nested", nil)))
+
+	empty := ServiceOptions{}
+	assert.False(t, empty.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/up", nil)))
+}
+
+func TestService_ExcludeMetricsPathsMarksRequestContext(t *testing.T) {
+	options := defaultServiceOptions
+	options.ExcludeMetricsPaths = []string{"/up", "/metrics"}
+
+	service := testCreateService(t, options, defaultTargetOptions)
+
+	checkExcluded := func(path string) bool {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		ctx := &loggingRequestContext{}
+		req = req.WithContext(context.WithValue(req.Context(), contextKeyRequestContext, ctx))
+
+		w := httptest.NewRecorder()
+		service.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Result().StatusCode)
+		return ctx.ExcludeMetrics
+	}
+
+	assert.True(t, checkExcluded("/up"))
+	assert.True(t, checkExcluded("/metrics"))
+	assert.False(t, checkExcluded("/other"))
 }
 
 func TestService_MarshallingState(t *testing.T) {
