@@ -20,6 +20,10 @@ type Config struct {
 	HTTP3Enabled bool
 
 	AlternateConfigDir string
+
+	// ACME configuration for automatic TLS
+	ACMEEmail     string
+	ACMEDirectory string
 }
 
 func (c Config) SocketPath() string {
@@ -32,6 +36,10 @@ func (c Config) StatePath() string {
 
 func (c Config) CertificatePath() string {
 	return path.Join(c.dataDirectory(), "certs")
+}
+
+func (c Config) ACMEStatePath() string {
+	return path.Join(c.dataDirectory(), "acme.state")
 }
 
 // Private

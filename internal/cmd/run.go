@@ -30,6 +30,10 @@ func newRunCommand() *runCommand {
 	runCommand.cmd.Flags().IntVar(&globalConfig.MetricsPort, "metrics-port", getEnvInt("METRICS_PORT", 0), "Publish metrics on the specified port (default zero to disable)")
 	runCommand.cmd.Flags().BoolVar(&globalConfig.HTTP3Enabled, "http3", false, "Enable HTTP/3")
 
+	// ACME/TLS configuration
+	runCommand.cmd.Flags().StringVar(&globalConfig.ACMEEmail, "acme-email", getEnvString("ACME_EMAIL", ""), "Email address for ACME account registration (required for automatic TLS)")
+	runCommand.cmd.Flags().StringVar(&globalConfig.ACMEDirectory, "acme-directory", getEnvString("ACME_DIRECTORY", server.LetsEncryptProduction), "ACME directory URL")
+
 	return runCommand
 }
 
@@ -37,7 +41,26 @@ func (c *runCommand) run(cmd *cobra.Command, args []string) error {
 	c.setLogger()
 
 	router := server.NewRouter(globalConfig.StatePath())
+
 	router.RestoreLastSavedState()
+
+	if globalConfig.ACMEEmail != "" {
+		manager, err := server.NewSANCertManager(server.SANCertManagerConfig{
+			Email:     globalConfig.ACMEEmail,
+			Directory: globalConfig.ACMEDirectory,
+			CachePath: globalConfig.CertificatePath(),
+			StatePath: globalConfig.ACMEStatePath(),
+		})
+		if err != nil {
+			return err
+		}
+
+		if err := manager.Initialize(cmd.Context()); err != nil {
+			return err
+		}
+
+		router.SetSANCertManager(manager)
+	}
 
 	s := server.NewServer(&globalConfig, router)
 	err := s.Start()
