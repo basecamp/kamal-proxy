@@ -47,7 +47,8 @@ func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 	var forwardedProto string
 
-	service := testCreateServiceWithHandler(t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: false}, defaultTargetOptions,
+	service := testCreateServiceWithHandler(
+		t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: false}, defaultTargetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			forwardedProto = r.Header.Get("X-Forwarded-Proto")
 		}),
@@ -131,16 +132,16 @@ func TestService_ReturnSuccessfulHealthCheckWhilePausedOrStopped(t *testing.T) {
 	assert.Equal(t, http.StatusOK, checkRequest("/other"))
 }
 
-func TestServiceOptions_IsMetricsExcluded(t *testing.T) {
+func TestServiceOptions_ShouldExcludeMetrics(t *testing.T) {
 	options := ServiceOptions{ExcludeMetricsPaths: []string{"/up", "/healthz"}}
 
-	assert.True(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/up", nil)))
-	assert.True(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodPost, "/healthz", nil)))
-	assert.False(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/api/users", nil)))
-	assert.False(t, options.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/up/nested", nil)))
+	assert.True(t, options.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/up", nil)))
+	assert.True(t, options.ShouldExcludeMetrics(httptest.NewRequest(http.MethodPost, "/healthz", nil)))
+	assert.False(t, options.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/api/users", nil)))
+	assert.False(t, options.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/up/nested", nil)))
 
 	empty := ServiceOptions{}
-	assert.False(t, empty.IsMetricsExcluded(httptest.NewRequest(http.MethodGet, "/up", nil)))
+	assert.False(t, empty.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/up", nil)))
 }
 
 func TestService_ExcludeMetricsPathsMarksRequestContext(t *testing.T) {
@@ -252,7 +253,8 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 }
 
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
-	return testCreateServiceWithHandler(t, options, targetOptions,
+	return testCreateServiceWithHandler(
+		t, options, targetOptions,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 	)
 }

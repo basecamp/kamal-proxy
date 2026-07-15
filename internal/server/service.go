@@ -94,7 +94,7 @@ type ServiceOptions struct {
 	ExcludeMetricsPaths         []string      `json:"exclude_metrics_paths"`
 }
 
-func (so *ServiceOptions) IsMetricsExcluded(r *http.Request) bool {
+func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
 	return slices.Contains(so.ExcludeMetricsPaths, r.URL.Path)
 }
 
@@ -207,14 +207,12 @@ func (s *Service) StopRollout() error {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.options.IsMetricsExcluded(r) {
+	if s.options.ShouldExcludeMetrics(r) {
 		LoggingRequestContext(r).ExcludeMetrics = true
-		s.middleware.ServeHTTP(w, r)
-		return
+	} else {
+		metrics.Tracker.AddInflightRequest(s.name)
+		defer metrics.Tracker.SubtractInflightRequest(s.name)
 	}
-
-	metrics.Tracker.AddInflightRequest(s.name)
-	defer metrics.Tracker.SubtractInflightRequest(s.name)
 
 	s.middleware.ServeHTTP(w, r)
 }
