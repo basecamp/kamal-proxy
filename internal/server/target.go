@@ -225,16 +225,23 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 
 func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 	t.stateConsumer = stateConsumer
+	t.RestartHealthChecks()
+}
 
+func (t *Target) RestartHealthChecks() {
 	t.withInflightLock(func() {
+		if t.healthcheck != nil {
+			t.healthcheck.Close()
+		}
 		healthCheckURL := t.buildHealthCheckURL()
-		t.healthcheck = NewHealthCheck(
+		t.healthcheck = newHealthCheck(
 			t,
 			healthCheckURL,
 			t.options.HealthCheckConfig.Interval,
 			t.options.HealthCheckConfig.Timeout,
 			t.options.HealthCheckConfig.Host,
 		)
+		t.healthcheck.Start()
 	})
 }
 
