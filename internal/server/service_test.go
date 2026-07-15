@@ -347,6 +347,17 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 	assert.Equal(t, 3*time.Second, service.targetOptions.ResponseTimeout)
 }
 
+func TestNewServiceWithIdleLifecycleBeforeActiveLoadBalancer(t *testing.T) {
+	service, err := NewService("test", ServiceOptions{
+		IdleTimeout:     time.Minute,
+		IdleWakeTimeout: time.Second,
+	}, defaultTargetOptions, &fakeLifecycle{})
+	require.NoError(t, err)
+	t.Cleanup(service.idleController.Close)
+
+	assert.Empty(t, service.idleController.ContainerNames)
+}
+
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
 	return testCreateServiceWithHandler(
 		t, options, targetOptions,

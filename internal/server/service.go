@@ -482,6 +482,9 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 }
 
 func (s *Service) activeContainerNames() []string {
+	if s.active == nil {
+		return nil
+	}
 	names := make([]string, 0, len(s.active.WriteTargets()))
 	for _, target := range s.active.WriteTargets() {
 		names = append(names, target.ContainerName())
