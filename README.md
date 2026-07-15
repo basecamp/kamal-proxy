@@ -76,6 +76,12 @@ enable this feature where that trust is acceptable; the lifecycle calls are
 isolated behind the `ContainerLifecycle` interface so they can be moved to an
 external service later.
 
+The Docker client negotiates the API version once from the daemon's unversioned
+`/version` endpoint and caches it for start/stop calls. If that endpoint is
+unavailable or returns a non-success status, it falls back to the legacy
+`v1.41` paths for compatibility with restricted socket proxies; a successful
+but malformed version response is rejected instead of guessing.
+
 The `deploy` command also waits for traffic to drain from the old instance before
 returning. This means it's safe to remove the old instance as soon as `deploy`
 returns successfully, without interrupting any in-flight requests.
