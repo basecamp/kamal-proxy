@@ -2,9 +2,10 @@ package server
 
 import (
 	"context"
-	"net"
-	"net/http"
-	"net/http/httptest"
+	"encoding/json"
+	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,64 +13,83 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIdleController_IdleAndWake(t *testing.T) {
-	stopCalled := make(chan bool, 1)
-	startCalled := make(chan bool, 1)
+type fakeLifecycle struct {
+	starts, stops     atomic.Int32
+	startErr, stopErr error
+}
 
-	dockerServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1.41/containers/test-container/stop" {
-			stopCalled <- true
-			w.WriteHeader(http.StatusNoContent)
-		} else if r.URL.Path == "/v1.41/containers/test-container/start" {
-			startCalled <- true
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}))
+func (f *fakeLifecycle) StartContainer(context.Context, string) error {
+	f.starts.Add(1)
+	return f.startErr
+}
+func (f *fakeLifecycle) StopContainer(context.Context, string) error {
+	f.stops.Add(1)
+	return f.stopErr
+}
 
-	socketPath := t.TempDir() + "/docker.sock"
-	l, err := net.Listen("unix", socketPath)
+func waitFor(t *testing.T, check func() bool) {
+	t.Helper()
+	require.Eventually(t, check, time.Second, time.Millisecond)
+}
+
+func TestIdleControllerDoesNotStopInflightRequest(t *testing.T) {
+	lifecycle := &fakeLifecycle{}
+	c := NewIdleController(10*time.Millisecond, time.Second, []string{"web"}, lifecycle, func(time.Duration) error { return nil })
+	defer c.Close()
+	require.NoError(t, c.BeginRequest(context.Background()))
+	time.Sleep(30 * time.Millisecond)
+	assert.Zero(t, lifecycle.stops.Load())
+	c.EndRequest()
+	waitFor(t, func() bool { return lifecycle.stops.Load() == 1 })
+}
+
+func TestIdleControllerCoalescesConcurrentWake(t *testing.T) {
+	lifecycle := &fakeLifecycle{}
+	ready := make(chan struct{})
+	c := NewIdleController(time.Millisecond, time.Second, []string{"web"}, lifecycle, func(time.Duration) error { <-ready; return nil })
+	defer c.Close()
+	waitFor(t, func() bool { return c.StateValue() == IdleStateSleeping })
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() { defer wg.Done(); require.NoError(t, c.BeginRequest(context.Background())); c.EndRequest() }()
+	}
+	waitFor(t, func() bool { return lifecycle.starts.Load() == 1 })
+	close(ready)
+	wg.Wait()
+	assert.Equal(t, int32(1), lifecycle.starts.Load())
+}
+
+func TestIdleControllerWakeFailureAndTimeout(t *testing.T) {
+	lifecycle := &fakeLifecycle{startErr: errors.New("start failed")}
+	c := NewIdleController(time.Millisecond, time.Second, []string{"web"}, lifecycle, func(time.Duration) error { return nil })
+	defer c.Close()
+	waitFor(t, func() bool { return c.StateValue() == IdleStateSleeping })
+	assert.ErrorContains(t, c.BeginRequest(context.Background()), "start failed")
+	c.EndRequest()
+
+	blocking := make(chan struct{})
+	c.Reset([]string{"web"}, func(time.Duration) error { <-blocking; return nil })
+	c.mu.Lock()
+	c.State, c.WakeTimeout = IdleStateSleeping, 10*time.Millisecond
+	c.mu.Unlock()
+	lifecycle.startErr = nil
+	assert.ErrorIs(t, c.BeginRequest(context.Background()), ErrIdleWakeTimeout)
+	c.EndRequest()
+	close(blocking)
+}
+
+func TestIdleControllerRestoresSleepingAndWakes(t *testing.T) {
+	original := &IdleController{State: IdleStateWaking, IdleTimeout: time.Minute, WakeTimeout: time.Second, ContainerNames: []string{"web"}}
+	data, err := json.Marshal(original)
 	require.NoError(t, err)
-	dockerServer.Listener = l
-	dockerServer.Start()
-	defer dockerServer.Close()
-
-	dockerClient := NewDockerClient(socketPath)
-
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}))
-	defer backend.Close()
-
-	target, _ := NewTarget(backend.URL[7:], defaultTargetOptions)
-	tl := TargetList{target}
-	lb := NewLoadBalancer(tl, 0, false)
-	lb.MarkAllHealthy()
-
-	ic := NewIdleController("test", 100*time.Millisecond, time.Second, []string{"test-container"}, dockerClient, lb)
-	defer ic.Close()
-
-	// Initial state: active
-	assert.Equal(t, IdleStateActive, ic.GetState())
-
-	// Wait for idle to trigger
-	select {
-	case <-stopCalled:
-	case <-time.After(time.Second):
-		t.Fatal("Timeout waiting for container to be stopped")
-	}
-
-	assert.Equal(t, IdleStateSleeping, ic.GetState())
-
-	// Wake up on request
-	action := ic.WaitIfSleeping()
-	assert.Equal(t, IdleWaitActionProceed, action)
-
-	select {
-	case <-startCalled:
-	case <-time.After(time.Second):
-		t.Fatal("Timeout waiting for container to be started")
-	}
-
-	assert.Equal(t, IdleStateActive, ic.GetState())
+	var restored IdleController
+	require.NoError(t, json.Unmarshal(data, &restored))
+	lifecycle := &fakeLifecycle{}
+	restored.configure(time.Minute, time.Second, []string{"web"}, lifecycle, func(time.Duration) error { return nil })
+	defer restored.Close()
+	assert.Equal(t, IdleStateSleeping, restored.StateValue())
+	require.NoError(t, restored.BeginRequest(context.Background()))
+	restored.EndRequest()
+	assert.Equal(t, int32(1), lifecycle.starts.Load())
 }

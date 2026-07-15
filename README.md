@@ -50,6 +50,32 @@ Each deployment takes over all the traffic from the previously deployed
 instance. As soon as Kamal Proxy determines that the new instance is healthy,
 it will route all new traffic to that instance.
 
+### Opt-in scale to zero
+
+Services can stop their write containers after an idle period and wake them on
+the next application request:
+
+    kamal-proxy run --docker-socket /var/run/docker.sock
+    kamal-proxy deploy service1 --target web-1:3000 --idle-timeout 15m --idle-wake-timeout 30s
+
+`--idle-timeout` defaults to `0` (disabled). `--idle-wake-timeout` defaults to
+`30s` and bounds how long each request waits for Docker start and a successful
+configured health check. The target hostname (`web-1` above) must be the Docker
+container name. `DOCKER_SOCKET` and `KAMAL_PROXY_DOCKER_SOCKET` are equivalents
+of the run flag.
+
+Requests are held before their bodies are read, so POST bodies are forwarded
+unchanged after a successful wake. Concurrent wake requests are coalesced.
+Open streaming responses and WebSockets count as activity/in-flight work and
+prevent sleeping until they close; a new stream or WebSocket is held during
+wake like any other request. Health-check requests do not wake or reset an idle
+service and receive success while it is sleeping.
+
+Mounting the Docker socket gives the proxy host-level container control. Only
+enable this feature where that trust is acceptable; the lifecycle calls are
+isolated behind the `ContainerLifecycle` interface so they can be moved to an
+external service later.
+
 The `deploy` command also waits for traffic to drain from the old instance before
 returning. This means it's safe to remove the old instance as soon as `deploy`
 returns successfully, without interrupting any in-flight requests.

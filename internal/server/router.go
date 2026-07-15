@@ -51,6 +51,7 @@ type Router struct {
 	dockerClient *DockerClient
 	services     *ServiceMap
 	serviceLock  sync.RWMutex
+	stateLock    sync.Mutex
 }
 
 type ServiceDescription struct {
@@ -90,19 +91,19 @@ func (r *Router) RestoreLastSavedState() error {
 		return err
 	}
 
-	r.withWriteLock(func() error {
+	return r.withWriteLock(func() error {
 		r.services = NewServiceMap()
 		for _, service := range services {
-			service.docker = r.dockerClient
-			service.initialize(service.options, service.targetOptions)
+			service.lifecycle = r.dockerClient
+			service.stateChanged = func() { _ = r.saveStateSnapshot() }
+			if err := service.initialize(service.options, service.targetOptions); err != nil {
+				return err
+			}
 			r.services.Set(service)
 		}
-
+		slog.Info("Restored saved state", "path", r.statePath)
 		return nil
 	})
-
-	slog.Info("Restored saved state", "path", r.statePath)
-	return nil
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -265,7 +266,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 
 				state := service.pauseController.GetState().String()
 				if service.idleController != nil && service.pauseController.GetState() == PauseStateRunning {
-					icState := service.idleController.GetState()
+					icState := service.idleController.StateValue()
 					if icState != IdleStateActive {
 						state = icState.String()
 					}
@@ -317,10 +318,17 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 func (r *Router) createOrUpdateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
 	service := r.services.Get(name)
 	if service == nil {
-		return NewService(name, options, targetOptions, r.dockerClient)
+		service, err := NewService(name, options, targetOptions, r.dockerClient)
+		if err == nil {
+			service.stateChanged = func() { _ = r.saveStateSnapshot() }
+			if service.idleController != nil {
+				service.idleController.SetPersist(service.stateChanged)
+			}
+		}
+		return service, err
 	}
 
-	service.docker = r.dockerClient
+	service.lifecycle = r.dockerClient
 	err := service.UpdateOptions(options, targetOptions)
 	return service, err
 }
@@ -370,6 +378,8 @@ func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalan
 }
 
 func (r *Router) saveStateSnapshot() error {
+	r.stateLock.Lock()
+	defer r.stateLock.Unlock()
 	services := []*Service{}
 	r.withReadLock(func() error {
 		for _, service := range r.services.All() {

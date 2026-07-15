@@ -143,6 +143,14 @@ func (t *Target) Address() string {
 	return t.targetURL.Host
 }
 
+func (t *Target) ContainerName() string { return t.targetURL.Hostname() }
+
+func (t *Target) markUnhealthyForWake() {
+	t.inflightLock.Lock()
+	t.state = TargetStateUnhealthy
+	t.inflightLock.Unlock()
+}
+
 func (t *Target) State() TargetState {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()

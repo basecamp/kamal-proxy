@@ -47,9 +47,10 @@ const (
 	DefaultTargetTimeout       = time.Second * 30
 	DefaultMaxMemoryBufferSize = 1 * MB
 	DefaultMaxRequestBodySize  = 0
-	DefaultMaxResponseBodySize  = 0
+	DefaultMaxResponseBodySize = 0
 
-	DefaultIdleWakeTimeout = 30 * time.Second
+	DefaultIdleWakeTimeout      = 30 * time.Second
+	DefaultIdleLifecycleTimeout = 30 * time.Second
 
 	DefaultStopMessage = ""
 )
@@ -124,6 +125,9 @@ func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
 func (so *ServiceOptions) Normalize() {
 	so.Hosts = NormalizeHosts(so.Hosts)
 	so.PathPrefixes = NormalizePathPrefixes(so.PathPrefixes)
+	if so.IdleTimeout > 0 && so.IdleWakeTimeout == 0 {
+		so.IdleWakeTimeout = DefaultIdleWakeTimeout
+	}
 }
 
 func (so ServiceOptions) Validate() error {
@@ -163,6 +167,9 @@ func (so ServiceOptions) Validate() error {
 		if !slices.Contains(so.Hosts, so.CanonicalHost) {
 			return fmt.Errorf("%w: canonical-host '%s' must be present in the hosts list: %v", ErrServiceOptionsInvalid, so.CanonicalHost, so.Hosts)
 		}
+	}
+	if so.IdleTimeout < 0 || so.IdleWakeTimeout < 0 {
+		return fmt.Errorf("%w: idle timeouts cannot be negative", ErrServiceOptionsInvalid)
 	}
 
 	return nil
@@ -210,16 +217,17 @@ type Service struct {
 	idleController    *IdleController
 	rolloutController *RolloutController
 
-	docker *DockerClient
+	lifecycle ContainerLifecycle
 
-	certManager CertManager
-	middleware  http.Handler
+	certManager  CertManager
+	middleware   http.Handler
+	stateChanged func()
 }
 
-func NewService(name string, options ServiceOptions, targetOptions TargetOptions, docker *DockerClient) (*Service, error) {
+func NewService(name string, options ServiceOptions, targetOptions TargetOptions, lifecycle ContainerLifecycle) (*Service, error) {
 	service := &Service{
 		name:            name,
-		docker:          docker,
+		lifecycle:       lifecycle,
 		pauseController: NewPauseController(),
 	}
 
@@ -257,8 +265,7 @@ func (s *Service) UpdateLoadBalancer(lb *LoadBalancer, slot TargetSlot) *LoadBal
 		replaced = s.active
 		s.active = lb
 		if s.idleController != nil {
-			s.idleController.lb = lb
-			s.idleController.UpdateContainers(lb.WriteTargets().Names())
+			s.idleController.Reset(s.activeContainerNames(), s.waitUntilActiveHealthy)
 		}
 	}
 
@@ -296,7 +303,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.idleController != nil && !s.targetOptions.IsHealthCheckRequest(r) {
-		s.idleController.TrackActivity()
+		if err := s.idleController.BeginRequest(r.Context()); err != nil {
+			s.idleController.EndRequest()
+			SetErrorResponse(w, r, http.StatusServiceUnavailable, err)
+			return
+		}
+		defer s.idleController.EndRequest()
 	}
 
 	s.middleware.ServeHTTP(w, r)
@@ -456,21 +468,33 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 
 	if s.options.IdleTimeout > 0 {
 		if s.idleController == nil {
-			s.idleController = NewIdleController(s.name, s.options.IdleTimeout, s.options.IdleWakeTimeout, s.activeTargets(), s.docker, s.active)
+			s.idleController = NewIdleController(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.activeContainerNames(), s.lifecycle, s.waitUntilActiveHealthy)
 		} else {
-			s.idleController.docker = s.docker
-			s.idleController.lb = s.active
-			s.idleController.serviceName = s.name
-			s.idleController.IdleTimeout = s.options.IdleTimeout
-			s.idleController.WakeTimeout = s.options.IdleWakeTimeout
-			s.idleController.UpdateContainers(s.activeTargets())
+			s.idleController.configure(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.activeContainerNames(), s.lifecycle, s.waitUntilActiveHealthy)
 		}
+		s.idleController.SetPersist(s.stateChanged)
 	} else if s.idleController != nil {
 		s.idleController.Close()
 		s.idleController = nil
 	}
 
 	return nil
+}
+
+func (s *Service) activeContainerNames() []string {
+	names := make([]string, 0, len(s.active.WriteTargets()))
+	for _, target := range s.active.WriteTargets() {
+		names = append(names, target.ContainerName())
+	}
+	return names
+}
+
+func (s *Service) waitUntilActiveHealthy(timeout time.Duration) error {
+	s.serviceLock.RLock()
+	lb := s.active
+	s.serviceLock.RUnlock()
+	lb.PrepareForWake()
+	return lb.WaitUntilHealthy(timeout)
 }
 
 func (s *Service) Drain(timeout time.Duration) {
@@ -494,13 +518,6 @@ func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 	}
 
 	return lb
-}
-
-func (s *Service) activeTargets() []string {
-	if s.active == nil {
-		return nil
-	}
-	return s.active.WriteTargets().Names()
 }
 
 func (s *Service) servesRootPath() bool {
@@ -593,7 +610,7 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if s.handleIdleRequests(w, r) {
+	if s.handleIdleHealthCheck(w, r) {
 		return
 	}
 
@@ -603,7 +620,7 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (s *Service) handleIdleRequests(w http.ResponseWriter, r *http.Request) bool {
+func (s *Service) handleIdleHealthCheck(w http.ResponseWriter, r *http.Request) bool {
 	if s.idleController == nil {
 		return false
 	}
@@ -611,20 +628,12 @@ func (s *Service) handleIdleRequests(w http.ResponseWriter, r *http.Request) boo
 	if s.targetOptions.IsHealthCheckRequest(r) {
 		// Health checks should not wake the service.
 		// If it's sleeping, just return 200.
-		icState := s.idleController.GetState()
+		icState := s.idleController.StateValue()
 		if icState != IdleStateActive {
 			w.WriteHeader(http.StatusOK)
 			return true
 		}
 		return false
-	}
-
-	action := s.idleController.WaitIfSleeping()
-	if action == IdleWaitActionTimedOut {
-		slog.Warn("Rejecting request due to idle wake timeout", "service", s.name, "path", r.URL.Path)
-		w.Header().Set("Retry-After", "10")
-		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
-		return true
 	}
 
 	return false

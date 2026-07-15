@@ -153,6 +153,16 @@ func (lb *LoadBalancer) MarkAllHealthy() {
 	lb.updateHealthyTargets()
 }
 
+func (lb *LoadBalancer) PrepareForWake() {
+	for _, target := range lb.all {
+		target.markUnhealthyForWake()
+	}
+	lb.lock.Lock()
+	lb.waitForHealthyContext, lb.markHealthy = context.WithCancel(context.Background())
+	lb.writers, lb.readers = TargetList{}, TargetList{}
+	lb.lock.Unlock()
+}
+
 func (lb *LoadBalancer) Dispose() {
 	lb.all.StopHealthChecks()
 }

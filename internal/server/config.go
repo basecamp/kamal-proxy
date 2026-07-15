@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	DefaultHttpPort  = 80
-	DefaultHttpsPort = 443
+	DefaultHttpPort         = 80
+	DefaultHttpsPort        = 443
 	DefaultDockerSocketPath = "/var/run/docker.sock"
 )
 
