@@ -97,7 +97,7 @@ type ServiceOptions struct {
 }
 
 func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
-	return slices.Contains(so.ExcludeMetricsPaths, r.URL.Path)
+	return slices.Contains(so.ExcludeMetricsPaths, RoutedTargetPath(r))
 }
 
 func (so *ServiceOptions) Normalize() {
