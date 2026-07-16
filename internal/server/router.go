@@ -35,6 +35,17 @@ func RoutingContext(r *http.Request) *routingContext {
 	return rc
 }
 
+func RoutedTargetPath(r *http.Request) string {
+	path := r.URL.Path
+	if rc := RoutingContext(r); rc != nil {
+		path = strings.TrimPrefix(path, rc.MatchedPrefix)
+		if path == "" {
+			path = rootPath
+		}
+	}
+	return path
+}
+
 type Router struct {
 	statePath   string
 	services    *ServiceMap

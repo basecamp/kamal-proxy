@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,6 +47,11 @@ func testTargetWithOptions(t testing.TB, targetOptions TargetOptions, handler ht
 	target, err := NewTarget(targetURL, targetOptions)
 	require.NoError(t, err)
 	return target
+}
+
+func testRequestWithMatchedPrefix(req *http.Request, prefix string) *http.Request {
+	ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: prefix})
+	return req.WithContext(ctx)
 }
 
 func testBackend(t testing.TB, body string, statusCode int) (*httptest.Server, string) {

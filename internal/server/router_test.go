@@ -563,6 +563,38 @@ func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
 	assert.Equal(t, "/app", body)
 }
 
+func TestRouter_HealthCheckWhilePausedWithPathPrefix(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackend(t, "ok", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PathPrefixes = []string{"/api"}
+	serviceOptions.StripPrefix = true
+	require.NoError(t, router.DeployService("service1", []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	serviceOptions = defaultServiceOptions
+	serviceOptions.PathPrefixes = []string{"/admin"}
+	serviceOptions.StripPrefix = false
+	targetOptions := defaultTargetOptions
+	targetOptions.HealthCheckConfig.Path = "/admin/up"
+	require.NoError(t, router.DeployService("service2", []string{backend}, defaultEmptyReaders, serviceOptions, targetOptions, defaultDeploymentOptions))
+
+	require.NoError(t, router.PauseService("service1", time.Second, time.Millisecond*10))
+	require.NoError(t, router.PauseService("service2", time.Second, time.Millisecond*10))
+
+	// Health checks succeed while paused, with the health check path matched
+	// against the target's view of the path
+	statusCode, _ := sendGETRequest(router, "http://example.com/api/up")
+	assert.Equal(t, http.StatusOK, statusCode)
+
+	statusCode, _ = sendGETRequest(router, "http://example.com/admin/up")
+	assert.Equal(t, http.StatusOK, statusCode)
+
+	// Other requests are still paused
+	statusCode, _ = sendGETRequest(router, "http://example.com/api/other")
+	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
+}
+
 func TestRouter_PathBasedRoutingWithHosts(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)

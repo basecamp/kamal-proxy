@@ -137,6 +137,10 @@ matches are exact:
 Excluded requests are still logged; only the Prometheus counters and
 in-flight gauge are skipped.
 
+Paths are specified as the upstream receives them. Services deployed using
+stripped path prefixes should specify their excluded paths in the un-prefixed
+form.
+
 
 ### Automatic TLS
 

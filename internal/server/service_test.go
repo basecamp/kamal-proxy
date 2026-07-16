@@ -175,6 +175,11 @@ func TestServiceOptions_ShouldExcludeMetrics(t *testing.T) {
 	assert.False(t, options.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/api/users", nil)))
 	assert.False(t, options.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/up/nested", nil)))
 
+	// When a path prefix is due to be stripped, match against the target's view of the path
+	assert.True(t, options.ShouldExcludeMetrics(testRequestWithMatchedPrefix(httptest.NewRequest(http.MethodGet, "/api/up", nil), "/api")))
+	assert.False(t, options.ShouldExcludeMetrics(testRequestWithMatchedPrefix(httptest.NewRequest(http.MethodGet, "/api/users", nil), "/api")))
+	assert.False(t, options.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/api/up", nil)))
+
 	empty := ServiceOptions{}
 	assert.False(t, empty.ShouldExcludeMetrics(httptest.NewRequest(http.MethodGet, "/up", nil)))
 }

@@ -285,6 +285,11 @@ func TestTarget_IsHealthCheckRequest(t *testing.T) {
 
 	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/up/other", nil)))
 	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/health", nil)))
+
+	// When a path prefix is due to be stripped, match against the target's view of the path
+	assert.True(t, target.options.IsHealthCheckRequest(testRequestWithMatchedPrefix(httptest.NewRequest(http.MethodGet, "/api/up", nil), "/api")))
+	assert.False(t, target.options.IsHealthCheckRequest(testRequestWithMatchedPrefix(httptest.NewRequest(http.MethodGet, "/api/health", nil), "/api")))
+	assert.False(t, target.options.IsHealthCheckRequest(httptest.NewRequest(http.MethodGet, "/api/up", nil)))
 }
 
 func TestTarget_AddedTargetBecomesHealthy(t *testing.T) {
