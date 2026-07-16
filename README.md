@@ -119,6 +119,25 @@ the original path (including the prefix), specify `--strip-path-prefix=false`:
     kamal-proxy deploy service1 --target web-1:3000 --path-prefix=/api --strip-path-prefix=false
 
 
+### Excluding paths from metrics
+
+When metrics are enabled (with `--metrics-port`), every request handled by
+the proxy is recorded in the Prometheus output. High-volume traffic from
+upstream load balancers or uptime monitors hitting health endpoints can
+both inflate the metrics pipeline and dominate aggregate measures like
+request rate, latency percentiles, and error rates, making the resulting
+metrics a poor reflection of real user traffic.
+
+To exclude one or more paths from the metrics for a service, use
+`--exclude-metrics-path` when deploying. The flag may be repeated, and
+matches are exact:
+
+    kamal-proxy deploy service1 --target web-1:3000 --exclude-metrics-path /up --exclude-metrics-path /healthz
+
+Excluded requests are still logged; only the Prometheus counters and
+in-flight gauge are skipped.
+
+
 ### Automatic TLS
 
 Kamal Proxy can automatically obtain and renew TLS certificates for your

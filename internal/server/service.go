@@ -93,6 +93,11 @@ type ServiceOptions struct {
 	StripPrefix                 bool          `json:"strip_prefix"`
 	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
+	ExcludeMetricsPaths         []string      `json:"exclude_metrics_paths"`
+}
+
+func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
+	return slices.Contains(so.ExcludeMetricsPaths, r.URL.Path)
 }
 
 func (so *ServiceOptions) Normalize() {
@@ -230,8 +235,12 @@ func (s *Service) StopRollout() error {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	metrics.Tracker.AddInflightRequest(s.name)
-	defer metrics.Tracker.SubtractInflightRequest(s.name)
+	if s.options.ShouldExcludeMetrics(r) {
+		LoggingRequestContext(r).ExcludeMetrics = true
+	} else {
+		metrics.Tracker.AddInflightRequest(s.name)
+		defer metrics.Tracker.SubtractInflightRequest(s.name)
+	}
 
 	s.middleware.ServeHTTP(w, r)
 }
