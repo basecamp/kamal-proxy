@@ -36,6 +36,37 @@ func TestDeployCommand_TLSRequiresHost(t *testing.T) {
 	assertTLSHostValidation(t, []string{"example.com", "*.example.com"}, true)
 }
 
+func TestDeployCommand_TLSOnDemandURL(t *testing.T) {
+	t.Run("host is not required when a TLS on-demand URL is set", func(t *testing.T) {
+		cmd := newDeployCommand()
+		cmd.args.ServiceOptions.TLSEnabled = true
+		cmd.args.ServiceOptions.TLSOnDemandURL = "https://example.com/allow-host"
+
+		require.NoError(t, cmd.preRun(cmd.cmd, []string{"test-service"}))
+	})
+
+	t.Run("hosts cannot be combined with a TLS on-demand URL", func(t *testing.T) {
+		cmd := newDeployCommand()
+		cmd.args.ServiceOptions.TLSEnabled = true
+		cmd.args.ServiceOptions.TLSOnDemandURL = "https://example.com/allow-host"
+		cmd.args.ServiceOptions.Hosts = []string{"example.com"}
+
+		err := cmd.preRun(cmd.cmd, []string{"test-service"})
+		require.ErrorContains(t, err, "cannot set hosts when using a TLS on-demand URL")
+		require.ErrorIs(t, err, server.ErrServiceOptionsInvalid)
+	})
+
+	t.Run("the TLS on-demand URL must be valid", func(t *testing.T) {
+		cmd := newDeployCommand()
+		cmd.args.ServiceOptions.TLSEnabled = true
+		cmd.args.ServiceOptions.TLSOnDemandURL = "ftp://example.com/allow-host"
+
+		err := cmd.preRun(cmd.cmd, []string{"test-service"})
+		require.ErrorContains(t, err, "unsupported scheme")
+		require.ErrorIs(t, err, server.ErrServiceOptionsInvalid)
+	})
+}
+
 func TestDeployCommand_CanonicalHostValidation(t *testing.T) {
 	tests := []struct {
 		name          string
