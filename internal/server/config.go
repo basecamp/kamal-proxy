@@ -23,7 +23,7 @@ type Config struct {
 }
 
 func (c Config) SocketPath() string {
-	return path.Join(c.runtimeDirectory(), "kamal-proxy.sock")
+	return cmp.Or(os.Getenv("KAMAL_PROXY_SOCKET"), path.Join(c.runtimeDirectory(), "kamal-proxy.sock"))
 }
 
 func (c Config) StatePath() string {
