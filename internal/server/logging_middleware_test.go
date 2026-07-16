@@ -98,3 +98,26 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	assert.Equal(t, "HTTP/1.1", logline.Proto)
 	assert.Equal(t, "http", logline.Scheme)
 }
+
+func TestMiddleware_LoggingMiddlewareLogsClientIPHeaderAsRemoteAddr(t *testing.T) {
+	out := &strings.Builder{}
+	logger := slog.New(slog.NewJSONHandler(out, nil))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+
+	middleware := WithLoggingMiddleware(logger, 80, 443, WithClientIPMiddleware("True-Client-IP", handler))
+
+	req := httptest.NewRequest("GET", "http://app.example.com/", nil)
+	req.Header.Set("X-Forwarded-For", "10.10.10.10")
+	req.Header.Set("True-Client-IP", "203.0.113.7")
+
+	middleware.ServeHTTP(httptest.NewRecorder(), req)
+
+	logline := struct {
+		RemoteAddr string `json:"remote_addr"`
+	}{}
+
+	err := json.NewDecoder(strings.NewReader(out.String())).Decode(&logline)
+	require.NoError(t, err)
+
+	assert.Equal(t, "203.0.113.7", logline.RemoteAddr)
+}

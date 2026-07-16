@@ -94,6 +94,7 @@ type ServiceOptions struct {
 	WriterAffinityTimeout       time.Duration `json:"writer_affinity_timeout"`
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
 	ExcludeMetricsPaths         []string      `json:"exclude_metrics_paths"`
+	ClientIPHeader              string        `json:"client_ip_header"`
 }
 
 func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
@@ -454,6 +455,10 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 	if certManager != nil {
 		slog.Debug("Using ACME handler", "service", s.name)
 		handler = certManager.HTTPHandler(handler)
+	}
+
+	if options.ClientIPHeader != "" {
+		handler = WithClientIPMiddleware(options.ClientIPHeader, handler)
 	}
 
 	return handler, nil
