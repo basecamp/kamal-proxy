@@ -81,6 +81,19 @@ func TestServiceMap_DefaultTLSHostname(t *testing.T) {
 	assert.Equal(t, "example.com", sm.DefaultTLSHostname())
 }
 
+func TestServiceMap_DefaultTLSHostnameIgnoresOnDemandTLSServices(t *testing.T) {
+	sm := NewServiceMap()
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "/allow-host"})})
+	assert.Empty(t, sm.DefaultTLSHostname())
+
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true})})
+	assert.Equal(t, "example.com", sm.DefaultTLSHostname())
+
+	// Re-setting the on-demand service must not displace the default hostname.
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "/allow-host"})})
+	assert.Equal(t, "example.com", sm.DefaultTLSHostname())
+}
+
 func TestServiceMap_SyncingTLSSettingsFromRootPath(t *testing.T) {
 	sm := NewServiceMap()
 	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"1.example.com"}, TLSEnabled: true, TLSRedirect: false})})

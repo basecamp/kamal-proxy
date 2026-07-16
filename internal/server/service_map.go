@@ -155,7 +155,7 @@ func (m *ServiceMap) updateRequestServiceMap() {
 
 func (m *ServiceMap) updateDefaultTLSHostname() {
 	for _, service := range m.services {
-		if service.options.TLSEnabled && len(service.options.Hosts) > 0 {
+		if service.options.TLSEnabled && len(service.options.Hosts) > 0 && service.options.Hosts[0] != "" {
 			m.defaultTLSHostname = service.options.Hosts[0]
 			return
 		}

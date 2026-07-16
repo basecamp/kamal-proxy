@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -801,6 +804,41 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	statusCode, body = sendGETRequest(router, "https://other.example.com/api")
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "third", body)
+}
+
+func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+
+	allowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("host") == "allowed.example.com" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer allowServer.Close()
+
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSOnDemandURL = allowServer.URL
+
+	router := NewRouter(statePath)
+	require.NoError(t, router.DeployService("ondemand", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	router = NewRouter(statePath)
+	require.NoError(t, router.RestoreLastSavedState())
+
+	service := router.services.Get("ondemand")
+	require.NotNil(t, service)
+
+	manager, ok := service.certManager.(*autocert.Manager)
+	require.True(t, ok)
+	require.NotNil(t, manager.HostPolicy)
+
+	assert.NoError(t, manager.HostPolicy(context.Background(), "allowed.example.com"))
+	assert.Error(t, manager.HostPolicy(context.Background(), "denied.example.com"))
 }
 
 // Helpers
