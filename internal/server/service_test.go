@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +24,49 @@ func TestService_ServeRequest(t *testing.T) {
 	service.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
+func TestService_ClientIPHeaderRewritesXForwardedFor(t *testing.T) {
+	var xForwardedFor, trueClientIP string
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.ClientIPHeader = "True-Client-IP"
+
+	targetOptions := defaultTargetOptions
+	targetOptions.ForwardHeaders = true
+
+	service := testCreateServiceWithHandler(t, serviceOptions, targetOptions,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != defaultHealthCheckConfig.Path {
+				xForwardedFor = r.Header.Get("X-Forwarded-For")
+				trueClientIP = r.Header.Get("True-Client-IP")
+			}
+		}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("True-Client-IP", "203.0.113.9")
+	req.Header.Set("X-Forwarded-For", "6.6.6.6")
+
+	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, "203.0.113.9, "+clientIP, xForwardedFor)
+	require.Equal(t, "203.0.113.9", trueClientIP)
+
+	// Without the trusted header, the client-supplied X-Forwarded-For is
+	// forwarded unmodified, as usual.
+	req = httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("X-Forwarded-For", "6.6.6.6")
+
+	w = httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, "6.6.6.6, "+clientIP, xForwardedFor)
 }
 
 func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
