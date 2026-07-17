@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -758,6 +760,291 @@ func TestRouter_EnablingRollout(t *testing.T) {
 
 	require.NoError(t, router.StopRollout("service1"))
 	checkResponse("first")
+}
+
+func TestRouter_PublishedHealthCheckClaimsOnlyItsOwnPath(t *testing.T) {
+	router := testRouter(t)
+
+	statusCode, _ := sendGETRequest(router, "http://192.168.1.1/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusNotFound, statusCode)
+
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.URL.String()))
+	})
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	// While no service publishes its health check, its path is routed to
+	// services like any other request
+	statusCode, body := sendGETRequest(router, "http://example.com/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/.kamal-proxy/service1/health", body)
+
+	// Publishing a health check claims exactly its own path...
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	statusCode, body = sendGETRequest(router, "http://example.com/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/up", body)
+
+	// ...while all other traffic is routed as normal
+	for _, path := range []string{
+		"/.kamal-proxy/other/health",
+		"/.kamal-proxy/service1/health/extra",
+		"/.kamal-proxy/service1",
+		"/.kamal-proxy",
+	} {
+		statusCode, body = sendGETRequest(router, "http://example.com"+path)
+		assert.Equal(t, http.StatusOK, statusCode)
+		assert.Equal(t, path, body)
+	}
+
+	// Unpublishing the health check releases its path again
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	statusCode, body = sendGETRequest(router, "http://example.com/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/.kamal-proxy/service1/health", body)
+}
+
+func TestRouter_PublishedHealthCheck(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"one.example.com"}
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	serviceOptions = defaultServiceOptions
+	serviceOptions.Hosts = []string{"two.example.com"}
+	require.NoError(t, router.DeployService("service2", []string{second}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	// The published path works with any Host header: an unmatched one, the
+	// service's own, and one belonging to a different service.
+	for _, host := range []string{"192.168.1.1", "one.example.com", "two.example.com"} {
+		statusCode, body := sendGETRequest(router, "http://"+host+"/.kamal-proxy/service1/health")
+		assert.Equal(t, http.StatusOK, statusCode)
+		assert.Equal(t, "first", body)
+	}
+}
+
+func TestRouter_PublishedHealthCheckUsesHealthCheckPortAndHost(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "main", http.StatusOK)
+	_, healthTarget := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.Host + " " + r.URL.String()))
+	})
+
+	_, portString, err := net.SplitHostPort(healthTarget)
+	require.NoError(t, err)
+	healthPort, err := strconv.Atoi(portString)
+	require.NoError(t, err)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PublishHealthCheck = true
+
+	// Probes are sent to the health check port, with the configured host,
+	// just like the proxy's own health checks
+	targetOptions := defaultTargetOptions
+	targetOptions.HealthCheckConfig.Port = healthPort
+	targetOptions.HealthCheckConfig.Host = "app.internal"
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, targetOptions, defaultDeploymentOptions))
+
+	statusCode, body := sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "app.internal /up", body)
+
+	// Without a configured health check host, probes carry the health check
+	// address as their host, rather than the client's host
+	targetOptions.HealthCheckConfig.Host = ""
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, targetOptions, defaultDeploymentOptions))
+
+	statusCode, body = sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, healthTarget+" /up", body)
+}
+
+func TestRouter_PublishedHealthCheckUsesHealthCheckPath(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.URL.String()))
+	})
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PublishHealthCheck = true
+
+	targetOptions := defaultTargetOptions
+	targetOptions.HealthCheckConfig.Path = "/healthz"
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, targetOptions, defaultDeploymentOptions))
+
+	statusCode, body := sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/healthz", body)
+
+	// A path without a leading slash is normalized, matching how the proxy's
+	// own health checks address it
+	targetOptions.HealthCheckConfig.Path = "healthz"
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, targetOptions, defaultDeploymentOptions))
+
+	statusCode, body = sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/healthz", body)
+}
+
+func TestRouter_PublishedHealthCheckDropsQueryString(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.URL.String()))
+	})
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	statusCode, body := sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health?foo=bar")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/up", body)
+
+	// Including when the query string is empty
+	statusCode, body = sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health?")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/up", body)
+}
+
+func TestRouter_PublishedHealthCheckDoesNotRedirectToTLS(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSRedirect = true
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	// Regular plain-HTTP traffic is redirected to HTTPS
+	statusCode, _ := sendGETRequest(router, "http://example.com/")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
+
+	// Plain-HTTP probes are not
+	statusCode, body := sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+}
+
+func TestRouter_PublishedHealthCheckIsNotSubjectToTLSRequirements(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	// Regular HTTPS traffic to a non-TLS service is rejected
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+	req.TLS = &tls.ConnectionState{}
+	statusCode, _ := sendRequest(router, req)
+	assert.Equal(t, http.StatusServiceUnavailable, statusCode)
+
+	// HTTPS probes are served
+	req = httptest.NewRequest(http.MethodGet, "https://10.0.0.1/.kamal-proxy/service1/health", nil)
+	req.TLS = &tls.ConnectionState{}
+	statusCode, body := sendRequest(router, req)
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "first", body)
+}
+
+func TestRouter_PublishedHealthCheckOnlyMatchesGETAndHEAD(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.Method + " " + r.URL.String()))
+	})
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	statusCode, body := sendGETRequest(router, "http://example.com/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "GET /up", body)
+
+	statusCode, _ = sendRequest(router, httptest.NewRequest(http.MethodHead, "http://example.com/.kamal-proxy/service1/health", nil))
+	assert.Equal(t, http.StatusOK, statusCode)
+
+	// Other methods are routed as normal requests
+	statusCode, body = sendRequest(router, httptest.NewRequest(http.MethodPost, "http://example.com/.kamal-proxy/service1/health", nil))
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "POST /.kamal-proxy/service1/health", body)
+}
+
+func TestRouter_PublishedHealthCheckMetricsExclusion(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	sendProbe := func() *loggingRequestContext {
+		lrc := &loggingRequestContext{}
+		req := httptest.NewRequest(http.MethodGet, "http://10.0.0.1/.kamal-proxy/service1/health", nil)
+		req = req.WithContext(context.WithValue(req.Context(), contextKeyRequestContext, lrc))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Result().StatusCode)
+		return lrc
+	}
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PublishHealthCheck = true
+	serviceOptions.ExcludeMetricsPaths = []string{"/.kamal-proxy/service1/health"}
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	// Probes are recorded as the published path, so they are excluded from
+	// metrics when that path is
+	assert.True(t, sendProbe().ExcludeMetrics)
+
+	serviceOptions.ExcludeMetricsPaths = nil
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	assert.False(t, sendProbe().ExcludeMetrics)
+}
+
+func TestRouter_PublishedHealthCheckWhilePaused(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.PauseService("service1", time.Second, time.Millisecond*10))
+
+	// Paused services still report themselves healthy
+	statusCode, _ := sendGETRequest(router, "http://10.0.0.1/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+
+	// While other requests wait for the pause to end
+	statusCode, _ = sendGETRequest(router, "http://10.0.0.1/other")
+	assert.Equal(t, http.StatusGatewayTimeout, statusCode)
+}
+
+func TestRouter_PublishedHealthCheckWithPathPrefix(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.URL.String()))
+	})
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.PathPrefixes = []string{"/api"}
+	serviceOptions.StripPrefix = true
+	serviceOptions.PublishHealthCheck = true
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	// The probe reaches the target at the bare health check path, matching how
+	// the proxy's own health checks address it
+	statusCode, body := sendGETRequest(router, "http://example.com/.kamal-proxy/service1/health")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Equal(t, "/up", body)
 }
 
 func TestRouter_RestoreLastSavedState(t *testing.T) {

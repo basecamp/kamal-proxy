@@ -58,7 +58,8 @@ var (
 	ErrorAutomaticTLSDoesNotSupportWildcards = errors.New("automatic TLS does not support wildcards")
 	ErrServiceOptionsInvalid                 = errors.New("service options invalid")
 
-	contextKeyInternalRequest = contextKey("internal-request")
+	contextKeyInternalRequest  = contextKey("internal-request")
+	contextKeyHealthCheckProbe = contextKey("health-check-probe")
 )
 
 // markInternalRequest marks the context as belonging to an internal request:
@@ -71,6 +72,15 @@ func markInternalRequest(ctx context.Context) context.Context {
 func isInternalRequest(r *http.Request) bool {
 	internal, _ := r.Context().Value(contextKeyInternalRequest).(bool)
 	return internal
+}
+
+func markHealthCheckProbe(ctx context.Context) context.Context {
+	return context.WithValue(ctx, contextKeyHealthCheckProbe, true)
+}
+
+func isHealthCheckProbe(r *http.Request) bool {
+	probe, _ := r.Context().Value(contextKeyHealthCheckProbe).(bool)
+	return probe
 }
 
 type TargetSlot int
@@ -111,6 +121,7 @@ type ServiceOptions struct {
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
 	ExcludeMetricsPaths         []string      `json:"exclude_metrics_paths"`
 	ClientIPHeader              string        `json:"client_ip_header"`
+	PublishHealthCheck          bool          `json:"publish_health_check"`
 }
 
 func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
@@ -522,7 +533,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
-	if !s.options.TLSEnabled && r.TLS != nil {
+	if !s.options.TLSEnabled && r.TLS != nil && !isHealthCheckProbe(r) {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return
 	}

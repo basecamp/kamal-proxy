@@ -76,7 +76,8 @@ type TargetOptions struct {
 }
 
 func (to *TargetOptions) IsHealthCheckRequest(r *http.Request) bool {
-	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && RoutedTargetPath(r) == to.HealthCheckConfig.Path
+	return isHealthCheckProbe(r) ||
+		((r.Method == http.MethodGet || r.Method == http.MethodHead) && RoutedTargetPath(r) == to.HealthCheckConfig.Path)
 }
 
 func (to *TargetOptions) canonicalizeLogHeaders() {
@@ -278,16 +279,25 @@ func (t *Target) HealthCheckCompleted(success bool) {
 
 func (t *Target) buildHealthCheckURL() *url.URL {
 	healthCheckURL := *t.targetURL
+	healthCheckURL.Host = t.healthCheckAddress()
 
+	// Join from the root so the result is always an absolute path, even when
+	// the configured path is missing its leading slash.
+	healthCheckURL.Path = "/"
+
+	return healthCheckURL.JoinPath(t.options.HealthCheckConfig.Path)
+}
+
+func (t *Target) healthCheckAddress() string {
 	if t.options.HealthCheckConfig.Port > 0 {
 		host, _, err := net.SplitHostPort(t.targetURL.Host)
 		if err != nil {
 			host = t.targetURL.Host
 		}
-		healthCheckURL.Host = fmt.Sprintf("%s:%d", host, t.options.HealthCheckConfig.Port)
+		return fmt.Sprintf("%s:%d", host, t.options.HealthCheckConfig.Port)
 	}
 
-	return healthCheckURL.JoinPath(t.options.HealthCheckConfig.Path)
+	return t.targetURL.Host
 }
 
 func (t *Target) createProxyHandler() http.Handler {
@@ -309,6 +319,11 @@ func (t *Target) rewrite(req *httputil.ProxyRequest) {
 
 	req.SetURL(t.targetURL)
 	req.Out.Host = req.In.Host
+
+	if isHealthCheckProbe(req.In) {
+		t.rewriteHealthCheckProbe(req)
+		return
+	}
 
 	req.Out.URL.Path = RoutedTargetPath(req.In)
 
@@ -336,6 +351,17 @@ func (t *Target) rewrite(req *httputil.ProxyRequest) {
 	// In our case, we don't make any decisions based on the query params, so it's
 	// safe for us to pass them through verbatim.
 	req.Out.URL.RawQuery = req.In.URL.RawQuery
+}
+
+func (t *Target) rewriteHealthCheckProbe(req *httputil.ProxyRequest) {
+	healthCheckURL := t.buildHealthCheckURL()
+
+	req.Out.URL.Host = healthCheckURL.Host
+	req.Out.URL.Path = healthCheckURL.Path
+	req.Out.URL.RawPath = healthCheckURL.RawPath
+	req.Out.URL.RawQuery = ""
+	req.Out.URL.ForceQuery = false
+	req.Out.Host = t.options.HealthCheckConfig.Host
 }
 
 func (t *Target) forwardHeaders(req *httputil.ProxyRequest) {

@@ -10,6 +10,8 @@ import (
 
 const (
 	rootPath = "/"
+
+	publishedHealthCheckPrefix = "/.kamal-proxy/"
 )
 
 type pathBinding struct {
@@ -20,15 +22,17 @@ type pathBinding struct {
 type requestServiceMap map[string][]*pathBinding
 
 type ServiceMap struct {
-	services           map[string]*Service
-	requestServiceMap  requestServiceMap
-	defaultTLSHostname string
+	services              map[string]*Service
+	requestServiceMap     requestServiceMap
+	publishedHealthChecks map[string]*Service
+	defaultTLSHostname    string
 }
 
 func NewServiceMap() *ServiceMap {
 	return &ServiceMap{
-		services:          map[string]*Service{},
-		requestServiceMap: requestServiceMap{},
+		services:              map[string]*Service{},
+		requestServiceMap:     requestServiceMap{},
+		publishedHealthChecks: map[string]*Service{},
 	}
 }
 
@@ -39,13 +43,19 @@ func (m *ServiceMap) Get(name string) *Service {
 func (m *ServiceMap) Set(service *Service) {
 	m.services[service.name] = service
 	m.updateRequestServiceMap()
+	m.updatePublishedHealthChecks()
 	m.updateDefaultTLSHostname()
 }
 
 func (m *ServiceMap) Remove(name string) {
 	delete(m.services, name)
 	m.updateRequestServiceMap()
+	m.updatePublishedHealthChecks()
 	m.updateDefaultTLSHostname()
+}
+
+func (m *ServiceMap) PublishedHealthCheck(path string) *Service {
+	return m.publishedHealthChecks[path]
 }
 
 func (m *ServiceMap) All() iter.Seq2[string, *Service] {
@@ -151,6 +161,18 @@ func (m *ServiceMap) updateRequestServiceMap() {
 
 	m.requestServiceMap = requestServiceMap
 	m.syncTLSOptionsFromRootDomain()
+}
+
+func (m *ServiceMap) updatePublishedHealthChecks() {
+	published := map[string]*Service{}
+
+	for name, service := range m.services {
+		if service.options.PublishHealthCheck {
+			published[publishedHealthCheckPrefix+name+"/health"] = service
+		}
+	}
+
+	m.publishedHealthChecks = published
 }
 
 func (m *ServiceMap) updateDefaultTLSHostname() {
