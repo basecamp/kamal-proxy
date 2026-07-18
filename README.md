@@ -77,6 +77,25 @@ To configure health checks to run on a different port than your main service
 
     kamal-proxy deploy service1 --target web-1:3000 --health-check-port 8080
 
+### Published health check endpoints
+
+When running Kamal Proxy behind downstream load balancers, it can be difficult
+to route those load balancers' health checks to the correct service if those
+checks don't carry the correct `Host` header. (Unfortunately, many cloud load
+balancers don't allow setting that header in their healthcheck configuration).
+
+To make this easier, we add the ability to publish a service's configured
+healthcheck at a well-known service-specific path. For example, a service `app`
+can be health-checked at `/.kamal-proxy/app/health`.
+
+To enable the published health check endpoint for a service, set the
+`--publish-health-check` flag:
+
+    kamal-proxy deploy app --target web-1:3000 --host app1.example.com --publish-health-check
+
+The published health check endpoints are not subject to host checking, TLS
+requirements, or canonical redirects.
+
 ### Host-based routing
 
 Host-based routing allows you to run multiple applications on the same server,

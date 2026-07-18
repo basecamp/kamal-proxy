@@ -102,6 +102,11 @@ func (r *Router) RestoreLastSavedState() error {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if service := r.serviceForPublishedHealthCheck(req); service != nil {
+		service.ServeHTTP(w, req.WithContext(markHealthCheckProbe(markInternalRequest(req.Context()))))
+		return
+	}
+
 	service, prefix := r.serviceForRequest(req)
 	if service == nil {
 		SetErrorResponse(w, req, http.StatusNotFound, nil)
@@ -378,6 +383,21 @@ func (r *Router) saveStateSnapshot() error {
 
 	slog.Debug("Saved state", "path", r.statePath)
 	return nil
+}
+
+func (r *Router) serviceForPublishedHealthCheck(req *http.Request) *Service {
+	if !strings.HasPrefix(req.URL.Path, publishedHealthCheckPrefix) {
+		return nil
+	}
+
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		return nil
+	}
+
+	r.serviceLock.RLock()
+	defer r.serviceLock.RUnlock()
+
+	return r.services.PublishedHealthCheck(req.URL.Path)
 }
 
 func (r *Router) serviceForRequest(req *http.Request) (*Service, string) {
