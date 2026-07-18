@@ -65,14 +65,13 @@ func TestDockerClientFallsBackWhenVersionEndpointFails(t *testing.T) {
 func TestDockerClientRejectsMalformedVersionResponse(t *testing.T) {
 	for name, body := range map[string]string{
 		"malformed json":  `{`,
-		"invalid version": `{"ApiVersion":"new","MinAPIVersion":"1.44"}`,
-		"invalid range":   `{"ApiVersion":"1.41","MinAPIVersion":"1.44"}`,
+		"missing version": `{}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			client := testDockerClient(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
 			err := client.StartContainer(context.Background(), "web")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "docker")
+			assert.Contains(t, err.Error(), "version")
 		})
 	}
 }

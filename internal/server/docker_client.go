@@ -3,12 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -90,42 +90,15 @@ func (c *DockerClient) queryVersion(ctx context.Context) (string, error) {
 		return legacyDockerAPIVersion, nil
 	}
 	var version struct {
-		APIVersion    string `json:"ApiVersion"`
-		MinAPIVersion string `json:"MinAPIVersion"`
+		APIVersion string `json:"ApiVersion"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDockerErrorBody+1)).Decode(&version); err != nil {
 		return "", fmt.Errorf("invalid docker /version response: %w", err)
 	}
-	api, err := parseDockerAPIVersion(version.APIVersion)
-	if err != nil {
-		return "", fmt.Errorf("invalid docker ApiVersion: %w", err)
-	}
-	if version.MinAPIVersion != "" {
-		minimum, err := parseDockerAPIVersion(version.MinAPIVersion)
-		if err != nil {
-			return "", fmt.Errorf("invalid docker MinAPIVersion: %w", err)
-		}
-		if api < minimum {
-			return "", fmt.Errorf("invalid docker API range: ApiVersion %q is below MinAPIVersion %q", version.APIVersion, version.MinAPIVersion)
-		}
+	if version.APIVersion == "" {
+		return "", errors.New("docker /version response has no ApiVersion")
 	}
 	return version.APIVersion, nil
-}
-
-func parseDockerAPIVersion(value string) (int, error) {
-	parts := strings.Split(value, ".")
-	if len(parts) != 2 {
-		return 0, fmt.Errorf("expected major.minor, got %q", value)
-	}
-	major, err := strconv.Atoi(parts[0])
-	if err != nil || major < 0 {
-		return 0, fmt.Errorf("invalid major version %q", parts[0])
-	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil || minor < 0 {
-		return 0, fmt.Errorf("invalid minor version %q", parts[1])
-	}
-	return major*1_000_000 + minor, nil
 }
 
 func dockerResponseError(action string, resp *http.Response) error {
