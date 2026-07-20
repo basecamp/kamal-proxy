@@ -824,10 +824,10 @@ func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
 	serviceOptions.TLSEnabled = true
 	serviceOptions.TLSOnDemandURL = allowServer.URL
 
-	router := NewRouter(statePath)
+	router := NewRouter(statePath, DefaultDockerSocketPath)
 	require.NoError(t, router.DeployService("ondemand", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
 
-	router = NewRouter(statePath)
+	router = NewRouter(statePath, DefaultDockerSocketPath)
 	require.NoError(t, router.RestoreLastSavedState())
 
 	service := router.services.Get("ondemand")
