@@ -155,6 +155,7 @@ func (lb *LoadBalancer) MarkAllHealthy() {
 
 func (lb *LoadBalancer) PrepareForWake() {
 	lb.lock.Lock()
+	lb.markHealthy()
 	lb.waitForHealthyContext, lb.markHealthy = context.WithCancel(context.Background())
 	lb.writers, lb.readers = TargetList{}, TargetList{}
 	lb.lock.Unlock()

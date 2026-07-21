@@ -46,18 +46,19 @@ type IdleController struct {
 	WakeTimeout    time.Duration `json:"wake_timeout"`
 	ContainerNames []string      `json:"container_names"`
 
-	mu          sync.Mutex
-	lifecycle   ContainerLifecycle
-	ready       func(time.Duration) error
-	inflight    int
-	lastRequest time.Time
-	wakeDone    chan struct{}
-	wakeErr     error
-	changed     chan struct{}
-	closed      chan struct{}
-	disabled    bool
-	closeOnce   sync.Once
-	persist     func()
+	mu              sync.Mutex
+	lifecycle       ContainerLifecycle
+	ready           func(time.Duration) error
+	inflight        int
+	lastRequest     time.Time
+	wakeDone        chan struct{}
+	wakeErr         error
+	lifecycleCancel context.CancelFunc
+	changed         chan struct{}
+	closed          chan struct{}
+	disabled        bool
+	closeOnce       sync.Once
+	persist         func()
 }
 
 func NewIdleController(idleTimeout, wakeTimeout time.Duration, names []string, lifecycle ContainerLifecycle, ready func(time.Duration) error) *IdleController {
@@ -155,7 +156,16 @@ func (c *IdleController) notifyPersist() {
 	}
 }
 
-func (c *IdleController) Disable() { c.mu.Lock(); c.disabled = true; c.mu.Unlock(); c.signal() }
+func (c *IdleController) Disable() {
+	c.mu.Lock()
+	c.disabled = true
+	if c.State == IdleStateWaking || c.State == IdleStateStopping {
+		c.cancelLifecycleLocked()
+		c.State = IdleStateSleeping
+	}
+	c.mu.Unlock()
+	c.signal()
+}
 func (c *IdleController) Enable() {
 	c.mu.Lock()
 	c.disabled = false
@@ -169,6 +179,16 @@ func (c *IdleController) Reset(names []string, ready func(time.Duration) error) 
 	c.ContainerNames = append([]string(nil), names...)
 	c.ready = ready
 	c.State, c.wakeErr, c.lastRequest = IdleStateActive, nil, time.Now()
+	c.cancelLifecycleLocked()
+	c.mu.Unlock()
+	c.signal()
+}
+
+func (c *IdleController) cancelLifecycleLocked() {
+	if c.lifecycleCancel != nil {
+		c.lifecycleCancel()
+		c.lifecycleCancel = nil
+	}
 	if c.wakeDone != nil {
 		select {
 		case <-c.wakeDone:
@@ -177,12 +197,13 @@ func (c *IdleController) Reset(names []string, ready func(time.Duration) error) 
 		}
 		c.wakeDone = nil
 	}
-	c.mu.Unlock()
-	c.signal()
 }
 
 func (c *IdleController) Close() {
 	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.cancelLifecycleLocked()
+		c.mu.Unlock()
 		if c.closed != nil {
 			close(c.closed)
 		}
@@ -233,23 +254,30 @@ func (c *IdleController) trySleep() {
 	names, lifecycle := append([]string(nil), c.ContainerNames...), c.lifecycle
 	c.State, c.wakeDone = IdleStateStopping, make(chan struct{})
 	stopDone := c.wakeDone
-	c.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultIdleLifecycleTimeout)
+	c.lifecycleCancel = cancel
+	c.mu.Unlock()
 	defer cancel()
 	for _, name := range names {
 		if err := lifecycle.StopContainer(ctx, name); err != nil {
 			slog.Error("Failed to stop idle container", "container", name, "error", err)
 			c.mu.Lock()
-			c.State, c.lastRequest = IdleStateActive, time.Now()
-			close(stopDone)
+			if c.wakeDone == stopDone {
+				c.State, c.lastRequest = IdleStateActive, time.Now()
+				c.lifecycleCancel = nil
+				close(stopDone)
+			}
 			c.mu.Unlock()
 			c.notifyPersist()
 			return
 		}
 	}
 	c.mu.Lock()
-	c.State = IdleStateSleeping
-	close(stopDone)
+	if c.wakeDone == stopDone {
+		c.State = IdleStateSleeping
+		c.lifecycleCancel = nil
+		close(stopDone)
+	}
 	c.mu.Unlock()
 	c.notifyPersist()
 	c.signal()
@@ -258,21 +286,32 @@ func (c *IdleController) trySleep() {
 func (c *IdleController) startWakeLocked() {
 	c.State, c.wakeErr, c.wakeDone = IdleStateWaking, nil, make(chan struct{})
 	done, names, timeout, lifecycle, ready := c.wakeDone, append([]string(nil), c.ContainerNames...), c.WakeTimeout, c.lifecycle, c.ready
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	c.lifecycleCancel = cancel
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		var err error
 		for _, name := range names {
+			if ctx.Err() != nil {
+				err = ctx.Err()
+				break
+			}
 			if err = lifecycle.StartContainer(ctx, name); err != nil {
 				break
 			}
 		}
 		if err == nil {
-			err = ready(timeout)
+			c.mu.Lock()
+			current := c.wakeDone == done
+			c.mu.Unlock()
+			if current {
+				err = ready(timeout)
+			}
 		}
 		c.mu.Lock()
 		if c.wakeDone == done {
 			c.wakeErr = err
+			c.lifecycleCancel = nil
 			if err == nil {
 				c.State, c.lastRequest = IdleStateActive, time.Now()
 			} else {

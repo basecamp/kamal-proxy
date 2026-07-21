@@ -80,6 +80,20 @@ func TestLoadBalancer_PrepareForWakeRestartsSingleTargetHealthCheck(t *testing.T
 	assert.Equal(t, TargetStateHealthy, target.State())
 }
 
+func TestLoadBalancer_PrepareForWakeReleasesPreviousWaiters(t *testing.T) {
+	lb := NewLoadBalancer(TargetList{}, DefaultWriterAffinityTimeout, false)
+	t.Cleanup(lb.Dispose)
+	previous := lb.waitForHealthyContext
+
+	lb.PrepareForWake()
+
+	select {
+	case <-previous.Done():
+	case <-time.After(time.Second):
+		t.Fatal("previous health wait was not released")
+	}
+}
+
 func TestLoadBalancer_StartRequest(t *testing.T) {
 	lb := testLoadBalancerWithHandlers(t,
 		func(w http.ResponseWriter, r *http.Request) {

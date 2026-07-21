@@ -496,6 +496,9 @@ func (s *Service) waitUntilActiveHealthy(timeout time.Duration) error {
 	s.serviceLock.RLock()
 	lb := s.active
 	s.serviceLock.RUnlock()
+	if lb == nil {
+		return ErrorNoHealthyTargets
+	}
 	lb.PrepareForWake()
 	return lb.WaitUntilHealthy(timeout)
 }

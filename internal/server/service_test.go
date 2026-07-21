@@ -26,6 +26,16 @@ func TestService_ServeRequest(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestService_WaitUntilActiveHealthyWithoutLoadBalancer(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	service, err := NewService("test", options, defaultTargetOptions, &fakeLifecycle{})
+	require.NoError(t, err)
+	t.Cleanup(service.idleController.Close)
+
+	assert.ErrorIs(t, service.waitUntilActiveHealthy(time.Second), ErrorNoHealthyTargets)
+}
+
 func TestService_ClientIPHeaderRewritesXForwardedFor(t *testing.T) {
 	var xForwardedFor, trueClientIP string
 
