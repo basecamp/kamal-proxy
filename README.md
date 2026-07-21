@@ -69,7 +69,7 @@ unchanged after a successful wake. Concurrent wake requests are coalesced.
 Open streaming responses and WebSockets count as activity/in-flight work and
 prevent sleeping until they close; a new stream or WebSocket is held during
 wake like any other request. Health-check requests do not wake or reset an idle
-service and receive success while it is sleeping.
+service and receive success while it is stopping, sleeping, or waking.
 
 Mounting the Docker socket gives the proxy host-level container control. Only
 enable this feature where that trust is acceptable; the lifecycle calls are

@@ -633,7 +633,7 @@ func (s *Service) handleIdleHealthCheck(w http.ResponseWriter, r *http.Request) 
 
 	if s.targetOptions.IsHealthCheckRequest(r) {
 		// Health checks should not wake the service.
-		// If it's sleeping, just return 200.
+		// While it is stopping, sleeping, or waking, just return 200.
 		icState := s.idleController.StateValue()
 		if icState != IdleStateActive {
 			w.WriteHeader(http.StatusOK)

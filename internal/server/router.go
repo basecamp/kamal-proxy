@@ -393,10 +393,15 @@ func (r *Router) saveStateSnapshot() error {
 		return err
 	}
 
-	err = json.NewEncoder(f).Encode(services)
-	if err != nil {
-		slog.Error("Unable to save state", "error", err, "path", r.statePath)
-		return err
+	encodeErr := json.NewEncoder(f).Encode(services)
+	closeErr := f.Close()
+	if encodeErr != nil {
+		slog.Error("Unable to save state", "error", encodeErr, "path", r.statePath)
+		return encodeErr
+	}
+	if closeErr != nil {
+		slog.Error("Unable to close saved state", "error", closeErr, "path", r.statePath)
+		return closeErr
 	}
 
 	slog.Debug("Saved state", "path", r.statePath)
