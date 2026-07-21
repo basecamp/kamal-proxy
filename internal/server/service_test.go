@@ -26,6 +26,27 @@ func TestService_ServeRequest(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
 
+func TestService_StoppedRequestDoesNotWakeIdleContainer(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	options.IdleWakeTimeout = time.Second
+	service := testCreateService(t, options, defaultTargetOptions)
+	t.Cleanup(service.Dispose)
+	lifecycle := &fakeLifecycle{}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+	require.NoError(t, service.pauseController.Stop(DefaultStopMessage))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Zero(t, lifecycle.starts.Load())
+}
+
 func TestService_WaitUntilActiveHealthyWithoutLoadBalancer(t *testing.T) {
 	options := defaultServiceOptions
 	options.IdleTimeout = time.Minute

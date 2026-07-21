@@ -67,6 +67,23 @@ func NewIdleController(idleTimeout, wakeTimeout time.Duration, names []string, l
 	return c
 }
 
+func (c *IdleController) MarshalJSON() ([]byte, error) {
+	type persisted struct {
+		State          IdleState     `json:"state"`
+		IdleTimeout    time.Duration `json:"idle_timeout"`
+		WakeTimeout    time.Duration `json:"wake_timeout"`
+		ContainerNames []string      `json:"container_names"`
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return json.Marshal(persisted{
+		State:          c.State,
+		IdleTimeout:    c.IdleTimeout,
+		WakeTimeout:    c.WakeTimeout,
+		ContainerNames: c.ContainerNames,
+	})
+}
+
 func (c *IdleController) UnmarshalJSON(data []byte) error {
 	type persisted struct {
 		State          IdleState     `json:"state"`

@@ -110,6 +110,24 @@ func TestIdleControllerRestoresSleepingAndWakes(t *testing.T) {
 	assert.Equal(t, int32(1), lifecycle.starts.Load())
 }
 
+func TestIdleControllerMarshalWaitsForStateLock(t *testing.T) {
+	c := &IdleController{State: IdleStateSleeping}
+	c.mu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := json.Marshal(c)
+		done <- err
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("MarshalJSON read state without acquiring the lock")
+	case <-time.After(10 * time.Millisecond):
+	}
+	c.mu.Unlock()
+	require.NoError(t, <-done)
+}
+
 func TestIdleControllerResetCancelsWake(t *testing.T) {
 	lifecycle := &blockingLifecycle{started: make(chan struct{}), finished: make(chan struct{})}
 	readyCalled := atomic.Bool{}

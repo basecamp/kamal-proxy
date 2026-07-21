@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,6 +26,18 @@ func TestRouter_Empty(t *testing.T) {
 	statusCode, _ := sendGETRequest(router, "http://example.com/")
 
 	assert.Equal(t, http.StatusNotFound, statusCode)
+}
+
+func TestRouter_StateChangedLogsSaveErrors(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	router := NewRouter(t.TempDir(), DefaultDockerSocketPath)
+
+	router.saveStateSnapshotWithLogging()
+
+	assert.Contains(t, logs.String(), "Unable to save state snapshot")
 }
 
 func TestRouter_DeployService(t *testing.T) {

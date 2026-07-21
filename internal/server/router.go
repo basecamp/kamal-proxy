@@ -95,7 +95,7 @@ func (r *Router) RestoreLastSavedState() error {
 		r.services = NewServiceMap()
 		for _, service := range services {
 			service.lifecycle = r.dockerClient
-			service.stateChanged = func() { _ = r.saveStateSnapshot() }
+			service.stateChanged = r.saveStateSnapshotWithLogging
 			if err := service.initialize(service.options, service.targetOptions); err != nil {
 				return err
 			}
@@ -320,7 +320,7 @@ func (r *Router) createOrUpdateService(name string, options ServiceOptions, targ
 	if service == nil {
 		service, err := NewService(name, options, targetOptions, r.dockerClient)
 		if err == nil {
-			service.stateChanged = func() { _ = r.saveStateSnapshot() }
+			service.stateChanged = r.saveStateSnapshotWithLogging
 			if service.idleController != nil {
 				service.idleController.SetPersist(service.stateChanged)
 			}
@@ -401,6 +401,12 @@ func (r *Router) saveStateSnapshot() error {
 
 	slog.Debug("Saved state", "path", r.statePath)
 	return nil
+}
+
+func (r *Router) saveStateSnapshotWithLogging() {
+	if err := r.saveStateSnapshot(); err != nil {
+		slog.Error("Unable to save state snapshot", "error", err, "path", r.statePath)
+	}
 }
 
 func (r *Router) serviceForRequest(req *http.Request) (*Service, string) {
