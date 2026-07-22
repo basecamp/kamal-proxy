@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basecamp/kamal-proxy/internal/pages"
 )
 
 func TestService_ServeRequest(t *testing.T) {
@@ -45,6 +48,28 @@ func TestService_StoppedRequestDoesNotWakeIdleContainer(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Zero(t, lifecycle.starts.Load())
+}
+
+func TestService_WakeFailureRendersErrorMessage(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	options.IdleWakeTimeout = time.Second
+	service := testCreateService(t, options, defaultTargetOptions)
+	t.Cleanup(service.Dispose)
+	lifecycle := &fakeLifecycle{startErr: errors.New("start failed")}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	handler, err := WithErrorPageMiddleware(pages.DefaultErrorPages, true, service)
+	require.NoError(t, err)
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "start failed")
 }
 
 func TestService_WaitUntilActiveHealthyWithoutLoadBalancer(t *testing.T) {

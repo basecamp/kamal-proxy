@@ -305,7 +305,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.idleController != nil && s.pauseController.GetState() == PauseStateRunning && !s.targetOptions.IsHealthCheckRequest(r) {
 		if err := s.idleController.BeginRequest(r.Context()); err != nil {
 			s.idleController.EndRequest()
-			SetErrorResponse(w, r, http.StatusServiceUnavailable, err)
+			templateArguments := struct{ Message string }{err.Error()}
+			SetErrorResponse(w, r, http.StatusServiceUnavailable, templateArguments)
 			return
 		}
 		defer s.idleController.EndRequest()
