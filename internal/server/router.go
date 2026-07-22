@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -97,7 +98,7 @@ func (r *Router) RestoreLastSavedState() error {
 			service.lifecycle = r.dockerClient
 			service.stateChanged = r.saveStateSnapshotWithLogging
 			if err := service.initialize(service.options, service.targetOptions); err != nil {
-				return err
+				return fmt.Errorf("initialize restored service %q: %w", service.name, err)
 			}
 			r.services.Set(service)
 		}

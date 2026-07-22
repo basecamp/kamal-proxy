@@ -16,6 +16,7 @@ import (
 type fakeLifecycle struct {
 	starts, stops     atomic.Int32
 	startErr, stopErr error
+	startDelay        time.Duration
 }
 
 type blockingLifecycle struct {
@@ -34,8 +35,15 @@ func (f *blockingLifecycle) StartContainer(ctx context.Context, _ string) error 
 
 func (f *blockingLifecycle) StopContainer(context.Context, string) error { return nil }
 
-func (f *fakeLifecycle) StartContainer(context.Context, string) error {
+func (f *fakeLifecycle) StartContainer(ctx context.Context, _ string) error {
 	f.starts.Add(1)
+	if f.startDelay > 0 {
+		select {
+		case <-time.After(f.startDelay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return f.startErr
 }
 func (f *fakeLifecycle) StopContainer(context.Context, string) error {
@@ -156,4 +164,24 @@ func TestIdleControllerResetCancelsWake(t *testing.T) {
 	}, 100*time.Millisecond, time.Millisecond)
 	assert.False(t, readyCalled.Load())
 	assert.Equal(t, IdleStateActive, c.StateValue())
+}
+
+func TestIdleControllerWakeReadinessUsesRemainingTimeout(t *testing.T) {
+	wakeTimeout := 100 * time.Millisecond
+	lifecycle := &fakeLifecycle{startDelay: 10 * time.Millisecond}
+	readyTimeout := make(chan time.Duration, 1)
+	c := NewIdleController(time.Hour, wakeTimeout, []string{"web"}, lifecycle, func(timeout time.Duration) error {
+		readyTimeout <- timeout
+		return nil
+	})
+	defer c.Close()
+	c.mu.Lock()
+	c.State = IdleStateSleeping
+	c.mu.Unlock()
+
+	require.NoError(t, c.BeginRequest(context.Background()))
+	c.EndRequest()
+	remaining := <-readyTimeout
+	assert.Positive(t, remaining)
+	assert.Less(t, remaining, wakeTimeout)
 }

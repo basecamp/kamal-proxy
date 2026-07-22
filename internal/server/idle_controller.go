@@ -304,6 +304,7 @@ func (c *IdleController) startWakeLocked() {
 	c.State, c.wakeErr, c.wakeDone = IdleStateWaking, nil, make(chan struct{})
 	done, names, timeout, lifecycle, ready := c.wakeDone, append([]string(nil), c.ContainerNames...), c.WakeTimeout, c.lifecycle, c.ready
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	deadline, _ := ctx.Deadline()
 	c.lifecycleCancel = cancel
 	go func() {
 		defer cancel()
@@ -322,7 +323,12 @@ func (c *IdleController) startWakeLocked() {
 			current := c.wakeDone == done
 			c.mu.Unlock()
 			if current {
-				err = ready(timeout)
+				remaining := time.Until(deadline)
+				if remaining <= 0 {
+					err = ErrIdleWakeTimeout
+				} else {
+					err = ready(remaining)
+				}
 			}
 		}
 		c.mu.Lock()

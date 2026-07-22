@@ -38,7 +38,9 @@ func (c *runCommand) run(cmd *cobra.Command, args []string) error {
 	c.setLogger()
 
 	router := server.NewRouter(globalConfig.StatePath(), globalConfig.DockerSocketPath)
-	router.RestoreLastSavedState()
+	if err := router.RestoreLastSavedState(); err != nil {
+		return err
+	}
 
 	s := server.NewServer(&globalConfig, router)
 	err := s.Start()
