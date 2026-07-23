@@ -261,11 +261,14 @@ func (s *Service) UpdateLoadBalancer(lb *LoadBalancer, slot TargetSlot) *LoadBal
 	if slot == TargetSlotRollout {
 		replaced = s.rollout
 		s.rollout = lb
+		if s.idleController != nil {
+			s.idleController.configure(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.idleContainerNames(), s.lifecycle, s.waitUntilIdleTargetsHealthy)
+		}
 	} else {
 		replaced = s.active
 		s.active = lb
 		if s.idleController != nil {
-			s.idleController.Reset(s.activeContainerNames(), s.waitUntilActiveHealthy)
+			s.idleController.Reset(s.idleContainerNames(), s.waitUntilIdleTargetsHealthy)
 		}
 	}
 
@@ -469,9 +472,9 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 
 	if s.options.IdleTimeout > 0 {
 		if s.idleController == nil {
-			s.idleController = NewIdleController(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.activeContainerNames(), s.lifecycle, s.waitUntilActiveHealthy)
+			s.idleController = NewIdleController(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.idleContainerNames(), s.lifecycle, s.waitUntilIdleTargetsHealthy)
 		} else {
-			s.idleController.configure(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.activeContainerNames(), s.lifecycle, s.waitUntilActiveHealthy)
+			s.idleController.configure(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.idleContainerNames(), s.lifecycle, s.waitUntilIdleTargetsHealthy)
 		}
 		s.idleController.SetPersist(s.stateChanged)
 	} else if s.idleController != nil {
@@ -493,15 +496,40 @@ func (s *Service) activeContainerNames() []string {
 	return names
 }
 
-func (s *Service) waitUntilActiveHealthy(timeout time.Duration) error {
+func (s *Service) idleContainerNames() []string {
+	names := s.activeContainerNames()
+	if s.rollout != nil {
+		for _, target := range s.rollout.WriteTargets() {
+			names = append(names, target.ContainerName())
+		}
+	}
+	return names
+}
+
+func (s *Service) waitUntilIdleTargetsHealthy(timeout time.Duration) error {
 	s.serviceLock.RLock()
-	lb := s.active
+	loadBalancers := make([]*LoadBalancer, 0, 2)
+	if s.active != nil {
+		loadBalancers = append(loadBalancers, s.active)
+	}
+	if s.rollout != nil {
+		loadBalancers = append(loadBalancers, s.rollout)
+	}
 	s.serviceLock.RUnlock()
-	if lb == nil {
+	if len(loadBalancers) == 0 {
 		return ErrorNoHealthyTargets
 	}
-	lb.PrepareForWake()
-	return lb.WaitUntilHealthy(timeout)
+	errs := make(chan error, len(loadBalancers))
+	for _, lb := range loadBalancers {
+		lb.PrepareForWake()
+		go func() { errs <- lb.WaitUntilHealthy(timeout) }()
+	}
+	for range loadBalancers {
+		if err := <-errs; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) Drain(timeout time.Duration) {
