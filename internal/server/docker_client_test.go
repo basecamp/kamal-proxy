@@ -100,6 +100,37 @@ func TestDockerClientNegotiatesOnlyOnceWithConcurrentFirstUse(t *testing.T) {
 	assert.Equal(t, int32(1), versionCalls.Load())
 }
 
+func TestDockerClientNegotiationSurvivesCallerCancellation(t *testing.T) {
+	versionStarted := make(chan struct{})
+	releaseVersion := make(chan struct{})
+	var startedOnce sync.Once
+	var actionPath string
+	client := testDockerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/version" {
+			startedOnce.Do(func() { close(versionStarted) })
+			select {
+			case <-releaseVersion:
+				fmt.Fprint(w, `{"ApiVersion":"1.52","MinAPIVersion":"1.44"}`)
+			case <-r.Context().Done():
+			}
+			return
+		}
+		actionPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- client.StartContainer(ctx, "web") }()
+	<-versionStarted
+	cancel()
+	close(releaseVersion)
+	require.Error(t, <-firstDone)
+
+	require.NoError(t, client.StartContainer(context.Background(), "web"))
+	assert.Equal(t, "/v1.52/containers/web/start", actionPath)
+}
+
 func TestDockerClientIncludesBoundedDockerErrorBody(t *testing.T) {
 	client := testDockerClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/version" {

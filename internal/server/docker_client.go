@@ -21,9 +21,10 @@ const (
 type DockerClient struct {
 	httpClient *http.Client
 
-	versionOnce sync.Once
-	apiVersion  string
-	versionErr  error
+	versionMu  sync.Mutex
+	versionSet bool
+	apiVersion string
+	versionErr error
 }
 
 func NewDockerClient(socketPath string) *DockerClient {
@@ -68,10 +69,26 @@ func (c *DockerClient) containerAction(ctx context.Context, name, action string)
 }
 
 func (c *DockerClient) negotiatedVersion(ctx context.Context) (string, error) {
-	c.versionOnce.Do(func() {
-		c.apiVersion, c.versionErr = c.queryVersion(ctx)
-	})
-	return c.apiVersion, c.versionErr
+	c.versionMu.Lock()
+	defer c.versionMu.Unlock()
+	if c.versionSet {
+		return c.apiVersion, c.versionErr
+	}
+
+	negotiationCtx, cancel := dockerNegotiationContext(ctx)
+	defer cancel()
+	version, err := c.queryVersion(negotiationCtx)
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		c.apiVersion, c.versionErr, c.versionSet = version, err, true
+	}
+	return version, err
+}
+
+func dockerNegotiationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if deadline, ok := ctx.Deadline(); ok {
+		return context.WithDeadline(context.Background(), deadline)
+	}
+	return context.WithCancel(context.Background())
 }
 
 func (c *DockerClient) queryVersion(ctx context.Context) (string, error) {
@@ -81,6 +98,9 @@ func (c *DockerClient) queryVersion(ctx context.Context) (string, error) {
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		// Some compatible Docker proxies do not expose /version. Preserve the
 		// legacy behavior and let the versioned operation return the useful error.
 		return legacyDockerAPIVersion, nil
