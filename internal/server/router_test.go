@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,6 +26,18 @@ func TestRouter_Empty(t *testing.T) {
 	statusCode, _ := sendGETRequest(router, "http://example.com/")
 
 	assert.Equal(t, http.StatusNotFound, statusCode)
+}
+
+func TestRouter_StateChangedLogsSaveErrors(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	router := NewRouter(t.TempDir(), DefaultDockerSocketPath)
+
+	require.Error(t, router.saveStateSnapshot())
+
+	assert.Contains(t, logs.String(), "Unable to save state snapshot")
 }
 
 func TestRouter_DeployService(t *testing.T) {
@@ -767,7 +781,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	_, second := testBackend(t, "second", http.StatusOK)
 	_, third := testBackend(t, "third", http.StatusOK)
 
-	router := NewRouter(statePath)
+	router := NewRouter(statePath, DefaultDockerSocketPath)
 	require.NoError(t, router.DeployService("default", []string{first}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
 
 	serviceOptions := defaultServiceOptions
@@ -791,7 +805,7 @@ func TestRouter_RestoreLastSavedState(t *testing.T) {
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "third", body)
 
-	router = NewRouter(statePath)
+	router = NewRouter(statePath, DefaultDockerSocketPath)
 	router.RestoreLastSavedState()
 
 	statusCode, body = sendGETRequest(router, "http://something.example.com/")
@@ -824,10 +838,10 @@ func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
 	serviceOptions.TLSEnabled = true
 	serviceOptions.TLSOnDemandURL = allowServer.URL
 
-	router := NewRouter(statePath)
+	router := NewRouter(statePath, DefaultDockerSocketPath)
 	require.NoError(t, router.DeployService("ondemand", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
 
-	router = NewRouter(statePath)
+	router = NewRouter(statePath, DefaultDockerSocketPath)
 	require.NoError(t, router.RestoreLastSavedState())
 
 	service := router.services.Get("ondemand")
@@ -845,7 +859,7 @@ func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
 
 func testRouter(t *testing.T) *Router {
 	statePath := filepath.Join(t.TempDir(), "state.json")
-	return NewRouter(statePath)
+	return NewRouter(statePath, DefaultDockerSocketPath)
 }
 
 func sendGETRequest(router *Router, url string) (int, string) {
