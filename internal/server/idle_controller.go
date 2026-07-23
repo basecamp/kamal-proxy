@@ -280,7 +280,7 @@ func (c *IdleController) trySleep() {
 			slog.Error("Failed to stop idle container", "container", name, "error", err)
 			c.mu.Lock()
 			if c.wakeDone == stopDone {
-				c.State, c.lastRequest = IdleStateActive, time.Now()
+				c.State = IdleStateSleeping
 				c.lifecycleCancel = nil
 				close(stopDone)
 			}

@@ -17,6 +17,7 @@ type fakeLifecycle struct {
 	starts, stops     atomic.Int32
 	startErr, stopErr error
 	startDelay        time.Duration
+	stopErrAt         int32
 }
 
 type blockingLifecycle struct {
@@ -47,7 +48,10 @@ func (f *fakeLifecycle) StartContainer(ctx context.Context, _ string) error {
 	return f.startErr
 }
 func (f *fakeLifecycle) StopContainer(context.Context, string) error {
-	f.stops.Add(1)
+	stops := f.stops.Add(1)
+	if f.stopErrAt > 0 && stops != f.stopErrAt {
+		return nil
+	}
 	return f.stopErr
 }
 
@@ -184,4 +188,22 @@ func TestIdleControllerWakeReadinessUsesRemainingTimeout(t *testing.T) {
 	remaining := <-readyTimeout
 	assert.Positive(t, remaining)
 	assert.Less(t, remaining, wakeTimeout)
+}
+
+func TestIdleControllerRecoversFromPartialStopFailure(t *testing.T) {
+	lifecycle := &fakeLifecycle{stopErr: errors.New("stop failed"), stopErrAt: 2}
+	c := NewIdleController(time.Hour, time.Second, []string{"web-1", "web-2"}, lifecycle, func(time.Duration) error { return nil })
+	defer c.Close()
+	c.mu.Lock()
+	c.lastRequest = time.Now().Add(-2 * time.Hour)
+	c.mu.Unlock()
+
+	c.trySleep()
+
+	assert.Equal(t, int32(2), lifecycle.stops.Load())
+	assert.Equal(t, IdleStateSleeping, c.StateValue())
+	require.NoError(t, c.BeginRequest(context.Background()))
+	c.EndRequest()
+	assert.Equal(t, int32(2), lifecycle.starts.Load())
+	assert.Equal(t, IdleStateActive, c.StateValue())
 }
