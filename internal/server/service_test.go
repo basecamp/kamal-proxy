@@ -431,7 +431,7 @@ func testCreateServiceWithHandler(t *testing.T, options ServiceOptions, targetOp
 	target, err := NewTarget(serverURL.Host, targetOptions)
 	require.NoError(t, err)
 
-	service, err := NewService("test", options, targetOptions, NewDockerClient(DefaultDockerSocketPath))
+	service, err := NewService("test", options, targetOptions, &fakeLifecycle{})
 	require.NoError(t, err)
 
 	service.UpdateLoadBalancer(NewLoadBalancer(TargetList{target}, DefaultWriterAffinityTimeout, false), TargetSlotActive)

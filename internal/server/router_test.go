@@ -35,7 +35,7 @@ func TestRouter_StateChangedLogsSaveErrors(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	router := NewRouter(t.TempDir(), DefaultDockerSocketPath)
 
-	router.saveStateSnapshotWithLogging()
+	require.Error(t, router.saveStateSnapshot())
 
 	assert.Contains(t, logs.String(), "Unable to save state snapshot")
 }
