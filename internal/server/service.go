@@ -273,7 +273,7 @@ func (s *Service) StopRollout() error {
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.options.ShouldExcludeMetrics(r) {
-		LoggingRequestContext(r).ExcludeMetrics = true
+		RequestContext(r).ExcludeMetrics = true
 	} else {
 		metrics.Tracker.AddInflightRequest(s.name)
 		defer metrics.Tracker.SubtractInflightRequest(s.name)
@@ -518,7 +518,7 @@ func (s *Service) createMiddleware(options ServiceOptions, targetOptions TargetO
 }
 
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
-	LoggingRequestContext(r).Service = s.name
+	RequestContext(r).Service = s.name
 
 	if !s.options.TLSEnabled && r.TLS != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)

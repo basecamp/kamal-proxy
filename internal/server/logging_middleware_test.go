@@ -18,10 +18,10 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 	out := &strings.Builder{}
 	logger := slog.New(slog.NewJSONHandler(out, nil))
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		LoggingRequestContext(r).Service = "myapp"
-		LoggingRequestContext(r).Target = "upstream:3000"
-		LoggingRequestContext(r).RequestHeaders = []string{"X-Custom"}
-		LoggingRequestContext(r).ResponseHeaders = []string{"Cache-Control", "X-Custom"}
+		RequestContext(r).Service = "myapp"
+		RequestContext(r).Target = "upstream:3000"
+		RequestContext(r).RequestHeaders = []string{"X-Custom"}
+		RequestContext(r).ResponseHeaders = []string{"Cache-Control", "X-Custom"}
 
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Cache-Control", "public, max-age=3600")

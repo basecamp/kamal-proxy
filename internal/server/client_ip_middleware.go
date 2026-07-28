@@ -28,7 +28,7 @@ func WithClientIPMiddleware(clientIPHeader string, forwardHeaders bool, next htt
 // ClientIP returns the address resolved by ClientIPMiddleware, falling back to
 // the peer address for requests that did not pass through it.
 func ClientIP(r *http.Request) string {
-	if clientIP := LoggingRequestContext(r).ClientIP; clientIP != "" {
+	if clientIP := RequestContext(r).ClientIP; clientIP != "" {
 		return clientIP
 	}
 	return remoteAddrHost(r.RemoteAddr)
@@ -36,32 +36,30 @@ func ClientIP(r *http.Request) string {
 
 func (h *ClientIPMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	forwardedFor := h.trustedForwardedFor(r)
-	if len(forwardedFor) == 0 {
+	clientIP := clientIPFromForwardedFor(forwardedFor)
+
+	if clientIP == "" {
 		r.Header.Del("X-Forwarded-For")
+		clientIP = remoteAddrHost(r.RemoteAddr)
 	} else {
-		r.Header["X-Forwarded-For"] = forwardedFor
+		r.Header.Set("X-Forwarded-For", forwardedFor)
 	}
 
-	LoggingRequestContext(r).ClientIP = clientIPFromForwardedFor(forwardedFor, r.RemoteAddr)
+	RequestContext(r).ClientIP = clientIP
 
 	h.next.ServeHTTP(w, r)
 }
 
-func (h *ClientIPMiddleware) trustedForwardedFor(r *http.Request) []string {
+func (h *ClientIPMiddleware) trustedForwardedFor(r *http.Request) string {
 	if !h.trusted {
-		return nil
+		return ""
 	}
-	return r.Header[h.headerName]
+	return strings.Join(r.Header[h.headerName], ", ")
 }
 
-func clientIPFromForwardedFor(forwardedFor []string, remoteAddr string) string {
-	if len(forwardedFor) > 0 {
-		clientIP, _, _ := strings.Cut(forwardedFor[0], ",")
-		if clientIP = strings.TrimSpace(clientIP); clientIP != "" {
-			return clientIP
-		}
-	}
-	return remoteAddrHost(remoteAddr)
+func clientIPFromForwardedFor(forwardedFor string) string {
+	clientIP, _, _ := strings.Cut(forwardedFor, ",")
+	return strings.TrimSpace(clientIP)
 }
 
 func remoteAddrHost(remoteAddr string) string {

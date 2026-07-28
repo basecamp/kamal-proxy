@@ -13,19 +13,6 @@ import (
 	"github.com/basecamp/kamal-proxy/internal/metrics"
 )
 
-type contextKey string
-
-var contextKeyRequestContext = contextKey("request-context")
-
-type loggingRequestContext struct {
-	Service         string
-	Target          string
-	ClientIP        string
-	RequestHeaders  []string
-	ResponseHeaders []string
-	ExcludeMetrics  bool
-}
-
 type LoggingMiddleware struct {
 	logger    *slog.Logger
 	httpPort  int
@@ -42,20 +29,10 @@ func WithLoggingMiddleware(logger *slog.Logger, httpPort, httpsPort int, next ht
 	}
 }
 
-func LoggingRequestContext(r *http.Request) *loggingRequestContext {
-	lrc, ok := r.Context().Value(contextKeyRequestContext).(*loggingRequestContext)
-	if !ok {
-		return &loggingRequestContext{}
-	}
-	return lrc
-}
-
 func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := newLoggerResponseWriter(w)
 
-	var loggingRequestContext loggingRequestContext
-	ctx := context.WithValue(r.Context(), contextKeyRequestContext, &loggingRequestContext)
-	r = r.WithContext(ctx)
+	r, requestContext := withRequestContext(r)
 
 	started := time.Now()
 
@@ -81,8 +58,8 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.String("path", r.URL.Path),
 			slog.String("request_id", r.Header.Get("X-Request-ID")),
 			slog.Int("status", writer.statusCode),
-			slog.String("service", loggingRequestContext.Service),
-			slog.String("target", loggingRequestContext.Target),
+			slog.String("service", requestContext.Service),
+			slog.String("target", requestContext.Target),
 			slog.Int64("duration", elapsed.Nanoseconds()),
 			slog.String("method", r.Method),
 			slog.Int64("req_content_length", r.ContentLength),
@@ -98,12 +75,12 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.String("query", r.URL.RawQuery),
 		}
 
-		attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.RequestHeaders, r.Header, "req")...)
-		attrs = append(attrs, h.retrieveCustomHeaders(loggingRequestContext.ResponseHeaders, writer.Header(), "resp")...)
+		attrs = append(attrs, h.retrieveCustomHeaders(requestContext.RequestHeaders, r.Header, "req")...)
+		attrs = append(attrs, h.retrieveCustomHeaders(requestContext.ResponseHeaders, writer.Header(), "resp")...)
 		h.logger.LogAttrs(context.Background(), slog.LevelInfo, "Request", attrs...)
 
-		if !loggingRequestContext.ExcludeMetrics {
-			metrics.Tracker.TrackRequest(loggingRequestContext.Service, r.Method, writer.statusCode, elapsed)
+		if !requestContext.ExcludeMetrics {
+			metrics.Tracker.TrackRequest(requestContext.Service, r.Method, writer.statusCode, elapsed)
 		}
 	}()
 

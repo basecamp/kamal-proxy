@@ -16,6 +16,7 @@ func TestMiddleware_ClientIPResolution(t *testing.T) {
 		clientIPHeader   string
 		forwardHeaders   bool
 		requestHeaders   map[string]string
+		extraHeaders     map[string]string
 		wantForwardedFor []string
 		wantClientIP     string
 	}{
@@ -71,11 +72,19 @@ func TestMiddleware_ClientIPResolution(t *testing.T) {
 			wantClientIP:     "192.0.2.1",
 		},
 		{
-			name:             "empty client IP header falls back to the peer address",
+			name:             "empty client IP header is treated as absent",
 			clientIPHeader:   "True-Client-IP",
 			requestHeaders:   map[string]string{"True-Client-IP": " "},
-			wantForwardedFor: []string{" "},
+			wantForwardedFor: nil,
 			wantClientIP:     "192.0.2.1",
+		},
+		{
+			name:             "repeated trusted header values are joined into one entry",
+			clientIPHeader:   "True-Client-IP",
+			requestHeaders:   map[string]string{"True-Client-IP": "203.0.113.9"},
+			extraHeaders:     map[string]string{"True-Client-IP": "10.0.0.1"},
+			wantForwardedFor: []string{"203.0.113.9, 10.0.0.1"},
+			wantClientIP:     "203.0.113.9",
 		},
 	}
 
@@ -96,6 +105,9 @@ func TestMiddleware_ClientIPResolution(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
 			for name, value := range tt.requestHeaders {
 				req.Header.Set(name, value)
+			}
+			for name, value := range tt.extraHeaders {
+				req.Header.Add(name, value)
 			}
 
 			middleware.ServeHTTP(httptest.NewRecorder(), req)

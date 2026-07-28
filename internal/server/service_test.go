@@ -65,6 +65,15 @@ func TestService_ClientIPHeaderRewritesXForwardedFor(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Equal(t, clientIP, xForwardedFor)
+
+	req = httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("True-Client-IP", "")
+
+	w = httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, clientIP, xForwardedFor)
 }
 
 func TestService_ClientIPHeaderIsTrustedWithoutForwardingHeaders(t *testing.T) {
@@ -282,7 +291,7 @@ func TestService_ExcludeMetricsPathsMarksRequestContext(t *testing.T) {
 
 	checkExcluded := func(path string) bool {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
-		ctx := &loggingRequestContext{}
+		ctx := &requestContext{}
 		req = req.WithContext(context.WithValue(req.Context(), contextKeyRequestContext, ctx))
 
 		w := httptest.NewRecorder()

@@ -172,9 +172,9 @@ func (t *Target) StartRequest(req *http.Request) (*http.Request, error) {
 }
 
 func (t *Target) SendRequest(w http.ResponseWriter, req *http.Request) {
-	LoggingRequestContext(req).Target = t.Address()
-	LoggingRequestContext(req).RequestHeaders = t.options.LogRequestHeaders
-	LoggingRequestContext(req).ResponseHeaders = t.options.LogResponseHeaders
+	RequestContext(req).Target = t.Address()
+	RequestContext(req).RequestHeaders = t.options.LogRequestHeaders
+	RequestContext(req).ResponseHeaders = t.options.LogResponseHeaders
 
 	inflightRequest := t.getInflightRequest(req)
 	defer t.endInflightRequest(req)
