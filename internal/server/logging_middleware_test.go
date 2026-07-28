@@ -30,7 +30,8 @@ func TestMiddleware_LoggingMiddleware(t *testing.T) {
 		fmt.Fprintln(w, "goodbye")
 	})
 
-	middleware := WithLoggingMiddleware(logger, 80, 443, WithClientIPMiddleware("", true, handler))
+	middleware := WithRequestContextMiddleware(
+		WithLoggingMiddleware(logger, 80, 443, WithClientIPMiddleware("", true, handler)))
 
 	req := httptest.NewRequest("POST", "http://app.example.com/somepath?q=ok", bytes.NewReader([]byte("hello")))
 	req.Header.Set("X-Request-ID", "request-id")
@@ -104,7 +105,8 @@ func TestMiddleware_LoggingMiddlewareLogsClientIPHeaderAsRemoteAddr(t *testing.T
 	logger := slog.New(slog.NewJSONHandler(out, nil))
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
-	middleware := WithLoggingMiddleware(logger, 80, 443, WithClientIPMiddleware("True-Client-IP", false, handler))
+	middleware := WithRequestContextMiddleware(
+		WithLoggingMiddleware(logger, 80, 443, WithClientIPMiddleware("True-Client-IP", false, handler)))
 
 	req := httptest.NewRequest("GET", "http://app.example.com/", nil)
 	req.Header.Set("X-Forwarded-For", "10.10.10.10")
@@ -127,7 +129,8 @@ func TestMiddleware_LoggingMiddlewareIgnoresUntrustedXForwardedFor(t *testing.T)
 	logger := slog.New(slog.NewJSONHandler(out, nil))
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
-	middleware := WithLoggingMiddleware(logger, 80, 443, WithClientIPMiddleware("", false, handler))
+	middleware := WithRequestContextMiddleware(
+		WithLoggingMiddleware(logger, 80, 443, WithClientIPMiddleware("", false, handler)))
 
 	req := httptest.NewRequest("GET", "http://app.example.com/", nil)
 	req.Header.Set("X-Forwarded-For", "6.6.6.6")

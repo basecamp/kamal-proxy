@@ -32,7 +32,7 @@ func WithLoggingMiddleware(logger *slog.Logger, httpPort, httpsPort int, next ht
 func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := newLoggerResponseWriter(w)
 
-	r, requestContext := withRequestContext(r)
+	requestContext := RequestContext(r)
 
 	started := time.Now()
 

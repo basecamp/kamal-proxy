@@ -218,6 +218,7 @@ func (s *Server) buildHandler() http.Handler {
 	handler = s.router
 	handler, _ = WithErrorPageMiddleware(pages.DefaultErrorPages, true, handler)
 	handler = WithLoggingMiddleware(slog.Default(), s.config.HttpPort, s.config.HttpsPort, handler)
+	handler = WithRequestContextMiddleware(handler)
 	handler = WithRequestIDMiddleware(handler)
 	handler = WithRequestStartMiddleware(handler)
 

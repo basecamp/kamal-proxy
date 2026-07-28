@@ -1,8 +1,6 @@
 package server
 
 import (
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -98,8 +96,7 @@ func TestMiddleware_ClientIPResolution(t *testing.T) {
 				clientIP = ClientIP(r)
 			})
 
-			logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-			middleware := WithLoggingMiddleware(logger, 80, 443,
+			middleware := WithRequestContextMiddleware(
 				WithClientIPMiddleware(tt.clientIPHeader, tt.forwardHeaders, handler))
 
 			req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
