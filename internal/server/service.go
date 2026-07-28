@@ -409,7 +409,7 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
-	middleware, err := s.createMiddleware(options, certManager)
+	middleware, err := s.createMiddleware(options, targetOptions, certManager)
 	if err != nil {
 		return err
 	}
@@ -493,7 +493,7 @@ func (s *Service) createHostPolicy(options ServiceOptions, certCache autocert.Ca
 	return autocert.HostWhitelist(options.Hosts...), nil
 }
 
-func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
+func (s *Service) createMiddleware(options ServiceOptions, targetOptions TargetOptions, certManager CertManager) (http.Handler, error) {
 	var err error
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
 
@@ -512,9 +512,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 		handler = certManager.HTTPHandler(handler)
 	}
 
-	if options.ClientIPHeader != "" {
-		handler = WithClientIPMiddleware(options.ClientIPHeader, handler)
-	}
+	handler = WithClientIPMiddleware(options.ClientIPHeader, targetOptions.ForwardHeaders, handler)
 
 	return handler, nil
 }

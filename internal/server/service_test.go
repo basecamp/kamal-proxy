@@ -57,8 +57,6 @@ func TestService_ClientIPHeaderRewritesXForwardedFor(t *testing.T) {
 	require.Equal(t, "203.0.113.9, "+clientIP, xForwardedFor)
 	require.Equal(t, "203.0.113.9", trueClientIP)
 
-	// Without the trusted header, the client-supplied X-Forwarded-For is
-	// forwarded unmodified, as usual.
 	req = httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	req.Header.Set("X-Forwarded-For", "6.6.6.6")
 
@@ -66,7 +64,44 @@ func TestService_ClientIPHeaderRewritesXForwardedFor(t *testing.T) {
 	service.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-	require.Equal(t, "6.6.6.6, "+clientIP, xForwardedFor)
+	require.Equal(t, clientIP, xForwardedFor)
+}
+
+func TestService_ClientIPHeaderIsTrustedWithoutForwardingHeaders(t *testing.T) {
+	var xForwardedFor, xForwardedProto, xForwardedHost string
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.ClientIPHeader = "True-Client-IP"
+
+	targetOptions := defaultTargetOptions
+	targetOptions.ForwardHeaders = false
+
+	service := testCreateServiceWithHandler(t, serviceOptions, targetOptions,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != defaultHealthCheckConfig.Path {
+				xForwardedFor = r.Header.Get("X-Forwarded-For")
+				xForwardedProto = r.Header.Get("X-Forwarded-Proto")
+				xForwardedHost = r.Header.Get("X-Forwarded-Host")
+			}
+		}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("True-Client-IP", "203.0.113.9")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "untrusted.example.com")
+
+	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, "203.0.113.9, "+clientIP, xForwardedFor)
+
+	// Trusting the client IP header does not extend trust to any other header
+	require.Equal(t, "http", xForwardedProto)
+	require.Equal(t, "example.com", xForwardedHost)
 }
 
 func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {

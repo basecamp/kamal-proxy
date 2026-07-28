@@ -197,7 +197,6 @@ func TestTarget_XForwardedHeadersPopulatedByDefault(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	// These values should be untrusted and cleared
-	req.Header.Set("X-Forwarded-For", "10.10.10.10")
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Host", "untrusted.example.com")
 
@@ -215,6 +214,27 @@ func TestTarget_XForwardedHeadersPopulatedByDefault(t *testing.T) {
 	require.Equal(t, "http", xForwardedProto)
 	require.Equal(t, "example.com", xForwardedHost)
 	require.Equal(t, "Custom value", customHeader)
+}
+
+func TestTarget_XForwardedForIsAlwaysAppendedTo(t *testing.T) {
+	var xForwardedFor string
+
+	targetOptions := TargetOptions{ForwardHeaders: false}
+	target := testTargetWithOptions(t, targetOptions, func(w http.ResponseWriter, r *http.Request) {
+		xForwardedFor = r.Header.Get("X-Forwarded-For")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+
+	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	testServeRequestWithTarget(t, target, w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+	require.Equal(t, "203.0.113.9, "+clientIP, xForwardedFor)
 }
 
 func TestTarget_XForwardedHeadersCanBeForwarded(t *testing.T) {

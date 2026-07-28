@@ -20,6 +20,7 @@ var contextKeyRequestContext = contextKey("request-context")
 type loggingRequestContext struct {
 	Service         string
 	Target          string
+	ClientIP        string
 	RequestHeaders  []string
 	ResponseHeaders []string
 	ExcludeMetrics  bool
@@ -74,11 +75,6 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			clientPort = ""
 		}
 
-		remoteAddr := r.Header.Get("X-Forwarded-For")
-		if remoteAddr == "" {
-			remoteAddr = clientAddr
-		}
-
 		attrs := []slog.Attr{
 			slog.String("host", r.Host),
 			slog.Int("port", port),
@@ -95,7 +91,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.String("resp_content_type", writer.Header().Get("Content-Type")),
 			slog.String("client_addr", clientAddr),
 			slog.String("client_port", clientPort),
-			slog.String("remote_addr", remoteAddr),
+			slog.String("remote_addr", ClientIP(r)),
 			slog.String("user_agent", r.Header.Get("User-Agent")),
 			slog.String("proto", r.Proto),
 			slog.String("scheme", scheme),

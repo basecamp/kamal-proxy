@@ -339,9 +339,8 @@ func (t *Target) rewrite(req *httputil.ProxyRequest) {
 }
 
 func (t *Target) forwardHeaders(req *httputil.ProxyRequest) {
-	if t.options.ForwardHeaders {
-		req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
-	}
+	// ClientIPMiddleware has already reduced this to the values we trust
+	req.Out.Header["X-Forwarded-For"] = req.In.Header["X-Forwarded-For"]
 
 	req.SetXForwarded()
 
