@@ -12,6 +12,10 @@ type RolloutController struct {
 	Percentage           int      `json:"percentage"`
 	PercentageSplitPoint float64  `json:"percentage_split_point"`
 	Allowlist            []string `json:"allowlist"`
+
+	// Stored inverted so that state written before this existed, which has no such
+	// field, restores as enabled rather than silently disabling a live rollout.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 func NewRolloutController(percentage int, allowlist []string) *RolloutController {
@@ -25,7 +29,15 @@ func NewRolloutController(percentage int, allowlist []string) *RolloutController
 	}
 }
 
+func (rc *RolloutController) Enabled() bool {
+	return !rc.Disabled
+}
+
 func (rc *RolloutController) RequestUsesRolloutGroup(r *http.Request) bool {
+	if rc.Disabled {
+		return false
+	}
+
 	splitValue := rc.splitValue(r)
 	if splitValue == "" {
 		return false

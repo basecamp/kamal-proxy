@@ -62,6 +62,7 @@ type ServiceDescription struct {
 	RolloutTarget     string   `json:"rollout_target,omitempty"`
 	RolloutPercentage int      `json:"rollout_percentage,omitempty"`
 	RolloutAllowlist  []string `json:"rollout_allowlist,omitempty"`
+	RolloutEnabled    bool     `json:"rollout_enabled,omitempty"`
 }
 
 func (s ServiceDescription) RolloutSummary() string {
@@ -77,7 +78,10 @@ func (s ServiceDescription) RolloutSummary() string {
 		parts = append(parts, fmt.Sprintf("list:%d", len(s.RolloutAllowlist)))
 	}
 	if len(parts) == 0 {
-		parts = append(parts, "no traffic")
+		parts = append(parts, "no split")
+	}
+	if !s.RolloutEnabled {
+		parts = append(parts, "disabled")
 	}
 
 	return fmt.Sprintf("%s (%s)", strings.Join(parts, " "), s.RolloutTarget)
@@ -208,6 +212,17 @@ func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) e
 	return service.SetRolloutSplit(percent, allowList)
 }
 
+func (r *Router) SetRolloutEnabled(name string, enabled bool) error {
+	defer r.saveStateSnapshot()
+
+	service := r.serviceForName(name)
+	if service == nil {
+		return ErrorServiceNotFound
+	}
+
+	return service.SetRolloutEnabled(enabled)
+}
+
 func (r *Router) StopRollout(name string, drainTimeout time.Duration) error {
 	defer r.saveStateSnapshot()
 
@@ -282,7 +297,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 				path := strings.Join(service.options.PathPrefixes, ",")
 				target := strings.Join(service.active.Targets().Names(), ",")
 
-				rolloutTarget, rolloutPercentage, rolloutAllowlist := service.RolloutDescription()
+				rolloutTarget, rolloutPercentage, rolloutAllowlist, rolloutEnabled := service.RolloutDescription()
 
 				result[name] = ServiceDescription{
 					Host:              host,
@@ -293,6 +308,7 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 					RolloutTarget:     rolloutTarget,
 					RolloutPercentage: rolloutPercentage,
 					RolloutAllowlist:  rolloutAllowlist,
+					RolloutEnabled:    rolloutEnabled,
 				}
 			}
 		}

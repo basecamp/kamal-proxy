@@ -806,6 +806,48 @@ func TestRouter_ListReportsRolloutState(t *testing.T) {
 	assert.Empty(t, router.ListActiveServices()["service1"].RolloutSummary())
 }
 
+func TestRouter_DisablingAndEnablingRollout(t *testing.T) {
+	router := testRouter(t)
+
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.SetRolloutTargets("service1", []string{second}, defaultEmptyReaders, defaultDeploymentOptions))
+
+	// Cannot toggle before a split has been set
+	require.ErrorIs(t, router.SetRolloutEnabled("service1", false), ErrorRolloutSplitNotSet)
+
+	require.NoError(t, router.SetRolloutSplit("service1", 0, []string{"1"}))
+
+	checkResponse := func(expected string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		req.AddCookie(&http.Cookie{Name: RolloutCookieName, Value: "1"})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, expected, w.Body.String())
+	}
+
+	checkResponse("second")
+
+	require.NoError(t, router.SetRolloutEnabled("service1", false))
+	checkResponse("first")
+	assert.False(t, router.ListActiveServices()["service1"].RolloutEnabled)
+	assert.Contains(t, router.ListActiveServices()["service1"].RolloutSummary(), "disabled")
+
+	// The split survives being disabled, so enabling needs no arguments
+	require.NoError(t, router.SetRolloutEnabled("service1", true))
+	checkResponse("second")
+	assert.True(t, router.ListActiveServices()["service1"].RolloutEnabled)
+	assert.NotContains(t, router.ListActiveServices()["service1"].RolloutSummary(), "disabled")
+
+	// Setting a split again turns it back on
+	require.NoError(t, router.SetRolloutEnabled("service1", false))
+	require.NoError(t, router.SetRolloutSplit("service1", 0, []string{"1"}))
+	checkResponse("second")
+}
+
 func TestRouter_RestoreLastSavedState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 

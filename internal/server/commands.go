@@ -58,6 +58,11 @@ type RolloutSetArgs struct {
 	Allowlist  []string
 }
 
+type RolloutEnableArgs struct {
+	Service string
+	Enabled bool
+}
+
 type RolloutStopArgs struct {
 	Service      string
 	DrainTimeout time.Duration
@@ -145,6 +150,10 @@ func (h *CommandHandler) RolloutDeploy(args RolloutDeployArgs, reply *bool) erro
 
 func (h *CommandHandler) RolloutSet(args RolloutSetArgs, reply *bool) error {
 	return h.router.SetRolloutSplit(args.Service, args.Percentage, args.Allowlist)
+}
+
+func (h *CommandHandler) RolloutEnable(args RolloutEnableArgs, reply *bool) error {
+	return h.router.SetRolloutEnabled(args.Service, args.Enabled)
 }
 
 func (h *CommandHandler) RolloutStop(args RolloutStopArgs, reply *bool) error {

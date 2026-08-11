@@ -55,6 +55,7 @@ const (
 var (
 	ErrorRolloutTargetNotSet                 = errors.New("rollout target not set")
 	ErrorInvalidRolloutPercentage            = errors.New("rollout percentage must be between 0 and 100")
+	ErrorRolloutSplitNotSet                  = errors.New("rollout split not set")
 	ErrorUnableToLoadErrorPages              = errors.New("unable to load error pages")
 	ErrorAutomaticTLSDoesNotSupportWildcards = errors.New("automatic TLS does not support wildcards")
 	ErrServiceOptionsInvalid                 = errors.New("service options invalid")
@@ -267,6 +268,23 @@ func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
 	return nil
 }
 
+func (s *Service) SetRolloutEnabled(enabled bool) error {
+	s.serviceLock.Lock()
+	defer s.serviceLock.Unlock()
+
+	if s.rollout == nil {
+		return ErrorRolloutTargetNotSet
+	}
+
+	if s.rolloutController == nil {
+		return ErrorRolloutSplitNotSet
+	}
+
+	s.rolloutController.Disabled = !enabled
+	slog.Info("Set rollout enabled", "service", s.name, "enabled", enabled)
+	return nil
+}
+
 func (s *Service) StopRollout(drainTimeout time.Duration) error {
 	rollout := s.clearRollout()
 
@@ -292,12 +310,12 @@ func (s *Service) clearRollout() *LoadBalancer {
 	return rollout
 }
 
-func (s *Service) RolloutDescription() (target string, percentage int, allowlist []string) {
+func (s *Service) RolloutDescription() (target string, percentage int, allowlist []string, enabled bool) {
 	s.serviceLock.RLock()
 	defer s.serviceLock.RUnlock()
 
 	if s.rollout == nil {
-		return "", 0, nil
+		return "", 0, nil, false
 	}
 
 	target = strings.Join(s.rollout.Targets().Names(), ",")
@@ -305,9 +323,10 @@ func (s *Service) RolloutDescription() (target string, percentage int, allowlist
 	if s.rolloutController != nil {
 		percentage = s.rolloutController.Percentage
 		allowlist = s.rolloutController.Allowlist
+		enabled = s.rolloutController.Enabled()
 	}
 
-	return target, percentage, allowlist
+	return target, percentage, allowlist, enabled
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {

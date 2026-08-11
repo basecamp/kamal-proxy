@@ -1,11 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRolloutController_MatchesAllowlistItems(t *testing.T) {
@@ -70,4 +72,29 @@ func TestRolloutController_ZeroPercentageStillHonoursTheAllowlist(t *testing.T) 
 
 	assert.True(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00001"}}}))
 	assert.False(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00002"}}}))
+}
+
+func TestRolloutController_DisabledRoutesNothing(t *testing.T) {
+	rc := NewRolloutController(100, []string{"00001"})
+	assert.True(t, rc.Enabled())
+	assert.True(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00001"}}}))
+
+	rc.Disabled = true
+
+	assert.False(t, rc.Enabled())
+	assert.False(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00001"}}}))
+	assert.False(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00002"}}}))
+
+	// Re-enabling restores the split it was already carrying
+	rc.Disabled = false
+	assert.Equal(t, 100, rc.Percentage)
+	assert.True(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00002"}}}))
+}
+
+func TestRolloutController_StateWrittenBeforeDisabledExistedRestoresEnabled(t *testing.T) {
+	var rc RolloutController
+	require.NoError(t, json.Unmarshal([]byte(`{"percentage":100,"percentage_split_point":4294967295,"allowlist":[]}`), &rc))
+
+	assert.True(t, rc.Enabled())
+	assert.True(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00001"}}}))
 }
