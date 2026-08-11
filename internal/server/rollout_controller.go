@@ -43,6 +43,13 @@ func (rc *RolloutController) valueInAllowlist(value string) bool {
 }
 
 func (rc *RolloutController) valueInRolloutPercentage(value string) bool {
+	// Zero has to mean zero, so that setting it is a reliable way to close the
+	// split without tearing the rollout down. A value hashing to 0 would
+	// otherwise still match, since the split point is 0 too.
+	if rc.Percentage <= 0 {
+		return false
+	}
+
 	hash := rc.hashForValue(value)
 	return float64(hash) <= rc.PercentageSplitPoint
 }

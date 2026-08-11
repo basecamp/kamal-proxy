@@ -52,3 +52,22 @@ func TestRolloutController_AllowListAndPercentageTogether(t *testing.T) {
 
 	assert.False(t, rc.RequestUsesRolloutGroup(&http.Request{}))
 }
+
+func TestRolloutController_ZeroPercentageRoutesNothing(t *testing.T) {
+	rc := NewRolloutController(0, []string{})
+
+	// A value hashing to exactly 0 would match a split point of 0 without the guard
+	assert.False(t, rc.valueInRolloutPercentage("anything"))
+
+	for i := range 1000 {
+		req := &http.Request{Header: http.Header{"Cookie": []string{fmt.Sprintf("kamal-rollout=%05d", i)}}}
+		assert.False(t, rc.RequestUsesRolloutGroup(req))
+	}
+}
+
+func TestRolloutController_ZeroPercentageStillHonoursTheAllowlist(t *testing.T) {
+	rc := NewRolloutController(0, []string{"00001"})
+
+	assert.True(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00001"}}}))
+	assert.False(t, rc.RequestUsesRolloutGroup(&http.Request{Header: http.Header{"Cookie": []string{"kamal-rollout=00002"}}}))
+}
