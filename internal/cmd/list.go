@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/json"
+	"fmt"
 	"maps"
 	"net/rpc"
 	"slices"
@@ -11,7 +13,8 @@ import (
 )
 
 type listCommand struct {
-	cmd *cobra.Command
+	cmd    *cobra.Command
+	format string
 }
 
 func newListCommand() *listCommand {
@@ -24,10 +27,16 @@ func newListCommand() *listCommand {
 		Aliases: []string{"ls"},
 	}
 
+	listCommand.cmd.Flags().StringVar(&listCommand.format, "format", "table", "Output format: table or json")
+
 	return listCommand
 }
 
 func (c *listCommand) run(cmd *cobra.Command, args []string) error {
+	if c.format != "table" && c.format != "json" {
+		return fmt.Errorf("unknown format %q, expected table or json", c.format)
+	}
+
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
 		var response server.ListResponse
 
@@ -36,9 +45,23 @@ func (c *listCommand) run(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		if c.format == "json" {
+			return c.displayJSON(response)
+		}
+
 		c.displayResponse(response)
 		return nil
 	})
+}
+
+func (c *listCommand) displayJSON(response server.ListResponse) error {
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(encoded))
+	return nil
 }
 
 func (c *listCommand) displayResponse(response server.ListResponse) {
