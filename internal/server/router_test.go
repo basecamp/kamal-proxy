@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -756,8 +757,53 @@ func TestRouter_EnablingRollout(t *testing.T) {
 	require.NoError(t, router.SetRolloutSplit("service1", 0, []string{"2"}))
 	checkResponse("first")
 
-	require.NoError(t, router.StopRollout("service1"))
+	require.NoError(t, router.StopRollout("service1", DefaultDrainTimeout))
 	checkResponse("first")
+
+	// Stopping clears the targets too, so the split cannot be resumed without
+	// deploying them again.
+	require.ErrorIs(t, router.SetRolloutSplit("service1", 0, []string{"1"}), ErrorRolloutTargetNotSet)
+	checkResponse("first")
+}
+
+func TestRouter_RolloutSplitRejectsPercentagesOutsideRange(t *testing.T) {
+	router := testRouter(t)
+
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.SetRolloutTargets("service1", []string{second}, defaultEmptyReaders, defaultDeploymentOptions))
+
+	require.ErrorIs(t, router.SetRolloutSplit("service1", -1, nil), ErrorInvalidRolloutPercentage)
+	require.ErrorIs(t, router.SetRolloutSplit("service1", 101, nil), ErrorInvalidRolloutPercentage)
+
+	require.NoError(t, router.SetRolloutSplit("service1", 0, nil))
+	require.NoError(t, router.SetRolloutSplit("service1", 100, nil))
+}
+
+func TestRouter_ListReportsRolloutState(t *testing.T) {
+	router := testRouter(t)
+
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	require.Empty(t, router.ListActiveServices()["service1"].RolloutTarget)
+
+	require.NoError(t, router.SetRolloutTargets("service1", []string{second}, defaultEmptyReaders, defaultDeploymentOptions))
+	require.NoError(t, router.SetRolloutSplit("service1", 5, []string{"1234"}))
+
+	described := router.ListActiveServices()["service1"]
+	assert.Equal(t, second, described.RolloutTarget)
+	assert.Equal(t, 5, described.RolloutPercentage)
+	assert.Equal(t, []string{"1234"}, described.RolloutAllowlist)
+	assert.Equal(t, fmt.Sprintf("5%% list:1 (%s)", second), described.RolloutSummary())
+
+	require.NoError(t, router.StopRollout("service1", DefaultDrainTimeout))
+	assert.Empty(t, router.ListActiveServices()["service1"].RolloutTarget)
+	assert.Empty(t, router.ListActiveServices()["service1"].RolloutSummary())
 }
 
 func TestRouter_RestoreLastSavedState(t *testing.T) {

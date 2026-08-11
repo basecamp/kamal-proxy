@@ -54,6 +54,7 @@ const (
 
 var (
 	ErrorRolloutTargetNotSet                 = errors.New("rollout target not set")
+	ErrorInvalidRolloutPercentage            = errors.New("rollout percentage must be between 0 and 100")
 	ErrorUnableToLoadErrorPages              = errors.New("unable to load error pages")
 	ErrorAutomaticTLSDoesNotSupportWildcards = errors.New("automatic TLS does not support wildcards")
 	ErrServiceOptionsInvalid                 = errors.New("service options invalid")
@@ -257,18 +258,56 @@ func (s *Service) SetRolloutSplit(percentage int, allowlist []string) error {
 		return ErrorRolloutTargetNotSet
 	}
 
+	if percentage < 0 || percentage > 100 {
+		return ErrorInvalidRolloutPercentage
+	}
+
 	s.rolloutController = NewRolloutController(percentage, allowlist)
 	slog.Info("Set rollout split", "service", s.name, "percentage", percentage, "allowlist", allowlist)
 	return nil
 }
 
-func (s *Service) StopRollout() error {
+func (s *Service) StopRollout(drainTimeout time.Duration) error {
+	rollout := s.clearRollout()
+
+	if rollout != nil {
+		rollout.Dispose()
+		rollout.DrainAll(drainTimeout)
+	}
+
+	slog.Info("Stopped rollout", "service", s.name)
+	return nil
+}
+
+// Clears both the split and the targets, so that a later `rollout set` cannot
+// resume traffic to containers that have since been removed.
+func (s *Service) clearRollout() *LoadBalancer {
 	s.serviceLock.Lock()
 	defer s.serviceLock.Unlock()
 
+	rollout := s.rollout
+	s.rollout = nil
 	s.rolloutController = nil
-	slog.Info("Stopped rollout", "service", s.name)
-	return nil
+
+	return rollout
+}
+
+func (s *Service) RolloutDescription() (target string, percentage int, allowlist []string) {
+	s.serviceLock.RLock()
+	defer s.serviceLock.RUnlock()
+
+	if s.rollout == nil {
+		return "", 0, nil
+	}
+
+	target = strings.Join(s.rollout.Targets().Names(), ",")
+
+	if s.rolloutController != nil {
+		percentage = s.rolloutController.Percentage
+		allowlist = s.rolloutController.Allowlist
+	}
+
+	return target, percentage, allowlist
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {

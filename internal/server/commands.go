@@ -59,7 +59,8 @@ type RolloutSetArgs struct {
 }
 
 type RolloutStopArgs struct {
-	Service string
+	Service      string
+	DrainTimeout time.Duration
 }
 
 type ListResponse struct {
@@ -147,5 +148,5 @@ func (h *CommandHandler) RolloutSet(args RolloutSetArgs, reply *bool) error {
 }
 
 func (h *CommandHandler) RolloutStop(args RolloutStopArgs, reply *bool) error {
-	return h.router.StopRollout(args.Service)
+	return h.router.StopRollout(args.Service, args.DrainTimeout)
 }

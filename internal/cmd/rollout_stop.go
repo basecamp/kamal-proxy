@@ -22,6 +22,8 @@ func newRolloutStopCommand() *rolloutStopCommand {
 		ValidArgs: []string{"service"},
 	}
 
+	rolloutStopCommand.cmd.Flags().DurationVar(&rolloutStopCommand.args.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "How long to allow in-flight requests to complete")
+
 	return rolloutStopCommand
 }
 

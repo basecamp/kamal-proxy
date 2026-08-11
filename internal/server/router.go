@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -53,11 +54,33 @@ type Router struct {
 }
 
 type ServiceDescription struct {
-	Host   string `json:"host"`
-	Path   string `json:"path"`
-	TLS    bool   `json:"tls"`
-	Target string `json:"target"`
-	State  string `json:"state"`
+	Host              string   `json:"host"`
+	Path              string   `json:"path"`
+	TLS               bool     `json:"tls"`
+	Target            string   `json:"target"`
+	State             string   `json:"state"`
+	RolloutTarget     string   `json:"rollout_target,omitempty"`
+	RolloutPercentage int      `json:"rollout_percentage,omitempty"`
+	RolloutAllowlist  []string `json:"rollout_allowlist,omitempty"`
+}
+
+func (s ServiceDescription) RolloutSummary() string {
+	if s.RolloutTarget == "" {
+		return ""
+	}
+
+	parts := []string{}
+	if s.RolloutPercentage > 0 {
+		parts = append(parts, fmt.Sprintf("%d%%", s.RolloutPercentage))
+	}
+	if len(s.RolloutAllowlist) > 0 {
+		parts = append(parts, fmt.Sprintf("list:%d", len(s.RolloutAllowlist)))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "no traffic")
+	}
+
+	return fmt.Sprintf("%s (%s)", strings.Join(parts, " "), s.RolloutTarget)
 }
 
 type ServiceDescriptionMap map[string]ServiceDescription
@@ -185,7 +208,7 @@ func (r *Router) SetRolloutSplit(name string, percent int, allowList []string) e
 	return service.SetRolloutSplit(percent, allowList)
 }
 
-func (r *Router) StopRollout(name string) error {
+func (r *Router) StopRollout(name string, drainTimeout time.Duration) error {
 	defer r.saveStateSnapshot()
 
 	service := r.serviceForName(name)
@@ -193,7 +216,7 @@ func (r *Router) StopRollout(name string) error {
 		return ErrorServiceNotFound
 	}
 
-	return service.StopRollout()
+	return service.StopRollout(drainTimeout)
 }
 
 func (r *Router) RemoveService(name string) error {
@@ -259,12 +282,17 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 				path := strings.Join(service.options.PathPrefixes, ",")
 				target := strings.Join(service.active.Targets().Names(), ",")
 
+				rolloutTarget, rolloutPercentage, rolloutAllowlist := service.RolloutDescription()
+
 				result[name] = ServiceDescription{
-					Host:   host,
-					Path:   path,
-					Target: target,
-					TLS:    service.options.TLSEnabled,
-					State:  service.pauseController.GetState().String(),
+					Host:              host,
+					Path:              path,
+					Target:            target,
+					TLS:               service.options.TLSEnabled,
+					State:             service.pauseController.GetState().String(),
+					RolloutTarget:     rolloutTarget,
+					RolloutPercentage: rolloutPercentage,
+					RolloutAllowlist:  rolloutAllowlist,
 				}
 			}
 		}
