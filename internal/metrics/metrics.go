@@ -10,7 +10,7 @@ import (
 )
 
 type tracker interface {
-	TrackRequest(service, method string, status int, duration time.Duration)
+	TrackRequest(service, slot, method string, status int, duration time.Duration)
 	AddInflightRequest(service string)
 	SubtractInflightRequest(service string)
 }
@@ -24,9 +24,9 @@ func Enable() http.Handler {
 
 type nullTracker struct{}
 
-func (nullTracker) TrackRequest(service, method string, status int, dur time.Duration) {}
-func (nullTracker) AddInflightRequest(service string)                                  {}
-func (nullTracker) SubtractInflightRequest(service string)                             {}
+func (nullTracker) TrackRequest(service, slot, method string, status int, dur time.Duration) {}
+func (nullTracker) AddInflightRequest(service string)                                        {}
+func (nullTracker) SubtractInflightRequest(service string)                                   {}
 
 type prometheusTracker struct {
 	httpRequests     *prometheus.CounterVec
@@ -41,9 +41,9 @@ func NewPrometheusTracker() *prometheusTracker {
 				Name:      "http_requests_total",
 				Namespace: "kamal",
 				Subsystem: "proxy",
-				Help:      "HTTP requests processed, labeled by service, status code and method.",
+				Help:      "HTTP requests processed, labeled by service, slot, status code and method.",
 			},
-			[]string{"service", "method", "status"},
+			[]string{"service", "slot", "method", "status"},
 		),
 
 		httpDuration: prometheus.NewHistogramVec(
@@ -51,10 +51,10 @@ func NewPrometheusTracker() *prometheusTracker {
 				Name:      "http_request_duration_seconds",
 				Namespace: "kamal",
 				Subsystem: "proxy",
-				Help:      "Duration of HTTP requests, labeled by service, status code and method.",
+				Help:      "Duration of HTTP requests, labeled by service, slot, status code and method.",
 				Buckets:   prometheus.DefBuckets,
 			},
-			[]string{"service", "method", "status"},
+			[]string{"service", "slot", "method", "status"},
 		),
 
 		inflightRequests: prometheus.NewGaugeVec(
@@ -73,7 +73,7 @@ func NewPrometheusTracker() *prometheusTracker {
 	return tracker
 }
 
-func (p *prometheusTracker) TrackRequest(service, method string, status int, duration time.Duration) {
+func (p *prometheusTracker) TrackRequest(service, slot, method string, status int, duration time.Duration) {
 	method = normalizeMethod(method)
 	statusString := strconv.Itoa(status)
 

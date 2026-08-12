@@ -9,9 +9,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basecamp/kamal-proxy/internal/metrics"
 )
 
 func TestMiddleware_LoggingMiddleware(t *testing.T) {
@@ -120,4 +123,43 @@ func TestMiddleware_LoggingMiddlewareLogsClientIPHeaderAsRemoteAddr(t *testing.T
 	require.NoError(t, err)
 
 	assert.Equal(t, "203.0.113.7", logline.RemoteAddr)
+}
+
+type recordingTracker struct{ slots []string }
+
+func (t *recordingTracker) TrackRequest(service, slot, method string, status int, dur time.Duration) {
+	t.slots = append(t.slots, slot)
+}
+func (t *recordingTracker) AddInflightRequest(service string)      {}
+func (t *recordingTracker) SubtractInflightRequest(service string) {}
+
+func TestMiddleware_RequestsAreLabelledWithTheSlotThatServedThem(t *testing.T) {
+	tracker := &recordingTracker{}
+	original := metrics.Tracker
+	metrics.Tracker = tracker
+	defer func() { metrics.Tracker = original }()
+
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackend(t, "second", http.StatusOK)
+
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.SetRolloutTargets("service1", []string{second}, defaultEmptyReaders, defaultDeploymentOptions))
+	require.NoError(t, router.SetRolloutSplit("service1", 0, []string{"in-the-cohort"}))
+
+	middleware := WithLoggingMiddleware(slog.New(slog.NewJSONHandler(&strings.Builder{}, nil)), 80, 443, router)
+
+	send := func(cookie string) {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		if cookie != "" {
+			req.AddCookie(&http.Cookie{Name: RolloutCookieName, Value: cookie})
+		}
+		middleware.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	send("")
+	send("not-in-the-cohort")
+	send("in-the-cohort")
+
+	assert.Equal(t, []string{"default", "default", "rollout"}, tracker.slots)
 }

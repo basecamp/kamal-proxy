@@ -19,6 +19,7 @@ var contextKeyRequestContext = contextKey("request-context")
 
 type loggingRequestContext struct {
 	Service         string
+	Slot            string
 	Target          string
 	RequestHeaders  []string
 	ResponseHeaders []string
@@ -39,6 +40,14 @@ func WithLoggingMiddleware(logger *slog.Logger, httpPort, httpsPort int, next ht
 		httpsPort: httpsPort,
 		next:      next,
 	}
+}
+
+// Requests that never reach a service have no slot, so report them as the default.
+func (c *loggingRequestContext) slot() string {
+	if c.Slot == "" {
+		return TargetSlotActive.String()
+	}
+	return c.Slot
 }
 
 func LoggingRequestContext(r *http.Request) *loggingRequestContext {
@@ -107,7 +116,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.logger.LogAttrs(context.Background(), slog.LevelInfo, "Request", attrs...)
 
 		if !loggingRequestContext.ExcludeMetrics {
-			metrics.Tracker.TrackRequest(loggingRequestContext.Service, r.Method, writer.statusCode, elapsed)
+			metrics.Tracker.TrackRequest(loggingRequestContext.Service, loggingRequestContext.slot(), r.Method, writer.statusCode, elapsed)
 		}
 	}()
 

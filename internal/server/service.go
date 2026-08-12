@@ -80,6 +80,16 @@ const (
 	TargetSlotRollout
 )
 
+// Reported on metrics and request logs. "default" rather than "active" because the
+// rollout slot is active too — what distinguishes them is where a request goes unless
+// the split says otherwise.
+func (s TargetSlot) String() string {
+	if s == TargetSlotRollout {
+		return "rollout"
+	}
+	return "default"
+}
+
 type HealthCheckConfig struct {
 	Path     string        `json:"path"`
 	Port     int           `json:"port"`
@@ -437,10 +447,15 @@ func (s *Service) Drain(timeout time.Duration) {
 
 func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 	lb := s.active
+	slot := TargetSlotActive
+
 	if s.rollout != nil && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
 		slog.Debug("Using rollout for request", "service", s.name, "path", req.URL.Path)
 		lb = s.rollout
+		slot = TargetSlotRollout
 	}
+
+	LoggingRequestContext(req).Slot = slot.String()
 
 	return lb
 }
