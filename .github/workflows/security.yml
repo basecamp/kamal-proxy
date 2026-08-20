@@ -1,0 +1,375 @@
+name: Security
+
+# Toolchain and dependency advisories are published against code that has not
+# changed, so this runs on a clock rather than on a diff. Gating pull requests
+# on it would turn every newly published CVE into a red build on unrelated work.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# The reporting step reads then writes the tracking issue, which is not atomic.
+# Keyed by ref because that is the unit of contention: each ref has its own
+# tracking issue, so runs on different refs never touch the same one, and only
+# same-ref runs -- which scan the same tree -- need to queue behind each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  govulncheck:
+    name: Govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      # ./... does not cross module boundaries, so every module is listed.
+      MODULES: "."
+      # govulncheck's source mode only analyses the files the current build
+      # configuration selects, so scan each GOOS/GOARCH we actually release.
+      TARGETS: "linux/amd64 linux/arm64"
+      # Nothing is carried here: this repo has no unfixable findings.
+      ACCEPTED: ""
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        id: scan
+        run: |
+          set +e
+          : > "${RUNNER_TEMP}/report.txt"
+          rm -f "${RUNNER_TEMP}"/gv-*.json
+          n=0
+          scan_error=0
+          # Releases are built CGO_ENABLED=0 for each GOOS/GOARCH in TARGETS. govulncheck's
+          # source mode only sees the files the current build configuration selects, so a
+          # single native run would miss a path reachable only on another target.
+          export CGO_ENABLED=0
+          for target in ${TARGETS}; do
+            GOOS="${target%%/*}"
+            GOARCH="${target##*/}"
+            export GOOS GOARCH
+            for module in ${MODULES}; do
+              n=$((n + 1))
+              echo "===== ${target} ${module}" >> "${RUNNER_TEMP}/report.txt"
+              ( cd "${module}" && govulncheck -format json ./... ) > "${RUNNER_TEMP}/gv-${n}.json" 2> "${RUNNER_TEMP}/gv-${n}.err"
+              rc=$?
+              # govulncheck: 0 = clean, 3 = vulnerabilities found, anything else = it failed to run.
+              if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 3 ]; then
+                scan_error=1
+                echo "govulncheck exited ${rc} (scanner error, not a finding):" >> "${RUNNER_TEMP}/report.txt"
+                cat "${RUNNER_TEMP}/gv-${n}.err" >> "${RUNNER_TEMP}/report.txt"
+                rm -f "${RUNNER_TEMP}/gv-${n}.json"
+                continue
+              fi
+              ( cd "${module}" && govulncheck ./... ) >> "${RUNNER_TEMP}/report.txt" 2>&1
+            done
+          done
+          set -e
+
+          cat "${RUNNER_TEMP}/report.txt"
+
+          # A failed target must not bury a real finding from a target that succeeded, so
+          # always filter whatever JSON was produced before deciding what to report.
+
+          # Fail on findings govulncheck considers reachable (a symbol-level trace) that
+          # are not in ACCEPTED -- the same set its "Your code is affected by N
+          # vulnerabilities" line counts -- and on accepted IDs that have since gained a
+          # fix for the module path we actually depend on.
+          python3 - "$ACCEPTED" > "${RUNNER_TEMP}/new.txt" <<'PY'
+          import glob, json, os, sys
+
+          accepted = {x for x in sys.argv[1].split() if x}
+          reachable = {}   # osv id -> {module path: set of versions} it was reached through
+          advisories = {}
+
+          for path in glob.glob(os.environ["RUNNER_TEMP"] + "/gv-*.json"):
+              raw = open(path).read()
+              dec, i = json.JSONDecoder(), 0
+              while i < len(raw):
+                  while i < len(raw) and raw[i].isspace(): i += 1
+                  if i >= len(raw): break
+                  obj, i = dec.raw_decode(raw, i)
+                  if "osv" in obj:
+                      advisories[obj["osv"]["id"]] = obj["osv"]
+                  f = obj.get("finding")
+                  if f:
+                      frame = (f.get("trace") or [{}])[0]
+                      if frame.get("function"):
+                          mods = reachable.setdefault(f["osv"], {})
+                          mods.setdefault(frame.get("module"), set()).add(frame.get("version") or "v0.0.0")
+
+          def parse(version):
+              # Order Go module versions by SemVer rules. Two prefixes to shed: module
+              # versions carry "v" (v28.5.2), and stdlib findings carry "go" (go1.26.5)
+              # while the advisory's own ranges use a bare 1.26.5 -- comparing those
+              # unnormalized would match the wrong interval entirely. Build metadata
+              # (+incompatible) does not participate in precedence.
+              version = version.split("+", 1)[0]
+              if version.startswith("go"):
+                  version = version[2:]
+              elif version.startswith("v"):
+                  version = version[1:]
+              main, _, pre = version.partition("-")
+
+              release = []
+              for chunk in main.split("."):
+                  release.append(int(chunk) if chunk.isdigit() else 0)
+              while len(release) < 3:
+                  release.append(0)
+
+              # SemVer 11.4: dot-separated prerelease identifiers compare field by field;
+              # numeric ones compare numerically and rank below alphanumeric ones. String
+              # comparison would put beta.10 before beta.2.
+              identifiers = []
+              for chunk in pre.split(".") if pre else []:
+                  if chunk.isdigit():
+                      identifiers.append((0, int(chunk), ""))
+                  else:
+                      identifiers.append((1, 0, chunk))
+
+              # A version with no prerelease outranks the same release with one.
+              return (release, 0 if pre else 1, identifiers)
+
+          def fix_for(osv_id, module_versions):
+              # Only a fix on a module path we actually import counts: these advisories
+              # routinely list a renamed module (moby/moby/v2) carrying the fix while the
+              # path we depend on (docker/docker) never gets one.
+              #
+              # And only a fix for the interval OUR version falls in counts. An advisory
+              # can be fixed, then reintroduced and left unfixed; treating the historical
+              # fixed event as an upgrade would fail the job forever with advice that does
+              # not apply.
+              out = []
+              for affected in (advisories.get(osv_id) or {}).get("affected", []):
+                  name = affected.get("package", {}).get("name")
+                  if name not in module_versions:
+                      continue
+                  for ours in module_versions[name]:
+                      try:
+                          target = parse(ours)
+                      except Exception:
+                          continue
+                      for rng in affected.get("ranges", []):
+                          introduced, fixed = None, None
+                          for event in rng.get("events", []):
+                              if event.get("introduced") is not None:
+                                  # A new interval starts; the previous one did not contain us.
+                                  introduced, fixed = event["introduced"], None
+                              elif event.get("fixed") is not None:
+                                  fixed = event["fixed"]
+                                  if introduced is not None and parse(introduced) <= target < parse(fixed):
+                                      out.append(f"{name}@{fixed}")
+                                  introduced = None
+                          # A trailing introduced with no fixed is an open, unfixed interval.
+              return out
+
+          # An accepted ID that no longer shows up is a suppression with nothing left to
+          # suppress -- dead config that would silently swallow the advisory if a future
+          # version reintroduced it. Worth saying, not worth failing a clean run over.
+          stale = sorted(accepted - set(reachable))
+          if stale:
+              with open(os.environ["RUNNER_TEMP"] + "/stale-accepted.txt", "w") as handle:
+                  handle.write("\n".join(stale) + "\n")
+
+          problems = []
+          for osv_id in sorted(reachable):
+              if osv_id not in accepted:
+                  problems.append(osv_id)
+                  continue
+              fixes = fix_for(osv_id, reachable[osv_id])
+              if fixes:
+                  problems.append(f"{osv_id} (accepted, but now fixed in {', '.join(sorted(set(fixes)))} -- drop it from ACCEPTED and upgrade)")
+
+          if problems:
+              print("\n".join(problems))
+          PY
+
+          findings=0
+          if [ -s "${RUNNER_TEMP}/new.txt" ]; then
+            findings=1
+            echo "Actionable findings:"
+            cat "${RUNNER_TEMP}/new.txt"
+          fi
+
+          if [ "${scan_error}" -eq 1 ] && [ "${findings}" -eq 1 ]; then
+            echo "outcome=vulnerable-and-error" >> "$GITHUB_OUTPUT"
+            echo "govulncheck also failed to run for at least one target/module; see above." >&2
+            exit 1
+          elif [ "${scan_error}" -eq 1 ]; then
+            echo "outcome=error" >> "$GITHUB_OUTPUT"
+            echo "govulncheck failed to run for at least one target/module; see above." >&2
+            exit 1
+          elif [ "${findings}" -eq 1 ]; then
+            echo "outcome=vulnerable" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "outcome=clean" >> "$GITHUB_OUTPUT"
+          echo "No actionable findings (accepted: ${ACCEPTED:-none})."
+
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '## govulncheck'
+            echo
+            if [ -s "${RUNNER_TEMP}/stale-accepted.txt" ]; then
+              echo '### Accepted IDs no longer reported'
+              echo
+              echo 'These are in ACCEPTED but the scan no longer finds them -- most likely'
+              echo 'the dependency was upgraded. Drop them, so the list cannot silently'
+              echo 'swallow the advisory if a later version reintroduces it.'
+              echo
+              echo '```'
+              cat "${RUNNER_TEMP}/stale-accepted.txt"
+              echo '```'
+              echo
+            fi
+            echo '```'
+            cat "${RUNNER_TEMP}/report.txt" 2>/dev/null || echo '(no output -- the job failed before scanning)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs on success too, not just failure: a failing run leaves an issue open,
+      # and only a later clean run can close it. Skipped only on cancellation.
+      - name: Report
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OUTCOME: ${{ steps.scan.outputs.outcome }}
+          TARGETS: "linux/amd64 linux/arm64"
+          SCANNED_REF: ${{ github.ref_name }}
+          # A branch and a tag can share a short name; the full ref keeps their
+          # tracking issues apart.
+          SCANNED_FULL_REF: ${{ github.ref }}
+          SCANNED_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # --limit bounds how many issues are fetched, and the jq filter only sees those.
+          # Failed dispatches on different refs deliberately open separate issues, so a
+          # small page could miss this ref's issue and open a duplicate. The label already
+          # narrows this to our own issues; the limit is just a sane ceiling above it.
+          lookup() {
+            # shellcheck disable=SC2016
+            TITLE="$1" gh issue list --label govulncheck --state open --limit 1000 --json number,title \
+              --jq '[.[] | select(.title == $ENV.TITLE)] | .[0].number // empty'
+          }
+
+          # Always reflect THIS run into the tracking issue. An issue opened for an
+          # earlier advisory says nothing about a new one, so bailing out when any issue
+          # is open would recreate the silence this workflow exists to end. One issue,
+          # kept current, with each run appended.
+          # A workflow_dispatch can target any ref, so never describe a run as being the
+          # default branch without checking. Non-default refs get their own issue rather
+          # than appending a branch-only finding to the canonical one.
+          case "${SCANNED_FULL_REF}" in
+            refs/tags/*) ref_label="tag ${SCANNED_REF}" ;;
+            *)           ref_label="${SCANNED_REF}" ;;
+          esac
+          if [ "${SCANNED_FULL_REF}" = "refs/heads/${DEFAULT_BRANCH}" ]; then
+            title="govulncheck: findings on ${DEFAULT_BRANCH}"
+          else
+            title="govulncheck: findings on ${ref_label}"
+          fi
+          existing=$(lookup "${title}")
+
+          # A clean run has to close the loop as well. Otherwise the issue from a run that
+          # failed -- or from a vulnerability since fixed -- stays open forever and the
+          # tracking state is stale in the other direction.
+          if [ "${OUTCOME}" = "clean" ]; then
+            if [ -n "${existing}" ]; then
+              gh issue comment "${existing}" --body "The scheduled \`govulncheck\` run is clean again on \`${SCANNED_FULL_REF}\` @ \`${SCANNED_SHA}\` (targets \`${TARGETS}\`).
+
+          Run: ${RUN_URL}
+
+          Closing; a later failure reopens tracking by filing a fresh issue."
+              gh issue close "${existing}" --reason completed
+              echo "Closed issue #${existing} -- scan is clean."
+            else
+              echo "Scan is clean and no tracking issue is open; nothing to do."
+            fi
+            exit 0
+          fi
+
+          # GitHub caps an issue body or comment at 65536 characters. A dozen scans of
+          # verbose output can pass that, and gh would fail the whole report -- turning a
+          # large finding into no notification at all, which is the failure this workflow
+          # exists to prevent. Keep the head and tail and say what was dropped.
+          limit=45000
+          if [ ! -s "${RUNNER_TEMP}/report.txt" ]; then
+            body_output="(govulncheck produced no output -- the job failed before or during the scan; see the run log.)"
+          elif [ "$(wc -c < "${RUNNER_TEMP}/report.txt")" -gt "${limit}" ]; then
+            body_output="$(head -c 22000 "${RUNNER_TEMP}/report.txt")
+
+          [... truncated to fit GitHub's 65536-character limit -- full output in the run log ...]
+
+          $(tail -c 22000 "${RUNNER_TEMP}/report.txt")"
+          else
+            body_output=$(cat "${RUNNER_TEMP}/report.txt")
+          fi
+
+          if [ "${OUTCOME}" = "vulnerable-and-error" ]; then
+            headline="The scheduled \`govulncheck\` run found vulnerabilities that are not in this workflow's accepted list, **and** failed to scan at least one target or module. Both need attention: the findings below are real, and the coverage gap means there may be more."
+          elif [ "${OUTCOME}" = "error" ]; then
+            headline="The scheduled \`govulncheck\` run **could not complete**. This is a scanner or environment failure, not a vulnerability report."
+          elif [ "${OUTCOME}" = "vulnerable" ]; then
+            headline="The scheduled \`govulncheck\` run found vulnerabilities that are not in this workflow's accepted list."
+          else
+            headline="The scheduled \`govulncheck\` job failed before it could scan. This is an environment or setup failure, not a vulnerability report."
+          fi
+
+          {
+            echo "${headline}"
+            echo
+            echo "Ref: \`${SCANNED_FULL_REF}\` @ \`${SCANNED_SHA}\`"
+            echo "Targets: \`${TARGETS}\`"
+            echo "Run: ${RUN_URL}"
+            if [ -s "${RUNNER_TEMP}/new.txt" ]; then
+              echo
+              echo '### Not in the accepted list'
+              echo '```'
+              cat "${RUNNER_TEMP}/new.txt"
+              echo '```'
+            fi
+            echo
+            echo '<details><summary>govulncheck output</summary>'
+            echo
+            echo '```'
+            echo "${body_output}"
+            echo '```'
+            echo
+            echo '</details>'
+            echo
+            echo "Standard library findings are usually cleared by bumping the \`go\` directive in \`go.mod\` (and any \`FROM golang:\` base image) to the version named under \"Fixed in\"."
+            echo
+            echo "An entry marked \"accepted, but now fixed\" means an ID in this workflow's ACCEPTED list has gained a fix for a module path we import: upgrade and drop the ID, rather than re-accepting it."
+          } > "${RUNNER_TEMP}/body.md"
+
+          # Let a failure of the lookup itself stop the job rather than read as "no issue
+          # open", which would file a duplicate.
+          # The title carries a ref name, which git allows to contain quotes -- pass it to
+          # jq as data via $ENV rather than interpolating it into the jq program.
+          # $ENV.TITLE is expanded by jq, not by the shell -- that is the point of passing
+          # the title as data instead of interpolating it, so SC2016 is expected here.
+          # shellcheck disable=SC2016
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body-file "${RUNNER_TEMP}/body.md"
+            echo "Updated issue #${existing}."
+          else
+            gh label create govulncheck --description "Reported by the scheduled govulncheck run" --color d93f0b --force
+            gh issue create --title "${title}" --label govulncheck --body-file "${RUNNER_TEMP}/body.md"
+          fi
