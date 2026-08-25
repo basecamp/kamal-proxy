@@ -58,13 +58,21 @@ func TestRolloutController_AllowListAndPercentageTogether(t *testing.T) {
 func TestRolloutController_ZeroPercentageRoutesNothing(t *testing.T) {
 	rc := NewRolloutController(0, []string{})
 
-	// A value hashing to exactly 0 would match a split point of 0 without the guard
-	assert.False(t, rc.valueInRolloutPercentage("anything"))
+	// sXbssr hashes to exactly 0, which a split point of 0 matches without the guard
+	assert.False(t, rc.valueInRolloutPercentage("sXbssr"))
 
 	for i := range 1000 {
 		req := &http.Request{Header: http.Header{"Cookie": []string{fmt.Sprintf("kamal-rollout=%05d", i)}}}
 		assert.False(t, rc.RequestUsesRolloutGroup(req))
 	}
+}
+
+func TestRolloutController_FullPercentageRoutesEveryValue(t *testing.T) {
+	rc := NewRolloutController(100, []string{})
+
+	// The ends of the hash space, which a split point of 100 has to include.
+	assert.True(t, rc.valueInRolloutPercentage("sXbssr"))
+	assert.True(t, rc.valueInRolloutPercentage("yCXcFk"))
 }
 
 func TestRolloutController_ZeroPercentageStillHonoursTheAllowlist(t *testing.T) {
