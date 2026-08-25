@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -764,6 +765,61 @@ func TestRouter_EnablingRollout(t *testing.T) {
 	// deploying them again.
 	require.ErrorIs(t, router.SetRolloutSplit("service1", 0, []string{"1"}), ErrorRolloutTargetNotSet)
 	checkResponse("first")
+}
+
+func TestRouter_StoppingRolloutPersistsTheClearanceBeforeDraining(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+
+	var once sync.Once
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+
+	_, first := testBackend(t, "first", http.StatusOK)
+	_, second := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == DefaultHealthCheckPath {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		once.Do(func() { close(requestStarted) })
+		<-releaseRequest
+		w.WriteHeader(http.StatusOK)
+	})
+
+	router := NewRouter(statePath)
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.SetRolloutTargets("service1", []string{second}, defaultEmptyReaders, defaultDeploymentOptions))
+	require.NoError(t, router.SetRolloutSplit("service1", 100, nil))
+
+	// Hold a request open on the rollout target, so that the drain cannot finish.
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		req.AddCookie(&http.Cookie{Name: "kamal-rollout", Value: "1"})
+		sendRequest(router, req)
+	}()
+	<-requestStarted
+
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		router.StopRollout("service1", DefaultDrainTimeout)
+	}()
+
+	// Release on the way out too, or a failed assertion leaves the drain blocked
+	// and the test hangs instead of reporting.
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseRequest) }) }
+	defer release()
+
+	// The clearance has to reach disk while the drain is still running. Persisting
+	// afterwards would leave a restart in this window resurrecting the rollout.
+	require.Eventually(t, func() bool {
+		state, err := os.ReadFile(statePath)
+		return err == nil && !strings.Contains(string(state), second)
+	}, time.Second*5, time.Millisecond*10)
+
+	release()
+	<-stopped
 }
 
 func TestRouter_RolloutSplitRejectsPercentagesOutsideRange(t *testing.T) {

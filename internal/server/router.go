@@ -224,14 +224,22 @@ func (r *Router) SetRolloutEnabled(name string, enabled bool) error {
 }
 
 func (r *Router) StopRollout(name string, drainTimeout time.Duration) error {
-	defer r.saveStateSnapshot()
-
 	service := r.serviceForName(name)
 	if service == nil {
 		return ErrorServiceNotFound
 	}
 
-	return service.StopRollout(drainTimeout)
+	// Persist between clearing and draining. A restart during the drain would
+	// otherwise restore the targets just removed, and mark them healthy unprobed.
+	rollout := service.ClearRollout()
+	r.saveStateSnapshot()
+
+	if rollout != nil {
+		rollout.Dispose()
+		rollout.DrainAll(drainTimeout)
+	}
+
+	return nil
 }
 
 func (r *Router) RemoveService(name string) error {

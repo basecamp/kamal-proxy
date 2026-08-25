@@ -285,21 +285,10 @@ func (s *Service) SetRolloutEnabled(enabled bool) error {
 	return nil
 }
 
-func (s *Service) StopRollout(drainTimeout time.Duration) error {
-	rollout := s.clearRollout()
-
-	if rollout != nil {
-		rollout.Dispose()
-		rollout.DrainAll(drainTimeout)
-	}
-
-	slog.Info("Stopped rollout", "service", s.name)
-	return nil
-}
-
 // Clears both the split and the targets, so that a later `rollout set` cannot
-// resume traffic to containers that have since been removed.
-func (s *Service) clearRollout() *LoadBalancer {
+// resume traffic to containers that have since been removed. The caller disposes
+// and drains the balancer it returns, once the cleared state is safely on disk.
+func (s *Service) ClearRollout() *LoadBalancer {
 	s.serviceLock.Lock()
 	defer s.serviceLock.Unlock()
 
@@ -307,6 +296,7 @@ func (s *Service) clearRollout() *LoadBalancer {
 	s.rollout = nil
 	s.rolloutController = nil
 
+	slog.Info("Stopped rollout", "service", s.name)
 	return rollout
 }
 
