@@ -140,7 +140,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if service.options.StripPrefix && prefix != rootPath {
+	if service.options().StripPrefix && prefix != rootPath {
 		ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: prefix})
 		req = req.WithContext(ctx)
 	}
@@ -185,12 +185,14 @@ func (r *Router) SetRolloutTargets(name string, targetURLs, readerURLs []string,
 
 	slog.Info("Deploying for rollout", "service", name, "targets", targetURLs)
 
-	lb, err := r.createLoadBalancer(targetURLs, readerURLs, service.options, service.targetOptions, deploymentOptions)
+	options := service.options()
+
+	lb, err := r.createLoadBalancer(targetURLs, readerURLs, options, service.targetOptions(), deploymentOptions)
 	if err != nil {
 		return err
 	}
 
-	replaced, err := r.installLoadBalancer(name, TargetSlotRollout, lb, service.options, func() (*Service, error) {
+	replaced, err := r.installLoadBalancer(name, TargetSlotRollout, lb, options, func() (*Service, error) {
 		return service, nil
 	})
 	if err != nil {
@@ -312,7 +314,8 @@ func (r *Router) ListActiveServices() ServiceDescriptionMap {
 
 	r.withReadLock(func() error {
 		for name, service := range r.services.All() {
-			if service.active != nil {
+			active, _ := service.loadBalancers()
+			if active != nil {
 				result[name] = service.Describe()
 			}
 		}
@@ -340,12 +343,13 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 		return nil, ErrorUnknownServerName
 	}
 
-	if service.certManager == nil {
+	certManager := service.certManager()
+	if certManager == nil {
 		slog.Debug("ACME: Unable to get certificate (service does not support TLS)")
 		return nil, ErrorUnknownServerName
 	}
 
-	return service.certManager.GetCertificate(hello)
+	return certManager.GetCertificate(hello)
 }
 
 // Private

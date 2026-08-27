@@ -38,7 +38,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy(t *testing.T) {
 		}),
 	)
 
-	policy := testHostPolicy(t, service, service.options.TLSOnDemandURL)
+	policy := testHostPolicy(t, service, service.options().TLSOnDemandURL)
 
 	assert.NoError(t, policy(context.Background(), "allowed.example.com"))
 
@@ -74,7 +74,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_IsNotRedirectedWhenTLSRedirectEnable
 		}),
 	)
 
-	policy := testHostPolicy(t, service, service.options.TLSOnDemandURL)
+	policy := testHostPolicy(t, service, service.options().TLSOnDemandURL)
 
 	assert.NoError(t, policy(context.Background(), "allowed.example.com"))
 	assert.Equal(t, "http", forwardedProto)
@@ -95,7 +95,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_SetsHostHeaderToCheckedHost(t *testi
 		}),
 	)
 
-	policy := testHostPolicy(t, service, service.options.TLSOnDemandURL)
+	policy := testHostPolicy(t, service, service.options().TLSOnDemandURL)
 
 	assert.NoError(t, policy(context.Background(), "allowed.example.com"))
 	assert.Equal(t, "allowed.example.com", checkHost)
@@ -116,7 +116,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_TruncatesLargeResponseBodies(t *test
 		}),
 	)
 
-	policy := testHostPolicy(t, service, service.options.TLSOnDemandURL)
+	policy := testHostPolicy(t, service, service.options().TLSOnDemandURL)
 
 	err := policy(context.Background(), "denied.example.com")
 	require.Error(t, err)
@@ -134,7 +134,7 @@ func TestTLSOnDemandChecker_LocalHostPolicy_DeniesWhenStopped(t *testing.T) {
 		}),
 	)
 
-	policy := testHostPolicy(t, service, service.options.TLSOnDemandURL)
+	policy := testHostPolicy(t, service, service.options().TLSOnDemandURL)
 
 	require.NoError(t, service.Stop(time.Second, "stopped for maintenance"))
 

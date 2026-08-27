@@ -72,7 +72,7 @@ func TestService_ClientIPHeaderRewritesXForwardedFor(t *testing.T) {
 func TestService_RedirectToHTTPSWhenTLSRequired(t *testing.T) {
 	service := testCreateService(t, ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: true}, defaultTargetOptions)
 
-	require.True(t, service.options.TLSEnabled)
+	require.True(t, service.options().TLSEnabled)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	w := httptest.NewRecorder()
@@ -144,7 +144,7 @@ func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {
 		}),
 	)
 
-	require.True(t, service.options.TLSEnabled)
+	require.True(t, service.options().TLSEnabled)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	w := httptest.NewRecorder()
@@ -175,13 +175,13 @@ func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
 		defaultTargetOptions,
 	)
 
-	require.IsType(t, &StaticCertManager{}, service.certManager)
+	require.IsType(t, &StaticCertManager{}, service.certManager())
 }
 
 func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
 	service := testCreateService(t, defaultServiceOptions, defaultTargetOptions)
 
-	require.False(t, service.options.TLSEnabled)
+	require.False(t, service.options().TLSEnabled)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	w := httptest.NewRecorder()
@@ -287,7 +287,7 @@ func TestService_MarshallingState(t *testing.T) {
 
 	assert.Equal(t, service.name, service2.name)
 	assert.Equal(t, service.active.Targets().Names(), service2.active.Targets().Names())
-	assert.Equal(t, service.targetOptions, service2.targetOptions)
+	assert.Equal(t, service.targetOptions(), service2.targetOptions())
 
 	assert.Equal(t, PauseStateStopped, service2.pauseController.GetState())
 	assert.Equal(t, DefaultStopMessage, service2.pauseController.GetStopMessage())
@@ -389,9 +389,9 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 
 	assert.Equal(t, "my-app", service.name)
 	assert.Equal(t, []string{"localhost:3000"}, service.active.Targets().Names())
-	assert.Equal(t, []string{"app.example.com"}, service.options.Hosts)
-	assert.Equal(t, []string{"/"}, service.options.PathPrefixes)
-	assert.Equal(t, 3*time.Second, service.targetOptions.ResponseTimeout)
+	assert.Equal(t, []string{"app.example.com"}, service.options().Hosts)
+	assert.Equal(t, []string{"/"}, service.options().PathPrefixes)
+	assert.Equal(t, 3*time.Second, service.targetOptions().ResponseTimeout)
 }
 
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {

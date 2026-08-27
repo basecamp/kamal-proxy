@@ -288,8 +288,8 @@ func TestRouter_DeploymentsWithErrorsDoNotUpdateService(t *testing.T) {
 		for _, service := range services {
 			sm.Set(service)
 		}
-		persistedOptions := sm.Get("service1").options
-		persistedTargetOptions := sm.Get("service1").targetOptions
+		persistedOptions := sm.Get("service1").options()
+		persistedTargetOptions := sm.Get("service1").targetOptions()
 
 		assert.Equal(t, serviceOptions.TLSPrivateKeyPath, persistedOptions.TLSPrivateKeyPath)
 		assert.Equal(t, serviceOptions.TLSCertificatePath, persistedOptions.TLSCertificatePath)
@@ -1002,7 +1002,7 @@ func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
 	service := router.services.Get("ondemand")
 	require.NotNil(t, service)
 
-	manager, ok := service.certManager.(*autocert.Manager)
+	manager, ok := service.certManager().(*autocert.Manager)
 	require.True(t, ok)
 	require.NotNil(t, manager.HostPolicy)
 

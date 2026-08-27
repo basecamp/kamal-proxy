@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -56,7 +57,7 @@ type TargetStateConsumer interface {
 
 type inflightRequest struct {
 	cancel   context.CancelCauseFunc
-	hijacked bool
+	hijacked atomic.Bool
 }
 
 type inflightMap map[*http.Request]*inflightRequest
@@ -195,7 +196,7 @@ func (t *Target) Drain(timeout time.Duration) {
 
 	// Cancel any hijacked requests immediately, as they may be long-running.
 	for _, inflight := range toCancel {
-		if inflight.hijacked {
+		if inflight.hijacked.Load() {
 			inflight.cancel(ErrorDraining)
 		}
 	}
@@ -524,7 +525,7 @@ func (w *targetResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		return nil, nil, errors.New("ResponseWriter does not implement http.Hijacker")
 	}
 
-	w.inflightRequest.hijacked = true
+	w.inflightRequest.hijacked.Store(true)
 	return hijacker.Hijack()
 }
 

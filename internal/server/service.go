@@ -193,10 +193,20 @@ func (so ServiceOptions) ScopedCachePath() string {
 	return path.Join(so.ACMECachePath, hash)
 }
 
-type Service struct {
-	name          string
+// serviceConfig bundles the options-derived state that the request path needs
+// to read on every request. It is immutable once installed; updates build a
+// new instance and swap the pointer under serviceLock, so that requests read a
+// consistent snapshot while only holding the lock briefly.
+type serviceConfig struct {
 	options       ServiceOptions
 	targetOptions TargetOptions
+	certManager   CertManager
+	middleware    http.Handler
+}
+
+type Service struct {
+	name   string
+	config *serviceConfig
 
 	active      *LoadBalancer
 	rollout     *LoadBalancer
@@ -204,9 +214,25 @@ type Service struct {
 
 	pauseController   *PauseController
 	rolloutController *RolloutController
+}
 
-	certManager CertManager
-	middleware  http.Handler
+func (s *Service) loadConfig() *serviceConfig {
+	s.serviceLock.RLock()
+	defer s.serviceLock.RUnlock()
+
+	return s.config
+}
+
+func (s *Service) options() ServiceOptions {
+	return s.loadConfig().options
+}
+
+func (s *Service) targetOptions() TargetOptions {
+	return s.loadConfig().targetOptions
+}
+
+func (s *Service) certManager() CertManager {
+	return s.loadConfig().certManager
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -308,14 +334,16 @@ func (s *Service) RemoveRollout() (*LoadBalancer, error) {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.options.ShouldExcludeMetrics(r) {
+	config := s.loadConfig()
+
+	if config.options.ShouldExcludeMetrics(r) {
 		LoggingRequestContext(r).ExcludeMetrics = true
 	} else {
 		metrics.Tracker.AddInflightRequest(s.name)
 		defer metrics.Tracker.SubtractInflightRequest(s.name)
 	}
 
-	s.middleware.ServeHTTP(w, r)
+	config.middleware.ServeHTTP(w, r)
 }
 
 type marshalledService struct {
@@ -340,8 +368,9 @@ func (s *Service) Describe() ServiceDescription {
 	active, rollout, controller := s.active, s.rollout, s.currentRolloutController()
 	s.serviceLock.RUnlock()
 
-	hosts := make([]string, 0, len(s.options.Hosts))
-	for _, host := range s.options.Hosts {
+	options := s.options()
+	hosts := make([]string, 0, len(options.Hosts))
+	for _, host := range options.Hosts {
 		if host == "" {
 			host = "*"
 		}
@@ -353,10 +382,10 @@ func (s *Service) Describe() ServiceDescription {
 
 	return ServiceDescription{
 		Hosts:        hosts,
-		PathPrefixes: s.options.PathPrefixes,
+		PathPrefixes: options.PathPrefixes,
 		Targets:      targets,
 		ReadTargets:  readers,
-		TLS:          s.options.TLSEnabled,
+		TLS:          options.TLSEnabled,
 		State:        s.pauseController.GetState().String(),
 		Rollout: RolloutDescription{
 			Enabled:     controller.Enabled,
@@ -389,8 +418,8 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 		ActiveReaders:     activeReaders,
 		RolloutTargets:    rolloutTargets,
 		RolloutReaders:    rolloutReaders,
-		Options:           s.options,
-		TargetOptions:     s.targetOptions,
+		Options:           s.options(),
+		TargetOptions:     s.targetOptions(),
 		PauseController:   s.pauseController,
 		RolloutController: rolloutController,
 	})
@@ -490,12 +519,32 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
-	s.options = options
-	s.targetOptions = targetOptions
-	s.certManager = certManager
-	s.middleware = middleware
+	s.storeConfig(&serviceConfig{
+		options:       options,
+		targetOptions: targetOptions,
+		certManager:   certManager,
+		middleware:    middleware,
+	})
 
 	return nil
+}
+
+func (s *Service) storeConfig(config *serviceConfig) {
+	s.serviceLock.Lock()
+	defer s.serviceLock.Unlock()
+
+	s.config = config
+}
+
+// setTLSOptions swaps in a copy of the current config with updated TLS
+// settings, so that in-flight requests keep reading a consistent snapshot.
+// Callers must hold the router's write lock, which serializes all config
+// updates.
+func (s *Service) setTLSOptions(tlsEnabled, tlsRedirect bool) {
+	config := *s.loadConfig()
+	config.options.TLSEnabled = tlsEnabled
+	config.options.TLSRedirect = tlsRedirect
+	s.storeConfig(&config)
 }
 
 func (s *Service) Drain(timeout time.Duration) {
@@ -532,7 +581,7 @@ func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 }
 
 func (s *Service) servesRootPath() bool {
-	return slices.Contains(s.options.PathPrefixes, rootPath)
+	return slices.Contains(s.options().PathPrefixes, rootPath)
 }
 
 func (s *Service) createCertManager(options ServiceOptions) (CertManager, error) {
@@ -608,7 +657,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
-	if !s.options.TLSEnabled && r.TLS != nil {
+	if !s.options().TLSEnabled && r.TLS != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return
 	}
@@ -636,7 +685,8 @@ func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
-	if s.pauseController.GetState() != PauseStateRunning && s.targetOptions.IsHealthCheckRequest(r) {
+	targetOptions := s.targetOptions()
+	if s.pauseController.GetState() != PauseStateRunning && targetOptions.IsHealthCheckRequest(r) {
 		// When paused or stopped, return success for any health check
 		// requests from downstream services. Otherwise, they might consider
 		// us as unhealthy while in that state, and remove us from their
@@ -685,14 +735,16 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 			currentScheme = "https"
 		}
 
+		options := s.options()
+
 		desiredScheme := currentScheme
-		if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" {
+		if options.TLSEnabled && options.TLSRedirect && currentScheme == "http" {
 			desiredScheme = "https"
 		}
 
 		desiredHost := host
-		if s.options.CanonicalHost != "" && host != s.options.CanonicalHost {
-			desiredHost = s.options.CanonicalHost
+		if options.CanonicalHost != "" && host != options.CanonicalHost {
+			desiredHost = options.CanonicalHost
 		}
 
 		if desiredScheme != currentScheme || desiredHost != host {

@@ -133,8 +133,9 @@ func (m *ServiceMap) updateRequestServiceMap() {
 	requestServiceMap := requestServiceMap{}
 
 	for _, service := range m.services {
-		for _, host := range service.options.Hosts {
-			for _, pathPrefix := range service.options.PathPrefixes {
+		options := service.options()
+		for _, host := range options.Hosts {
+			for _, pathPrefix := range options.PathPrefixes {
 				bindings := requestServiceMap[host]
 				if bindings == nil {
 					bindings = []*pathBinding{}
@@ -155,8 +156,9 @@ func (m *ServiceMap) updateRequestServiceMap() {
 
 func (m *ServiceMap) updateDefaultTLSHostname() {
 	for _, service := range m.services {
-		if service.options.TLSEnabled && len(service.options.Hosts) > 0 && service.options.Hosts[0] != "" {
-			m.defaultTLSHostname = service.options.Hosts[0]
+		options := service.options()
+		if options.TLSEnabled && len(options.Hosts) > 0 && options.Hosts[0] != "" {
+			m.defaultTLSHostname = options.Hosts[0]
 			return
 		}
 	}
@@ -165,18 +167,19 @@ func (m *ServiceMap) updateDefaultTLSHostname() {
 func (m *ServiceMap) syncTLSOptionsFromRootDomain() {
 	for _, service := range m.services {
 		if !service.servesRootPath() {
+			options := service.options()
+
 			host := ""
-			if len(service.options.Hosts) > 0 {
-				host = service.options.Hosts[0]
+			if len(options.Hosts) > 0 {
+				host = options.Hosts[0]
 			}
 
 			rootService := m.ServiceForHost(host)
 			if rootService != nil {
-				service.options.TLSEnabled = rootService.options.TLSEnabled
-				service.options.TLSRedirect = rootService.options.TLSRedirect
+				rootOptions := rootService.options()
+				service.setTLSOptions(rootOptions.TLSEnabled, rootOptions.TLSRedirect)
 			} else {
-				service.options.TLSEnabled = defaultServiceOptions.TLSEnabled
-				service.options.TLSRedirect = defaultServiceOptions.TLSRedirect
+				service.setTLSOptions(defaultServiceOptions.TLSEnabled, defaultServiceOptions.TLSRedirect)
 			}
 		}
 	}
