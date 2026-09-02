@@ -114,6 +114,8 @@ type ServiceOptions struct {
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
 	ExcludeMetricsPaths         []string      `json:"exclude_metrics_paths"`
 	ClientIPHeader              string        `json:"client_ip_header"`
+	IdleTimeout                 time.Duration `json:"idle_timeout"`
+	IdleWakeTimeout             time.Duration `json:"idle_wake_timeout"`
 }
 
 func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
@@ -123,6 +125,9 @@ func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
 func (so *ServiceOptions) Normalize() {
 	so.Hosts = NormalizeHosts(so.Hosts)
 	so.PathPrefixes = NormalizePathPrefixes(so.PathPrefixes)
+	if so.IdleTimeout > 0 && so.IdleWakeTimeout == 0 {
+		so.IdleWakeTimeout = DefaultIdleWakeTimeout
+	}
 }
 
 func (so ServiceOptions) Validate() error {
@@ -149,6 +154,10 @@ func (so ServiceOptions) Validate() error {
 			if err := validateTLSOnDemandURL(so.TLSOnDemandURL); err != nil {
 				return fmt.Errorf("%w: %w", ErrServiceOptionsInvalid, err)
 			}
+			_, local, _ := parseTLSOnDemandURL(so.TLSOnDemandURL)
+			if so.IdleTimeout > 0 && local {
+				return fmt.Errorf("%w: idle mode cannot be used with a local TLS on-demand URL", ErrServiceOptionsInvalid)
+			}
 		} else if !so.HasConfiguredHosts() {
 			return fmt.Errorf("%w: host must be set when using TLS", ErrServiceOptionsInvalid)
 		}
@@ -162,6 +171,9 @@ func (so ServiceOptions) Validate() error {
 		if !slices.Contains(so.Hosts, so.CanonicalHost) {
 			return fmt.Errorf("%w: canonical-host '%s' must be present in the hosts list: %v", ErrServiceOptionsInvalid, so.CanonicalHost, so.Hosts)
 		}
+	}
+	if so.IdleTimeout < 0 || so.IdleWakeTimeout < 0 {
+		return fmt.Errorf("%w: idle timeouts cannot be negative", ErrServiceOptionsInvalid)
 	}
 
 	return nil
@@ -206,15 +218,20 @@ type Service struct {
 	serviceLock sync.RWMutex
 
 	pauseController   *PauseController
+	idleController    *IdleController
 	rolloutController *RolloutController
 
-	certManager CertManager
-	middleware  http.Handler
+	lifecycle ContainerLifecycle
+
+	certManager  CertManager
+	middleware   http.Handler
+	stateChanged func()
 }
 
-func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
+func NewService(name string, options ServiceOptions, targetOptions TargetOptions, lifecycle ContainerLifecycle) (*Service, error) {
 	service := &Service{
 		name:            name,
+		lifecycle:       lifecycle,
 		pauseController: NewPauseController(),
 	}
 
@@ -229,6 +246,10 @@ func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOpti
 }
 
 func (s *Service) Dispose() {
+	if s.idleController != nil {
+		s.idleController.Close()
+	}
+
 	active, rollout := s.loadBalancers()
 
 	active.Dispose()
@@ -246,9 +267,15 @@ func (s *Service) UpdateLoadBalancer(lb *LoadBalancer, slot TargetSlot) *LoadBal
 	if slot == TargetSlotRollout {
 		replaced = s.rollout
 		s.rollout = lb
+		if s.idleController != nil {
+			s.idleController.configure(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.idleContainerNames(), s.lifecycle, s.waitUntilIdleTargetsHealthy)
+		}
 	} else {
 		replaced = s.active
 		s.active = lb
+		if s.idleController != nil {
+			s.idleController.Reset(s.idleContainerNames(), s.waitUntilIdleTargetsHealthy)
+		}
 	}
 
 	return replaced
@@ -330,6 +357,7 @@ type marshalledService struct {
 	RolloutTargets    []string           `json:"rollout_targets"`
 	RolloutReaders    []string           `json:"rollout_readers"`
 	PauseController   *PauseController   `json:"pause_controller"`
+	IdleController    *IdleController    `json:"idle_controller"`
 	RolloutController *RolloutController `json:"rollout_controller"`
 
 	LegacyActiveTarget  string   `json:"active_target,omitempty"`
@@ -353,6 +381,12 @@ func (s *Service) Describe() ServiceDescription {
 
 	targets, readers := targetNames(active)
 	rolloutTargets, rolloutReaders := targetNames(rollout)
+	state := s.pauseController.GetState().String()
+	if s.idleController != nil && s.pauseController.GetState() == PauseStateRunning {
+		if idleState := s.idleController.StateValue(); idleState != IdleStateActive {
+			state = idleState.String()
+		}
+	}
 
 	return ServiceDescription{
 		Hosts:        hosts,
@@ -360,7 +394,7 @@ func (s *Service) Describe() ServiceDescription {
 		Targets:      targets,
 		ReadTargets:  readers,
 		TLS:          s.options.TLSEnabled,
-		State:        s.pauseController.GetState().String(),
+		State:        state,
 		Rollout: RolloutDescription{
 			Enabled:     controller.Enabled,
 			Percentage:  controller.Percentage,
@@ -395,6 +429,7 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 		Options:           s.options,
 		TargetOptions:     s.targetOptions,
 		PauseController:   s.pauseController,
+		IdleController:    s.idleController,
 		RolloutController: rolloutController,
 	})
 }
@@ -423,6 +458,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 
 	s.name = ms.Name
 	s.pauseController = ms.PauseController
+	s.idleController = ms.IdleController
 	s.rolloutController = ms.RolloutController
 
 	activeTargets, err := NewTargetList(ms.ActiveTargets, ms.ActiveReaders, ms.TargetOptions)
@@ -445,6 +481,10 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 }
 
 func (s *Service) Stop(drainTimeout time.Duration, message string) error {
+	if s.idleController != nil {
+		s.idleController.Disable()
+	}
+
 	err := s.pauseController.Stop(message)
 	if err != nil {
 		return err
@@ -458,6 +498,10 @@ func (s *Service) Stop(drainTimeout time.Duration, message string) error {
 }
 
 func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) error {
+	if s.idleController != nil {
+		s.idleController.Disable()
+	}
+
 	err := s.pauseController.Pause(pauseTimeout)
 	if err != nil {
 		return err
@@ -471,6 +515,10 @@ func (s *Service) Pause(drainTimeout time.Duration, pauseTimeout time.Duration) 
 }
 
 func (s *Service) Resume() error {
+	if s.idleController != nil {
+		s.idleController.Enable()
+	}
+
 	err := s.pauseController.Resume()
 	if err != nil {
 		return err
@@ -498,6 +546,65 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 	s.certManager = certManager
 	s.middleware = middleware
 
+	if s.options.IdleTimeout > 0 {
+		if s.idleController == nil {
+			s.idleController = NewIdleController(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.idleContainerNames(), s.lifecycle, s.waitUntilIdleTargetsHealthy)
+		} else {
+			s.idleController.configure(s.options.IdleTimeout, s.options.IdleWakeTimeout, s.idleContainerNames(), s.lifecycle, s.waitUntilIdleTargetsHealthy)
+		}
+		s.idleController.SetPersist(s.stateChanged)
+	} else if s.idleController != nil {
+		s.idleController.Close()
+		s.idleController = nil
+	}
+
+	return nil
+}
+
+func (s *Service) activeContainerNames() []string {
+	if s.active == nil {
+		return nil
+	}
+	names := make([]string, 0, len(s.active.WriteTargets()))
+	for _, target := range s.active.WriteTargets() {
+		names = append(names, target.ContainerName())
+	}
+	return names
+}
+
+func (s *Service) idleContainerNames() []string {
+	names := s.activeContainerNames()
+	if s.rollout != nil {
+		for _, target := range s.rollout.WriteTargets() {
+			names = append(names, target.ContainerName())
+		}
+	}
+	return names
+}
+
+func (s *Service) waitUntilIdleTargetsHealthy(timeout time.Duration) error {
+	s.serviceLock.RLock()
+	loadBalancers := make([]*LoadBalancer, 0, 2)
+	if s.active != nil {
+		loadBalancers = append(loadBalancers, s.active)
+	}
+	if s.rollout != nil {
+		loadBalancers = append(loadBalancers, s.rollout)
+	}
+	s.serviceLock.RUnlock()
+	if len(loadBalancers) == 0 {
+		return ErrorNoHealthyTargets
+	}
+	errs := make(chan error, len(loadBalancers))
+	for _, lb := range loadBalancers {
+		lb.PrepareForWake()
+		go func() { errs <- lb.WaitUntilHealthy(timeout) }()
+	}
+	for range loadBalancers {
+		if err := <-errs; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -624,10 +731,48 @@ func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if s.handleIdleHealthCheck(w, r) {
+		return
+	}
+
+	if s.idleController != nil && !isInternalRequest(r) {
+		if err := s.idleController.BeginRequest(r.Context()); err != nil {
+			s.idleController.EndRequest()
+			slog.Error("Rejecting request: service did not wake", "service", s.name, "path", r.URL.Path, "error", err)
+			w.Header().Set("Retry-After", "1")
+			SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
+			return
+		}
+		defer s.idleController.EndRequest()
+	}
+
 	sendRequest := s.startLoadBalancerRequest(w, r)
 	if sendRequest != nil {
 		sendRequest()
 	}
+}
+
+func (s *Service) handleIdleHealthCheck(w http.ResponseWriter, r *http.Request) bool {
+	if s.idleController == nil {
+		return false
+	}
+
+	if s.targetOptions.IsHealthCheckRequest(r) {
+		// Health checks should not wake the service.
+		// While it is stopping, sleeping, or waking, just return 200.
+		icState := s.idleController.StateValue()
+		if icState != IdleStateActive {
+			if s.idleController.LastWakeError() != nil {
+				SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
+				return true
+			}
+			w.WriteHeader(http.StatusOK)
+			return true
+		}
+		return false
+	}
+
+	return false
 }
 
 func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Request) func() {
