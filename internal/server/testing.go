@@ -95,7 +95,7 @@ func testServer(t testing.TB, http3Enabled bool) *Server {
 func testServerWithConfig(t testing.TB, config *Config) *Server {
 	t.Helper()
 
-	router := NewRouter(config.StatePath())
+	router := NewRouter(config.StatePath(), DefaultDockerSocketPath)
 	server := NewServer(config, router)
 	err := server.Start()
 	require.NoError(t, err)
