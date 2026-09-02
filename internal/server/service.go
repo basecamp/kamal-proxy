@@ -53,6 +53,9 @@ const (
 	DefaultMaxRequestBodySize  = 0
 	DefaultMaxResponseBodySize = 0
 
+	DefaultIdleWakeTimeout      = 30 * time.Second
+	DefaultIdleLifecycleTimeout = 30 * time.Second
+
 	DefaultStopMessage = ""
 )
 
