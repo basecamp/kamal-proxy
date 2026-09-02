@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,6 +50,48 @@ func TestLoadBalancer_WaitUntilHealthy(t *testing.T) {
 		func(w http.ResponseWriter, r *http.Request) {},
 	)
 	require.NoError(t, lb.WaitUntilHealthy(time.Second))
+}
+
+func TestLoadBalancer_PrepareForWakeRestartsSingleTargetHealthCheck(t *testing.T) {
+	var healthy atomic.Bool
+	healthy.Store(true)
+	_, targetURL := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if !healthy.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	})
+	options := defaultTargetOptions
+	options.HealthCheckConfig.Interval = time.Millisecond
+	target, err := NewTarget(targetURL, options)
+	require.NoError(t, err)
+	lb := NewLoadBalancer(TargetList{target}, DefaultWriterAffinityTimeout, false)
+	t.Cleanup(lb.Dispose)
+	require.NoError(t, lb.WaitUntilHealthy(time.Second))
+	require.Eventually(t, func() bool {
+		target.inflightLock.Lock()
+		defer target.inflightLock.Unlock()
+		return target.healthcheck == nil
+	}, time.Second, time.Millisecond)
+
+	healthy.Store(false)
+	lb.PrepareForWake()
+	time.AfterFunc(10*time.Millisecond, func() { healthy.Store(true) })
+	require.NoError(t, lb.WaitUntilHealthy(time.Second))
+	assert.Equal(t, TargetStateHealthy, target.State())
+}
+
+func TestLoadBalancer_PrepareForWakeReleasesPreviousWaiters(t *testing.T) {
+	lb := NewLoadBalancer(TargetList{}, DefaultWriterAffinityTimeout, false)
+	t.Cleanup(lb.Dispose)
+	previous := lb.waitForHealthyContext
+
+	lb.PrepareForWake()
+
+	select {
+	case <-previous.Done():
+	case <-time.After(time.Second):
+		t.Fatal("previous health wait was not released")
+	}
 }
 
 func TestLoadBalancer_StartRequest(t *testing.T) {
