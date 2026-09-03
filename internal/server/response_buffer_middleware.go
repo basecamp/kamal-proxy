@@ -43,6 +43,12 @@ func (h *ResponseBufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// isInformational reports whether statusCode is a 1xx interim response. 101
+// Switching Protocols is excluded: it ends the HTTP exchange, so it is final.
+func isInformational(statusCode int) bool {
+	return statusCode >= 100 && statusCode < 200 && statusCode != http.StatusSwitchingProtocols
+}
+
 type bufferedResponseWriter struct {
 	http.ResponseWriter
 	statusCode    int
@@ -73,6 +79,17 @@ func (w *bufferedResponseWriter) Header() http.Header {
 }
 
 func (w *bufferedResponseWriter) WriteHeader(statusCode int) {
+	if isInformational(statusCode) {
+		// 1xx responses precede the final response rather than replace it.
+		// httputil.ReverseProxy relays them from the upstream, for example the
+		// 100 Continue a backend sends when the client used Expect:
+		// 100-continue. Pass them straight through and keep waiting for the
+		// real status, otherwise we'd latch the 1xx as the final one and the
+		// client would get an implicit 200 instead.
+		w.ResponseWriter.WriteHeader(statusCode)
+		return
+	}
+
 	if !w.headerWritten {
 		w.statusCode = statusCode
 		w.headerWritten = true

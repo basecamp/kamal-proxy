@@ -138,7 +138,9 @@ func newLoggerResponseWriter(w http.ResponseWriter) *loggerResponseWriter {
 
 // WriteHeader is used to capture the status code
 func (r *loggerResponseWriter) WriteHeader(statusCode int) {
-	r.statusCode = statusCode
+	if !isInformational(statusCode) {
+		r.statusCode = statusCode
+	}
 	r.ResponseWriter.WriteHeader(statusCode)
 }
 

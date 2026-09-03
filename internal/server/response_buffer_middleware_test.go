@@ -1,12 +1,14 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResponseBufferMiddleware(t *testing.T) {
@@ -236,4 +238,30 @@ func TestBufferedResponseWriter_ShouldSwitchToUnbuffered(t *testing.T) {
 			assert.Equal(t, tc.expected, result, tc.description)
 		})
 	}
+}
+
+func TestResponseBufferMiddleware_InformationalResponsesAreRelayedNotLatched(t *testing.T) {
+	out := &strings.Builder{}
+	logger := slog.New(slog.NewJSONHandler(out, nil))
+
+	// Like an upstream answering Expect: 100-continue: an interim 100, then
+	// the real response. httputil.ReverseProxy relays the 100 to us through
+	// WriteHeader before the final status arrives.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusContinue)
+		w.Header().Set("X-Final", "yes")
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	middleware := WithLoggingMiddleware(logger, 80, 443, WithResponseBufferMiddleware(1024, 4096, handler))
+	server := httptest.NewServer(middleware)
+	t.Cleanup(server.Close)
+
+	resp, err := http.Post(server.URL+"/somepath", "text/plain", strings.NewReader("hello"))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.Equal(t, "yes", resp.Header.Get("X-Final"))
+	assert.Contains(t, out.String(), `"status":204`)
 }
