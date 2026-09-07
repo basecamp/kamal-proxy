@@ -47,6 +47,15 @@ func getEnvInt(key string, defaultValue int) int {
 	return intValue
 }
 
+func getEnvString(key string, defaultValue string) string {
+	value, ok := findEnv(key)
+	if !ok {
+		return defaultValue
+	}
+
+	return value
+}
+
 func getEnvBool(key string, defaultValue bool) bool {
 	value, ok := findEnv(key)
 	if !ok {
