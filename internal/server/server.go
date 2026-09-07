@@ -159,6 +159,7 @@ func (s *Server) startHTTPServers() error {
 			handler.ServeHTTP(w, r)
 		}),
 		TLSConfig: &tls.Config{
+			MinVersion:     tls.VersionTLS12,
 			NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
 			GetCertificate: s.router.GetCertificate,
 		},
