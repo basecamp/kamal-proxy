@@ -179,7 +179,7 @@ func (lb *LoadBalancer) StartRequest(w http.ResponseWriter, r *http.Request) fun
 	}
 
 	if lb.writerAffinityTimeout > 0 && lb.hasReaders && !readRequest {
-		w = newLoadBalancerReponseWriter(w, lb.writerAffinityTimeout)
+		w = newLoadBalancerReponseWriter(w, lb.writerAffinityTimeout, r.TLS != nil)
 	}
 
 	lb.setTargetHeader(req, target)
@@ -302,13 +302,15 @@ type loadBalancerResponseWriter struct {
 	http.ResponseWriter
 	headerWritten         bool
 	writerAffinityTimeout time.Duration
+	secure                bool
 }
 
-func newLoadBalancerReponseWriter(w http.ResponseWriter, writerAffinityTimeout time.Duration) *loadBalancerResponseWriter {
+func newLoadBalancerReponseWriter(w http.ResponseWriter, writerAffinityTimeout time.Duration, secure bool) *loadBalancerResponseWriter {
 	return &loadBalancerResponseWriter{
 		ResponseWriter:        w,
 		headerWritten:         false,
 		writerAffinityTimeout: writerAffinityTimeout,
+		secure:                secure,
 	}
 }
 
@@ -352,6 +354,7 @@ func (w *loadBalancerResponseWriter) setWriterAffinityCookie() {
 			Value:    strconv.FormatInt(expires.UnixMilli(), 10),
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   w.secure,
 			Expires:  expires.Add(time.Second),
 		}
 
