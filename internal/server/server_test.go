@@ -10,6 +10,7 @@ import (
 	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/acme"
 )
 
 func TestServer_Deploying(t *testing.T) {
@@ -162,4 +163,60 @@ func testRequestUsingTransport(server *Server, transport http.RoundTripper) (*ht
 
 	uri := fmt.Sprintf("https://localhost:%d/", server.HttpsPort())
 	return client.Get(uri)
+}
+
+func TestHTTPSTLSConfig_AEADOnly(t *testing.T) {
+	config := httpsTLSConfig(nil)
+
+	assert.Equal(t, uint16(tls.VersionTLS12), config.MinVersion)
+	assert.NotEmpty(t, config.CipherSuites)
+	for _, id := range config.CipherSuites {
+		assert.NotContains(t, tls.CipherSuiteName(id), "CBC", "CBC-mode suites must not be offered")
+	}
+	assert.Contains(t, config.NextProtos, acme.ALPNProto, "the ACME TLS-ALPN challenge must keep working")
+}
+
+func TestServer_HTTPSRejectsCBCCipherSuites(t *testing.T) {
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
+	server := testServer(t, false)
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"localhost"}
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSCertificatePath = certPath
+	serviceOptions.TLSPrivateKeyPath = keyPath
+
+	testDeployTarget(t, target, server, serviceOptions)
+
+	dialTLS12 := func(suites []uint16) error {
+		conn, err := tls.Dial("tcp", fmt.Sprintf("localhost:%d", server.HttpsPort()), &tls.Config{
+			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS12,
+			MaxVersion:         tls.VersionTLS12,
+			CipherSuites:       suites,
+		})
+		if err == nil {
+			_ = conn.Close()
+		}
+		return err
+	}
+
+	t.Run("refuses a TLS 1.2 client that only offers CBC suites", func(t *testing.T) {
+		err := dialTLS12([]uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("still negotiates an AEAD suite on TLS 1.2", func(t *testing.T) {
+		err := dialTLS12([]uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		})
+		require.NoError(t, err)
+	})
 }
