@@ -201,7 +201,9 @@ pass that CA via `--tls-client-ca-path`:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem --tls-client-ca-path ca.pem
 
 The file is in PEM format and may contain several CA certificates, all of which
-are trusted. Anything in it that isn't a valid certificate fails the deploy.
+are trusted. Every PEM block in it must be a valid certificate, or the deploy
+fails. Text outside PEM blocks, such as comments, is ignored.
+
 This works with both custom and automatic TLS certificates, and also applies to
 any path-based services on the same hosts. Path-based services on a host that
 is only covered by a wildcard host with a client CA would not require client
