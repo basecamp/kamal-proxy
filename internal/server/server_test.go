@@ -190,18 +190,6 @@ func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 		})
 	}
 
-	t.Run("allows ACME TLS-ALPN-01 handshake without client certificate", func(t *testing.T) {
-		conn, err := dialTLS12WithProtos([]string{acme.ALPNProto})
-		require.NoError(t, err)
-		defer conn.Close()
-		assert.Equal(t, acme.ALPNProto, conn.ConnectionState().NegotiatedProtocol)
-
-		_, err = conn.Write([]byte("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"))
-		require.NoError(t, err)
-		_, err = conn.Read(make([]byte, 1))
-		assert.Error(t, err)
-	})
-
 	t.Run("rejects ACME ALPN combined with other protocols without client certificate", func(t *testing.T) {
 		conn, err := dialTLS12WithProtos([]string{acme.ALPNProto, "http/1.1"})
 		if err == nil {
@@ -328,6 +316,134 @@ func TestServer_ClientCAEnforcedWhenSNIDiffersFromHost(t *testing.T) {
 		resp := request("localhost", "public.example.com", []tls.Certificate{ca.clientCert})
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
+}
+
+func TestServer_ClientCAEnforcedForPathServices(t *testing.T) {
+	ca := generateTestCA(t)
+	server := testServer(t, false)
+	certPath, keyPath := prepareTestCertificateFiles(t)
+
+	deploy := func(name string, serviceOptions ServiceOptions, handler http.HandlerFunc) {
+		target := testTarget(t, handler)
+
+		var result bool
+		err := server.commandHandler.Deploy(DeployArgs{
+			Service:           name,
+			TargetURLs:        []string{target.Address()},
+			DeploymentOptions: defaultDeploymentOptions,
+			ServiceOptions:    serviceOptions,
+			TargetOptions:     defaultTargetOptions,
+		}, &result)
+		require.NoError(t, err)
+	}
+
+	tlsServiceOptions := defaultServiceOptions
+	tlsServiceOptions.TLSEnabled = true
+	tlsServiceOptions.TLSCertificatePath = certPath
+	tlsServiceOptions.TLSPrivateKeyPath = keyPath
+
+	clientCAServiceOptions := tlsServiceOptions
+	clientCAServiceOptions.Hosts = []string{"localhost"}
+	clientCAServiceOptions.TLSClientCAPath = ca.certPath
+
+	publicServiceOptions := tlsServiceOptions
+	publicServiceOptions.Hosts = []string{"public.example.com"}
+
+	pathServiceOptions := defaultServiceOptions
+	pathServiceOptions.Hosts = []string{"localhost"}
+	pathServiceOptions.PathPrefixes = []string{"/api"}
+
+	var pathTargetReached atomic.Bool
+	deploy("mtls", clientCAServiceOptions, func(w http.ResponseWriter, r *http.Request) {})
+	deploy("public", publicServiceOptions, func(w http.ResponseWriter, r *http.Request) {})
+	deploy("api", pathServiceOptions, func(w http.ResponseWriter, r *http.Request) {
+		recordRequestsExceptHealthChecks(&pathTargetReached)(w, r)
+		w.Write([]byte("api"))
+	})
+
+	request := func(sni string, certificates []tls.Certificate) (*http.Response, error) {
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         sni,
+				Certificates:       certificates,
+			},
+		}
+		t.Cleanup(transport.CloseIdleConnections)
+
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://localhost:%d/api/items", server.HttpsPort()), nil)
+		require.NoError(t, err)
+		req.Host = "localhost"
+
+		return (&http.Client{Transport: transport}).Do(req)
+	}
+
+	t.Run("rejects handshake without client certificate", func(t *testing.T) {
+		_, err := request("localhost", nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects request over connection for host without mTLS", func(t *testing.T) {
+		resp, err := request("public.example.com", []tls.Certificate{ca.clientCert})
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusMisdirectedRequest, resp.StatusCode)
+	})
+
+	assert.False(t, pathTargetReached.Load())
+
+	t.Run("accepts request with trusted client certificate", func(t *testing.T) {
+		resp, err := request("localhost", []tls.Certificate{ca.clientCert})
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "api", string(body))
+		assert.True(t, pathTargetReached.Load())
+	})
+}
+
+func TestServer_ACMEALPNConnectionToClientCAHostNeverReachesTarget(t *testing.T) {
+	ca := generateTestCA(t)
+	var targetReached atomic.Bool
+	target := testTarget(t, recordRequestsExceptHealthChecks(&targetReached))
+	server := testServer(t, false)
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"localhost"}
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSCertificatePath = certPath
+	serviceOptions.TLSPrivateKeyPath = keyPath
+	serviceOptions.TLSClientCAPath = ca.certPath
+
+	testDeployTarget(t, target, server, serviceOptions)
+
+	for _, version := range []uint16{tls.VersionTLS12, tls.VersionTLS13} {
+		t.Run(tls.VersionName(version), func(t *testing.T) {
+			conn, err := tls.Dial("tcp", fmt.Sprintf("localhost:%d", server.HttpsPort()), &tls.Config{
+				InsecureSkipVerify: true,
+				MinVersion:         version,
+				MaxVersion:         version,
+				NextProtos:         []string{acme.ALPNProto},
+			})
+			require.NoError(t, err)
+			defer conn.Close()
+			require.Equal(t, acme.ALPNProto, conn.ConnectionState().NegotiatedProtocol)
+
+			_, err = conn.Write([]byte("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"))
+			require.NoError(t, err)
+
+			_, err = conn.Read(make([]byte, 1))
+			assert.Error(t, err)
+		})
+	}
+
+	assert.False(t, targetReached.Load())
 }
 
 func TestServer_ClientCAChangesApplyToOpenConnections(t *testing.T) {
