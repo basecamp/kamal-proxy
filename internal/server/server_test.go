@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -380,7 +381,110 @@ func TestServer_ClientCAChangesApplyToOpenConnections(t *testing.T) {
 	assert.Equal(t, http.StatusMisdirectedRequest, requestOverOpenConnection(), "replacing the CA rejects open connections verified by the old one")
 }
 
+func TestServer_PlainHTTPToClientCAHostNeverReachesTarget(t *testing.T) {
+	ca := generateTestCA(t)
+	server := testServer(t, false)
+	certPath, keyPath := prepareTestCertificateFiles(t)
+
+	var targetReached atomic.Bool
+	deploy := func(name string, serviceOptions ServiceOptions) {
+		target := testTarget(t, recordRequestsExceptHealthChecks(&targetReached))
+
+		var result bool
+		err := server.commandHandler.Deploy(DeployArgs{
+			Service:           name,
+			TargetURLs:        []string{target.Address()},
+			DeploymentOptions: defaultDeploymentOptions,
+			ServiceOptions:    serviceOptions,
+			TargetOptions:     defaultTargetOptions,
+		}, &result)
+		require.NoError(t, err)
+	}
+
+	clientCAServiceOptions := defaultServiceOptions
+	clientCAServiceOptions.Hosts = []string{"localhost"}
+	clientCAServiceOptions.TLSEnabled = true
+	clientCAServiceOptions.TLSCertificatePath = certPath
+	clientCAServiceOptions.TLSPrivateKeyPath = keyPath
+	clientCAServiceOptions.TLSClientCAPath = ca.certPath
+
+	pathServiceOptions := defaultServiceOptions
+	pathServiceOptions.Hosts = []string{"public.example.com", "localhost"}
+	pathServiceOptions.PathPrefixes = []string{"/api"}
+
+	deploy("mtls", clientCAServiceOptions)
+	deploy("api", pathServiceOptions)
+
+	request := func(path string) *http.Response {
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		resp, err := client.Get(fmt.Sprintf("http://localhost:%d%s", server.HttpPort(), path))
+		require.NoError(t, err)
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+
+	t.Run("redirects to HTTPS", func(t *testing.T) {
+		resp := request("/")
+		assert.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+		assert.Equal(t, "https://localhost/", resp.Header.Get("Location"))
+	})
+
+	t.Run("redirects to HTTPS for a path service that doesn't share the host's TLS options", func(t *testing.T) {
+		resp := request("/api/items?page=2")
+		assert.Equal(t, http.StatusMovedPermanently, resp.StatusCode)
+		assert.Equal(t, "https://localhost/api/items?page=2", resp.Header.Get("Location"))
+	})
+
+	t.Run("rejects when TLS redirect is disabled", func(t *testing.T) {
+		clientCAServiceOptions.TLSRedirect = false
+		deploy("mtls", clientCAServiceOptions)
+
+		assert.Equal(t, http.StatusForbidden, request("/").StatusCode)
+		assert.Equal(t, http.StatusForbidden, request("/api/items").StatusCode)
+	})
+
+	assert.False(t, targetReached.Load())
+}
+
+func TestServer_PlainHTTPToClientCAHostServesACMEChallenges(t *testing.T) {
+	ca := generateTestCA(t)
+	var targetReached atomic.Bool
+	target := testTarget(t, recordRequestsExceptHealthChecks(&targetReached))
+	server := testServer(t, false)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"localhost"}
+	serviceOptions.TLSEnabled = true
+	serviceOptions.ACMECachePath = t.TempDir()
+	serviceOptions.TLSClientCAPath = ca.certPath
+
+	testDeployTarget(t, target, server, serviceOptions)
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d/.well-known/acme-challenge/unknown-token", server.HttpPort()), nil)
+	require.NoError(t, err)
+	req.Host = "localhost"
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Contains(t, string(body), "acme/autocert")
+	assert.False(t, targetReached.Load())
+}
+
 // Helpers
+
+func recordRequestsExceptHealthChecks(requested *atomic.Bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != DefaultHealthCheckPath {
+			requested.Store(true)
+		}
+	}
+}
 
 func testDeployTarget(tb testing.TB, target *Target, server *Server, serviceOptions ServiceOptions) {
 	tb.Helper()

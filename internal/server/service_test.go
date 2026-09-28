@@ -135,7 +135,7 @@ func TestServiceOptions_Validate(t *testing.T) {
 
 	assertValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: true, TLSClientCAPath: "ca.pem"})
 	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, TLSRedirect: true, TLSClientCAPath: "ca.pem"}, "TLS must be enabled to use a TLS client CA")
-	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSClientCAPath: "ca.pem"}, "TLS redirect must be enabled when using a TLS client CA")
+	assertValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSClientCAPath: "ca.pem"})
 }
 
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {

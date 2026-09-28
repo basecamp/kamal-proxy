@@ -130,15 +130,8 @@ func (so ServiceOptions) Validate() error {
 		return fmt.Errorf("%w: TLS must be enabled to use a TLS on-demand URL", ErrServiceOptionsInvalid)
 	}
 
-	if so.TLSClientCAPath != "" {
-		if !so.TLSEnabled {
-			return fmt.Errorf("%w: TLS must be enabled to use a TLS client CA", ErrServiceOptionsInvalid)
-		}
-
-		// Plain HTTP requests can't present a client certificate.
-		if !so.TLSRedirect {
-			return fmt.Errorf("%w: TLS redirect must be enabled when using a TLS client CA", ErrServiceOptionsInvalid)
-		}
+	if so.TLSClientCAPath != "" && !so.TLSEnabled {
+		return fmt.Errorf("%w: TLS must be enabled to use a TLS client CA", ErrServiceOptionsInvalid)
 	}
 
 	if so.TLSEnabled {

@@ -140,8 +140,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if !r.connectionVerifiedForHost(req) {
-		SetErrorResponse(w, req, http.StatusMisdirectedRequest, nil)
+	if r.handleConnectionWithoutTrustedClientCertificate(w, req) {
 		return
 	}
 
@@ -361,19 +360,33 @@ func (r *Router) clientCA(hostname string) *ClientCA {
 	return service.clientCA
 }
 
-func (r *Router) connectionVerifiedForHost(req *http.Request) bool {
-	clientCA := r.clientCA(requestHost(req))
-	if clientCA == nil {
-		return true
+func (r *Router) handleConnectionWithoutTrustedClientCertificate(w http.ResponseWriter, req *http.Request) bool {
+	hostService := r.serviceForHost(requestHost(req))
+	if hostService == nil || hostService.clientCA == nil {
+		return false
 	}
 
-	// Plain HTTP requests are redirected to HTTPS, as client CA options
-	// require TLS redirects to be enabled.
 	if req.TLS == nil {
+		hostService.certManager.HTTPHandler(redirectToHTTPSOrForbid(hostService.options.TLSRedirect)).ServeHTTP(w, req)
 		return true
 	}
 
-	return clientCA.TrustsConnection(req.TLS)
+	if !hostService.clientCA.TrustsConnection(req.TLS) {
+		SetErrorResponse(w, req, http.StatusMisdirectedRequest, nil)
+		return true
+	}
+
+	return false
+}
+
+func redirectToHTTPSOrForbid(tlsRedirect bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if tlsRedirect {
+			http.Redirect(w, req, "https://"+requestHost(req)+req.URL.RequestURI(), http.StatusMovedPermanently)
+		} else {
+			SetErrorResponse(w, req, http.StatusForbidden, nil)
+		}
+	})
 }
 
 // Private
