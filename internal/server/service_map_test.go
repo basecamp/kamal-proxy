@@ -54,6 +54,28 @@ func TestServiceMap_ServiceForRequest(t *testing.T) {
 	checkService("6", "http://second.example.com/non-api/test")
 }
 
+func TestServiceMap_PublishedHealthCheck(t *testing.T) {
+	sm := NewServiceMap()
+
+	assert.Nil(t, sm.PublishedHealthCheck("/.kamal-proxy/1/health"))
+
+	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
+
+	assert.Nil(t, sm.PublishedHealthCheck("/.kamal-proxy/1/health"))
+
+	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}, PublishHealthCheck: true})})
+
+	assert.Equal(t, "2", sm.PublishedHealthCheck("/.kamal-proxy/2/health").name)
+
+	for _, path := range []string{"/.kamal-proxy/1/health", "/.kamal-proxy/nosuch/health", "/.kamal-proxy/2/health/extra", "/.kamal-proxy/health", "/.kamal-proxy"} {
+		assert.Nil(t, sm.PublishedHealthCheck(path))
+	}
+
+	sm.Remove("2")
+
+	assert.Nil(t, sm.PublishedHealthCheck("/.kamal-proxy/2/health"))
+}
+
 func TestServiceMap_CheckAvailability(t *testing.T) {
 	sm := NewServiceMap()
 	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
