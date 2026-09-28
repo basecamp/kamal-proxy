@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -354,22 +353,17 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 	return service.certManager.GetCertificate(hello)
 }
 
-func (r *Router) clientCACertPool(hostname string) *x509.CertPool {
+func (r *Router) clientCA(hostname string) *ClientCA {
 	service := r.serviceForHost(hostname)
 	if service == nil {
 		return nil
 	}
-	return service.clientCACertPool
+	return service.clientCA
 }
 
-// connectionVerifiedForHost reports whether the request's connection verified
-// a client certificate against the CA required by the request's host. The
-// handshake picks the CA from SNI, but routing uses the Host header, so a
-// client could otherwise reach an mTLS host over a connection for another
-// host. Mismatched requests get 421, so clients retry on a new connection.
 func (r *Router) connectionVerifiedForHost(req *http.Request) bool {
-	pool := r.clientCACertPool(requestHost(req))
-	if pool == nil {
+	clientCA := r.clientCA(requestHost(req))
+	if clientCA == nil {
 		return true
 	}
 
@@ -379,12 +373,7 @@ func (r *Router) connectionVerifiedForHost(req *http.Request) bool {
 		return true
 	}
 
-	handshakeHost := req.TLS.ServerName
-	if handshakeHost == "" {
-		handshakeHost = r.defaultTLSHostname()
-	}
-
-	return len(req.TLS.VerifiedChains) > 0 && r.clientCACertPool(handshakeHost) == pool
+	return clientCA.TrustsConnection(req.TLS)
 }
 
 // Private

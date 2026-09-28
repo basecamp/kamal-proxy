@@ -227,11 +227,11 @@ func (s *Server) createGetConfigForClient(base *tls.Config) func(*tls.ClientHell
 		}
 
 		if host != "" {
-			if pool := s.router.clientCACertPool(host); pool != nil {
+			if clientCA := s.router.clientCA(host); clientCA != nil {
 				config := base.Clone()
 				config.GetConfigForClient = nil
 				config.ClientAuth = tls.RequireAndVerifyClientCert
-				config.ClientCAs = pool
+				config.ClientCAs = clientCA.CertPool()
 				return config, nil
 			}
 		}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -325,6 +327,57 @@ func TestServer_ClientCAEnforcedWhenSNIDiffersFromHost(t *testing.T) {
 		resp := request("localhost", "public.example.com", []tls.Certificate{ca.clientCert})
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
+}
+
+func TestServer_ClientCAChangesApplyToOpenConnections(t *testing.T) {
+	ca := generateTestCA(t)
+	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
+	server := testServer(t, false)
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	serviceOptions := defaultServiceOptions
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSCertificatePath = certPath
+	serviceOptions.TLSPrivateKeyPath = keyPath
+	serviceOptions.Hosts = []string{"localhost"}
+
+	deployWithClientCA := func(clientCAPath string) {
+		serviceOptions.TLSClientCAPath = clientCAPath
+		testDeployTarget(t, target, server, serviceOptions)
+	}
+
+	var openedConnections int
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{ca.clientCert},
+		},
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			openedConnections++
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+
+	requestOverOpenConnection := func() int {
+		resp, err := testRequestUsingTransport(server, transport)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		_, err = io.Copy(io.Discard, resp.Body)
+		require.NoError(t, err)
+
+		require.Equal(t, 1, openedConnections)
+		return resp.StatusCode
+	}
+
+	deployWithClientCA(ca.certPath)
+	assert.Equal(t, http.StatusOK, requestOverOpenConnection())
+
+	deployWithClientCA(ca.certPath)
+	assert.Equal(t, http.StatusOK, requestOverOpenConnection(), "redeploying with the same CA keeps open connections working")
+
+	deployWithClientCA(generateTestCA(t).certPath)
+	assert.Equal(t, http.StatusMisdirectedRequest, requestOverOpenConnection(), "replacing the CA rejects open connections verified by the old one")
 }
 
 // Helpers

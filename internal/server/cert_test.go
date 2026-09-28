@@ -58,26 +58,62 @@ func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
 func TestClientCALoading(t *testing.T) {
 	ca := generateTestCA(t)
 
-	pool, err := loadCACertPool(ca.certPath)
+	clientCA, err := NewClientCA(ca.certPath)
 	require.NoError(t, err)
 
 	_, err = ca.clientCert.Leaf.Verify(x509.VerifyOptions{
-		Roots:     pool,
+		Roots:     clientCA.CertPool(),
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	})
 	assert.NoError(t, err)
 }
 
 func TestClientCALoadingErrorWhenFileDoesNotExist(t *testing.T) {
-	_, err := loadCACertPool("testdata/ca.pem")
+	_, err := NewClientCA("testdata/ca.pem")
 	require.ErrorIs(t, err, ErrorUnableToLoadClientCACertificate)
 }
 
 func TestClientCALoadingErrorWhenFileIsInvalid(t *testing.T) {
 	_, keyPath := prepareTestCertificateFiles(t)
 
-	_, err := loadCACertPool(keyPath)
+	_, err := NewClientCA(keyPath)
 	require.ErrorIs(t, err, ErrorUnableToLoadClientCACertificate)
+}
+
+func TestClientCATrustsConnection(t *testing.T) {
+	ca := generateTestCA(t)
+	otherCA := generateTestCA(t)
+
+	clientCA, err := NewClientCA(ca.certPath)
+	require.NoError(t, err)
+
+	t.Run("chain anchored in the CA", func(t *testing.T) {
+		state := testConnectionStateVerifiedBy(t, ca)
+		assert.True(t, clientCA.TrustsConnection(state))
+	})
+
+	t.Run("chain anchored in another CA", func(t *testing.T) {
+		state := testConnectionStateVerifiedBy(t, otherCA)
+		assert.False(t, clientCA.TrustsConnection(state))
+	})
+
+	t.Run("no verified chains", func(t *testing.T) {
+		state := &tls.ConnectionState{PeerCertificates: []*x509.Certificate{ca.clientCert.Leaf}}
+		assert.False(t, clientCA.TrustsConnection(state))
+	})
+
+	t.Run("empty chain", func(t *testing.T) {
+		state := &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{}}}
+		assert.False(t, clientCA.TrustsConnection(state))
+	})
+
+	t.Run("CA reloaded from the same file", func(t *testing.T) {
+		reloadedClientCA, err := NewClientCA(ca.certPath)
+		require.NoError(t, err)
+
+		state := testConnectionStateVerifiedBy(t, ca)
+		assert.True(t, reloadedClientCA.TrustsConnection(state))
+	})
 }
 
 func TestParseCACertificates(t *testing.T) {
@@ -144,6 +180,24 @@ func TestParseCACertificates(t *testing.T) {
 }
 
 // Helpers
+
+func testConnectionStateVerifiedBy(t *testing.T, ca testCAFixture) *tls.ConnectionState {
+	t.Helper()
+
+	clientCA, err := NewClientCA(ca.certPath)
+	require.NoError(t, err)
+
+	verifiedChains, err := ca.clientCert.Leaf.Verify(x509.VerifyOptions{
+		Roots:     clientCA.CertPool(),
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	})
+	require.NoError(t, err)
+
+	return &tls.ConnectionState{
+		PeerCertificates: []*x509.Certificate{ca.clientCert.Leaf},
+		VerifiedChains:   verifiedChains,
+	}
+}
 
 func readTestCAPEM(t *testing.T) string {
 	t.Helper()

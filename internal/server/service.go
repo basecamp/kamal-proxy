@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -218,9 +217,9 @@ type Service struct {
 	pauseController   *PauseController
 	rolloutController *RolloutController
 
-	certManager      CertManager
-	clientCACertPool *x509.CertPool
-	middleware       http.Handler
+	certManager CertManager
+	clientCA    *ClientCA
+	middleware  http.Handler
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -499,7 +498,7 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
-	caPool, err := s.createClientCACertPool(options)
+	clientCA, err := s.createClientCA(options)
 	if err != nil {
 		return err
 	}
@@ -512,7 +511,7 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 	s.options = options
 	s.targetOptions = targetOptions
 	s.certManager = certManager
-	s.clientCACertPool = caPool
+	s.clientCA = clientCA
 	s.middleware = middleware
 
 	return nil
@@ -599,12 +598,12 @@ func (s *Service) createHostPolicy(options ServiceOptions, certCache autocert.Ca
 	return autocert.HostWhitelist(options.Hosts...), nil
 }
 
-func (s *Service) createClientCACertPool(options ServiceOptions) (*x509.CertPool, error) {
+func (s *Service) createClientCA(options ServiceOptions) (*ClientCA, error) {
 	if !options.TLSEnabled || options.TLSClientCAPath == "" {
 		return nil, nil
 	}
 
-	return loadCACertPool(options.TLSClientCAPath)
+	return NewClientCA(options.TLSClientCAPath)
 }
 
 func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
