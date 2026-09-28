@@ -1,9 +1,14 @@
 package server
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"math/big"
 	"os"
 	"path"
 	"slices"
@@ -224,7 +229,129 @@ func BenchmarkClientCA_TrustsConnection(b *testing.B) {
 	}
 }
 
+func TestClientCATrustsConnectionThroughIntermediateCA(t *testing.T) {
+	chain := generateTestCAChain(t)
+	unrelatedCA := generateTestCA(t)
+
+	clientCAFor := func(caPath string) *ClientCA {
+		clientCA, err := NewClientCA(caPath)
+		require.NoError(t, err)
+		return clientCA
+	}
+	expired := func(cert *x509.Certificate) *x509.Certificate {
+		expiredCert := *cert
+		expiredCert.NotAfter = time.Now().Add(-time.Minute)
+		return &expiredCert
+	}
+	connectionWithChain := func(certs ...*x509.Certificate) *tls.ConnectionState {
+		return &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{certs}}
+	}
+
+	roots, intermediates := x509.NewCertPool(), x509.NewCertPool()
+	roots.AddCert(chain.root)
+	intermediates.AddCert(chain.intermediate)
+	verifiedChains, err := chain.leaf.Verify(x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	})
+	require.NoError(t, err)
+	require.Equal(t, [][]*x509.Certificate{{chain.leaf, chain.intermediate, chain.root}}, verifiedChains)
+
+	verifiedByRoot := &tls.ConnectionState{VerifiedChains: verifiedChains}
+
+	t.Run("CA trusting the root", func(t *testing.T) {
+		assert.True(t, clientCAFor(chain.rootPath).TrustsConnection(verifiedByRoot))
+	})
+
+	t.Run("CA trusting only the intermediate", func(t *testing.T) {
+		assert.True(t, clientCAFor(chain.intermediatePath).TrustsConnection(verifiedByRoot))
+	})
+
+	t.Run("CA trusting only the intermediate, with the root expired", func(t *testing.T) {
+		state := connectionWithChain(chain.leaf, chain.intermediate, expired(chain.root))
+		assert.True(t, clientCAFor(chain.intermediatePath).TrustsConnection(state))
+	})
+
+	t.Run("CA trusting only the intermediate, with the intermediate expired", func(t *testing.T) {
+		state := connectionWithChain(chain.leaf, expired(chain.intermediate), chain.root)
+		assert.False(t, clientCAFor(chain.intermediatePath).TrustsConnection(state))
+	})
+
+	t.Run("CA trusting the root, with the root expired", func(t *testing.T) {
+		state := connectionWithChain(chain.leaf, chain.intermediate, expired(chain.root))
+		assert.False(t, clientCAFor(chain.rootPath).TrustsConnection(state))
+	})
+
+	t.Run("unrelated CA", func(t *testing.T) {
+		assert.False(t, clientCAFor(unrelatedCA.certPath).TrustsConnection(verifiedByRoot))
+	})
+}
+
 // Helpers
+
+type testCAChainFixture struct {
+	root             *x509.Certificate
+	intermediate     *x509.Certificate
+	leaf             *x509.Certificate
+	rootPath         string
+	intermediatePath string
+}
+
+func generateTestCAChain(t testing.TB) testCAChainFixture {
+	t.Helper()
+
+	issue := func(template, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		if parent == nil {
+			parent, parentKey = template, key
+		}
+
+		der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, parentKey)
+		require.NoError(t, err)
+
+		cert, err := x509.ParseCertificate(der)
+		require.NoError(t, err)
+		return cert, key
+	}
+	caTemplate := func(serialNumber int64, organization string) *x509.Certificate {
+		return &x509.Certificate{
+			SerialNumber:          big.NewInt(serialNumber),
+			Subject:               pkix.Name{Organization: []string{organization}},
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(time.Hour),
+			IsCA:                  true,
+			KeyUsage:              x509.KeyUsageCertSign,
+			BasicConstraintsValid: true,
+		}
+	}
+	writePEM := func(cert *x509.Certificate) string {
+		certPath := path.Join(t.TempDir(), "ca.pem")
+		require.NoError(t, os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}), 0644))
+		return certPath
+	}
+
+	root, rootKey := issue(caTemplate(1, "Test Root CA"), nil, nil)
+	intermediate, intermediateKey := issue(caTemplate(2, "Test Intermediate CA"), root, rootKey)
+	leaf, _ := issue(&x509.Certificate{
+		SerialNumber: big.NewInt(3),
+		Subject:      pkix.Name{Organization: []string{"Test Client"}},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}, intermediate, intermediateKey)
+
+	return testCAChainFixture{
+		root:             root,
+		intermediate:     intermediate,
+		leaf:             leaf,
+		rootPath:         writePEM(root),
+		intermediatePath: writePEM(intermediate),
+	}
+}
 
 func testConnectionStateVerifiedBy(t testing.TB, ca testCAFixture) *tls.ConnectionState {
 	t.Helper()
