@@ -18,6 +18,7 @@ var (
 	ErrorServiceNotFound             = errors.New("service not found")
 	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy within configured timeout")
 	ErrorHostInUse                   = errors.New("host settings conflict with another service")
+	ErrorHostBypassesClientCA        = errors.New("host settings would bypass the client CA of a wildcard host")
 	ErrorNoServerName                = errors.New("no server name provided")
 	ErrorUnknownServerName           = errors.New("unknown server name")
 
@@ -134,18 +135,22 @@ func (r *Router) RestoreLastSavedState() error {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	service, prefix := r.serviceForRequest(req)
-	if service == nil {
+	route := r.routeForRequest(req)
+	if route.service == nil {
 		SetErrorResponse(w, req, http.StatusNotFound, nil)
 		return
 	}
 
-	if service.options.StripPrefix && prefix != rootPath {
-		ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: prefix})
+	if handleConnectionWithoutTrustedClientCertificate(w, req, route.clientCertificateRequirement) {
+		return
+	}
+
+	if route.service.options.StripPrefix && route.pathPrefix != rootPath {
+		ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: route.pathPrefix})
 		req = req.WithContext(ctx)
 	}
 
-	service.ServeHTTP(w, req)
+	route.service.ServeHTTP(w, req)
 }
 
 func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deploymentOptions DeploymentOptions) error {
@@ -348,6 +353,53 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 	return service.certManager.GetCertificate(hello)
 }
 
+func (r *Router) clientCA(hostname string) *ClientCA {
+	r.serviceLock.RLock()
+	defer r.serviceLock.RUnlock()
+
+	service := r.services.ServiceForHost(hostname)
+	if service == nil {
+		return nil
+	}
+	return service.clientCA
+}
+
+func handleConnectionWithoutTrustedClientCertificate(w http.ResponseWriter, req *http.Request, requirement clientCertificateRequirement) bool {
+	if requirement.clientCA == nil {
+		return false
+	}
+
+	if req.TLS == nil {
+		requirement.certManager.HTTPHandler(redirectToHTTPSOrForbid(requirement.tlsRedirect)).ServeHTTP(w, req)
+		return true
+	}
+
+	if !requirement.clientCA.TrustsConnection(req.TLS) {
+		SetErrorResponse(w, req, http.StatusMisdirectedRequest, nil)
+		return true
+	}
+
+	return false
+}
+
+func redirectToHTTPSOrForbid(tlsRedirect bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if tlsRedirect {
+			http.Redirect(w, req, "https://"+hostForURL(requestHost(req))+req.URL.RequestURI(), http.StatusMovedPermanently)
+		} else {
+			SetErrorResponse(w, req, http.StatusForbidden, nil)
+		}
+	})
+}
+
+func hostForURL(host string) string {
+	isBareIPv6Address := strings.Contains(host, ":") && !strings.HasPrefix(host, "[")
+	if isBareIPv6Address {
+		return "[" + host + "]"
+	}
+	return host
+}
+
 // Private
 
 func (r *Router) createOrUpdateService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -391,6 +443,11 @@ func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalan
 			return ErrorHostInUse
 		}
 
+		if host := r.services.HostBypassingClientCAAfterSet(name, options); host != "" {
+			slog.Error("Host has path-based services but no root service, bypassing the client CA of a wildcard host", "service", name, "host", host)
+			return ErrorHostBypassesClientCA
+		}
+
 		service, err := getService()
 		if err != nil {
 			return err
@@ -400,6 +457,10 @@ func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalan
 		r.services.Set(service)
 		return nil
 	})
+
+	if err != nil {
+		lb.Dispose()
+	}
 
 	return replaced, err
 }
@@ -428,11 +489,11 @@ func (r *Router) saveStateSnapshot() error {
 	return nil
 }
 
-func (r *Router) serviceForRequest(req *http.Request) (*Service, string) {
+func (r *Router) routeForRequest(req *http.Request) requestRoute {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	return r.services.ServiceForRequest(req)
+	return r.services.RouteForRequest(req)
 }
 
 func (r *Router) serviceForHost(host string) *Service {

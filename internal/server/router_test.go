@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -383,6 +384,173 @@ func TestRouter_ReusingHost(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "first", body)
+}
+
+func TestRouter_PathServiceBypassingWildcardClientCA(t *testing.T) {
+	router := testRouter(t)
+	_, mtls := testBackend(t, "mtls", http.StatusOK)
+	_, api := testBackend(t, "api", http.StatusOK)
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	clientCAOptions := defaultServiceOptions
+	clientCAOptions.Hosts = []string{"*.example.com"}
+	clientCAOptions.TLSEnabled = true
+	clientCAOptions.TLSCertificatePath = certPath
+	clientCAOptions.TLSPrivateKeyPath = keyPath
+	clientCAOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	pathOptions := defaultServiceOptions
+	pathOptions.Hosts = []string{"app.example.com"}
+	pathOptions.PathPrefixes = []string{"/api"}
+
+	t.Run("rejects path service deployed after the wildcard host", func(t *testing.T) {
+		require.NoError(t, router.DeployService("mtls", []string{mtls}, defaultEmptyReaders, clientCAOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+		err := router.DeployService("api", []string{api}, defaultEmptyReaders, pathOptions, defaultTargetOptions, defaultDeploymentOptions)
+		require.Equal(t, ErrorHostBypassesClientCA, err)
+
+		statusCode, _ := sendGETRequest(router, "http://app.example.com/api")
+		assert.Equal(t, http.StatusMovedPermanently, statusCode)
+
+		require.NoError(t, router.RemoveService("mtls"))
+	})
+
+	t.Run("rejects wildcard host deployed after the path service", func(t *testing.T) {
+		require.NoError(t, router.DeployService("api", []string{api}, defaultEmptyReaders, pathOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+		err := router.DeployService("mtls", []string{mtls}, defaultEmptyReaders, clientCAOptions, defaultTargetOptions, defaultDeploymentOptions)
+		require.Equal(t, ErrorHostBypassesClientCA, err)
+
+		require.NoError(t, router.RemoveService("api"))
+	})
+}
+
+func TestRouter_RemovingRootServiceKeepsWildcardClientCA(t *testing.T) {
+	router := testRouter(t)
+	_, mtls := testBackend(t, "mtls", http.StatusOK)
+	_, root := testBackend(t, "root", http.StatusOK)
+
+	var apiReached atomic.Bool
+	_, api := testBackendWithHandler(t, recordRequestsExceptHealthChecks(&apiReached))
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	tlsOptions := defaultServiceOptions
+	tlsOptions.TLSEnabled = true
+	tlsOptions.TLSCertificatePath = certPath
+	tlsOptions.TLSPrivateKeyPath = keyPath
+
+	clientCAOptions := tlsOptions
+	clientCAOptions.Hosts = []string{"*.example.com"}
+	clientCAOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	rootOptions := tlsOptions
+	rootOptions.Hosts = []string{"app.example.com"}
+
+	pathOptions := defaultServiceOptions
+	pathOptions.Hosts = []string{"app.example.com"}
+	pathOptions.PathPrefixes = []string{"/api"}
+
+	require.NoError(t, router.DeployService("mtls", []string{mtls}, defaultEmptyReaders, clientCAOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.DeployService("root", []string{root}, defaultEmptyReaders, rootOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.DeployService("api", []string{api}, defaultEmptyReaders, pathOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	require.NoError(t, router.RemoveService("root"))
+
+	statusCode, _ := sendGETRequest(router, "http://app.example.com/api")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
+	assert.False(t, apiReached.Load())
+}
+
+func TestRouter_RejectedDeploymentStopsHealthChecks(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+
+	var rejectedHealthChecks atomic.Int64
+	countHealthChecks := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == DefaultHealthCheckPath {
+			rejectedHealthChecks.Add(1)
+		}
+	}
+	_, rejectedWriter := testBackendWithHandler(t, countHealthChecks)
+	_, rejectedReader := testBackendWithHandler(t, countHealthChecks)
+
+	targetOptions := defaultTargetOptions
+	targetOptions.HealthCheckConfig.Interval = 10 * time.Millisecond
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, serviceOptions, targetOptions, defaultDeploymentOptions))
+
+	err := router.DeployService("service2", []string{rejectedWriter}, []string{rejectedReader}, serviceOptions, targetOptions, defaultDeploymentOptions)
+	require.Equal(t, ErrorHostInUse, err)
+
+	healthChecksAfterRejection := rejectedHealthChecks.Load()
+	time.Sleep(20 * targetOptions.HealthCheckConfig.Interval)
+	assert.Equal(t, healthChecksAfterRejection, rejectedHealthChecks.Load())
+}
+
+func TestRouter_ClientCALookupsDuringRedeploys(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackend(t, "ok", http.StatusOK)
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSCertificatePath = certPath
+	serviceOptions.TLSPrivateKeyPath = keyPath
+	serviceOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	deploy := func() {
+		require.NoError(t, router.DeployService("mtls", []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	}
+	deploy()
+
+	var redeploying atomic.Bool
+	redeploying.Store(true)
+	redeployed := make(chan struct{})
+	go func() {
+		defer close(redeployed)
+		defer redeploying.Store(false)
+		for range 20 {
+			deploy()
+		}
+	}()
+
+	for redeploying.Load() {
+		statusCode, _ := sendGETRequest(router, "http://example.com/")
+		assert.Equal(t, http.StatusMovedPermanently, statusCode)
+		assert.NotNil(t, router.clientCA("example.com"))
+	}
+	<-redeployed
+}
+
+func TestRouter_PlainHTTPToClientCAHostRedirectsIPAddresses(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackend(t, "ok", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSOnDemandURL = "/check"
+	serviceOptions.ACMECachePath = t.TempDir()
+	serviceOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	require.NoError(t, router.DeployService("mtls", []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	checkRedirect := func(url, expectedLocation string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, url, nil))
+
+		assert.Equal(t, http.StatusMovedPermanently, w.Code)
+		assert.Equal(t, expectedLocation, w.Header().Get("Location"))
+	}
+
+	checkRedirect("http://[2001:db8::1]:8080/api?page=2", "https://[2001:db8::1]/api?page=2")
+	checkRedirect("http://[2001:db8::1]/api", "https://[2001:db8::1]/api")
+	checkRedirect("http://192.0.2.1:8080/api", "https://192.0.2.1/api")
+	checkRedirect("http://app.example.com:8080/api", "https://app.example.com/api")
 }
 
 func TestRouter_ReusingEmptyHost(t *testing.T) {
@@ -1008,6 +1176,26 @@ func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
 
 	assert.NoError(t, manager.HostPolicy(context.Background(), "allowed.example.com"))
 	assert.Error(t, manager.HostPolicy(context.Background(), "denied.example.com"))
+}
+
+func BenchmarkRouter_RouteForRequest(b *testing.B) {
+	router := NewRouter(filepath.Join(b.TempDir(), "state.json"))
+	_, backend := testBackend(b, "ok", http.StatusOK)
+
+	for _, pathPrefix := range []string{"/", "/api", "/admin"} {
+		serviceOptions := defaultServiceOptions
+		serviceOptions.Hosts = []string{"example.com"}
+		serviceOptions.PathPrefixes = []string{pathPrefix}
+		require.NoError(b, router.DeployService("service"+pathPrefix, []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/api/items", nil)
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = router.routeForRequest(req)
+		}
+	})
 }
 
 // Helpers

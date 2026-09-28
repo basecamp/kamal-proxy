@@ -116,14 +116,17 @@ func (s *Server) startHTTP3Server(handler http.Handler, httpsAddr string) error 
 		return err
 	}
 
+	tlsConfig := &tls.Config{
+		MinVersion:     tls.VersionTLS13,
+		NextProtos:     []string{"h3"},
+		GetCertificate: s.router.GetCertificate,
+	}
+	tlsConfig.GetConfigForClient = s.createGetConfigForClient(tlsConfig)
+
 	s.http3Listener = http3Listener
 	s.http3Server = &http3.Server{
-		Handler: handler,
-		TLSConfig: &tls.Config{
-			MinVersion:     tls.VersionTLS13,
-			NextProtos:     []string{"h3"},
-			GetCertificate: s.router.GetCertificate,
-		},
+		Handler:   handler,
+		TLSConfig: tlsConfig,
 	}
 
 	go s.http3Server.Serve(s.http3Listener)
@@ -149,6 +152,10 @@ func (s *Server) startHTTPServers() error {
 	if err != nil {
 		return err
 	}
+
+	tlsConfig := httpsTLSConfig(s.router.GetCertificate)
+	tlsConfig.GetConfigForClient = s.createGetConfigForClient(tlsConfig)
+
 	s.httpsListener = httpsListener
 	s.httpsServer = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +165,7 @@ func (s *Server) startHTTPServers() error {
 
 			handler.ServeHTTP(w, r)
 		}),
-		TLSConfig: httpsTLSConfig(s.router.GetCertificate),
+		TLSConfig: tlsConfig,
 	}
 
 	go s.httpServer.Serve(s.httpListener)
@@ -206,6 +213,34 @@ func (s *Server) startCommandHandler() error {
 	_ = os.Remove(s.config.SocketPath())
 
 	return s.commandHandler.Start(s.config.SocketPath())
+}
+
+func (s *Server) createGetConfigForClient(base *tls.Config) func(*tls.ClientHelloInfo) (*tls.Config, error) {
+	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		if isACMETLSALPNChallenge(hello) {
+			return nil, nil
+		}
+
+		host := hello.ServerName
+		if host == "" {
+			host = s.router.defaultTLSHostname()
+		}
+
+		if host != "" {
+			if clientCA := s.router.clientCA(host); clientCA != nil {
+				config := base.Clone()
+				config.GetConfigForClient = nil
+				config.ClientAuth = tls.RequireAndVerifyClientCert
+				config.ClientCAs = clientCA.CertPool()
+				return config, nil
+			}
+		}
+		return nil, nil
+	}
+}
+
+func isACMETLSALPNChallenge(hello *tls.ClientHelloInfo) bool {
+	return len(hello.SupportedProtos) == 1 && hello.SupportedProtos[0] == acme.ALPNProto
 }
 
 func (s *Server) buildHandler() http.Handler {

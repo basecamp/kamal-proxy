@@ -193,6 +193,44 @@ your certificate file and the corresponding private key:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
 
 
+### Mutual TLS (mTLS)
+
+To only accept clients that present a certificate signed by a CA you trust,
+pass that CA via `--tls-client-ca-path`:
+
+    kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem --tls-client-ca-path ca.pem
+
+The file is in PEM format and may contain several CA certificates, all of which
+are trusted. Every PEM block in it must be a valid certificate, or the deploy
+fails. Text outside PEM blocks, such as comments, is ignored.
+
+This works with both custom and automatic TLS certificates, and also applies to
+any path-based services on the same hosts. Path-based services on a host that
+is only covered by a wildcard host with a client CA would not require client
+certificates, so deploys that would do this are rejected. Deploy a root service
+for that host first.
+
+Client certificates are checked during the TLS handshake, and again on every
+request:
+
+- Handshakes without a trusted client certificate fail.
+- Requests sent over a connection that was opened for a different host, such as
+  when a browser reuses an HTTP/2 connection, get a `421 Misdirected Request`
+  response, so the client retries on a new connection.
+- Requests over open connections also get a `421` once the client certificate
+  expires, or after redeploying with a CA file that no longer trusts it.
+- Plain HTTP requests are redirected to HTTPS, or rejected with a `403` when
+  using `--tls-redirect=false`.
+
+This can be used to implement [Cloudflare Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/),
+ensuring only Cloudflare can reach your origin. Note that Cloudflare's default
+origin pull certificate is shared by all Cloudflare customers, so it proves a
+request came through Cloudflare, but not that it came through your account. To
+ensure only your own zones can reach your origin, upload your own client
+certificate to Cloudflare, and pass the CA that signed it to
+`--tls-client-ca-path`.
+
+
 ## Specifying `run` options with environment variables
 
 In some environments, like when running a Docker container, it can be convenient
