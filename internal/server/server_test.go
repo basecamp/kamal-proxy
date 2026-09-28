@@ -665,7 +665,7 @@ type testCAFixture struct {
 	clientCert tls.Certificate
 }
 
-func generateTestCA(t *testing.T) testCAFixture {
+func generateTestCA(t testing.TB) testCAFixture {
 	t.Helper()
 
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
