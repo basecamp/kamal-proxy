@@ -259,6 +259,74 @@ func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 	})
 }
 
+func TestServer_ClientCAEnforcedWhenSNIDiffersFromHost(t *testing.T) {
+	ca := generateTestCA(t)
+	server := testServer(t, false)
+	certPath, keyPath := prepareTestCertificateFiles(t)
+
+	deploy := func(name string, hosts []string, clientCAPath string) {
+		target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
+
+		serviceOptions := defaultServiceOptions
+		serviceOptions.TLSEnabled = true
+		serviceOptions.TLSCertificatePath = certPath
+		serviceOptions.TLSPrivateKeyPath = keyPath
+		serviceOptions.Hosts = hosts
+		serviceOptions.TLSClientCACertificatePath = clientCAPath
+
+		var result bool
+		err := server.commandHandler.Deploy(DeployArgs{
+			Service:           name,
+			TargetURLs:        []string{target.Address()},
+			DeploymentOptions: defaultDeploymentOptions,
+			ServiceOptions:    serviceOptions,
+			TargetOptions:     defaultTargetOptions,
+		}, &result)
+		require.NoError(t, err)
+	}
+
+	deploy("mtls", []string{"localhost", "alt.example.com"}, ca.certPath)
+	deploy("public", []string{"public.example.com"}, "")
+
+	request := func(sni, host string, certificates []tls.Certificate) *http.Response {
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         sni,
+				Certificates:       certificates,
+			},
+		}
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://localhost:%d/", server.HttpsPort()), nil)
+		require.NoError(t, err)
+		req.Host = host
+
+		resp, err := (&http.Client{Transport: transport}).Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+
+	t.Run("rejects request to mTLS host over connection for host without mTLS", func(t *testing.T) {
+		resp := request("public.example.com", "localhost", nil)
+		assert.Equal(t, http.StatusMisdirectedRequest, resp.StatusCode)
+	})
+
+	t.Run("rejects request to mTLS host over connection for host without mTLS, even with client certificate", func(t *testing.T) {
+		resp := request("public.example.com", "localhost", []tls.Certificate{ca.clientCert})
+		assert.Equal(t, http.StatusMisdirectedRequest, resp.StatusCode)
+	})
+
+	t.Run("accepts request to mTLS host over connection for another host of the same service", func(t *testing.T) {
+		resp := request("alt.example.com", "localhost", []tls.Certificate{ca.clientCert})
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("accepts request to host without mTLS over mTLS connection", func(t *testing.T) {
+		resp := request("localhost", "public.example.com", []tls.Certificate{ca.clientCert})
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+}
+
 // Helpers
 
 func testDeployTarget(tb testing.TB, target *Target, server *Server, serviceOptions ServiceOptions) {

@@ -197,7 +197,8 @@ your certificate file and the corresponding private key:
 
 To require clients to present a certificate signed by a trusted CA, pass the CA
 certificate via `--tls-client-ca-path`. Connections from clients without a valid
-certificate are rejected at the TLS layer.
+certificate are rejected. Requires `--tls-redirect` (the default). This also
+works with automatic TLS certificates.
 
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem --tls-client-ca-path ca.pem
 

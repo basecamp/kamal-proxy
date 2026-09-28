@@ -141,6 +141,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if !r.connectionVerifiedForHost(req) {
+		SetErrorResponse(w, req, http.StatusMisdirectedRequest, nil)
+		return
+	}
+
 	if service.options.StripPrefix && prefix != rootPath {
 		ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: prefix})
 		req = req.WithContext(ctx)
@@ -355,6 +360,31 @@ func (r *Router) clientCACertPool(hostname string) *x509.CertPool {
 		return nil
 	}
 	return service.clientCACertPool
+}
+
+// connectionVerifiedForHost reports whether the request's connection verified
+// a client certificate against the CA required by the request's host. The
+// handshake picks the CA from SNI, but routing uses the Host header, so a
+// client could otherwise reach an mTLS host over a connection for another
+// host. Mismatched requests get 421, so clients retry on a new connection.
+func (r *Router) connectionVerifiedForHost(req *http.Request) bool {
+	pool := r.clientCACertPool(requestHost(req))
+	if pool == nil {
+		return true
+	}
+
+	// Plain HTTP requests are redirected to HTTPS, as client CA options
+	// require TLS redirects to be enabled.
+	if req.TLS == nil {
+		return true
+	}
+
+	handshakeHost := req.TLS.ServerName
+	if handshakeHost == "" {
+		handshakeHost = r.defaultTLSHostname()
+	}
+
+	return len(req.TLS.VerifiedChains) > 0 && r.clientCACertPool(handshakeHost) == pool
 }
 
 // Private
