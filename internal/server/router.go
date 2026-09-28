@@ -385,11 +385,19 @@ func handleConnectionWithoutTrustedClientCertificate(w http.ResponseWriter, req 
 func redirectToHTTPSOrForbid(tlsRedirect bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if tlsRedirect {
-			http.Redirect(w, req, "https://"+requestHost(req)+req.URL.RequestURI(), http.StatusMovedPermanently)
+			http.Redirect(w, req, "https://"+hostForURL(requestHost(req))+req.URL.RequestURI(), http.StatusMovedPermanently)
 		} else {
 			SetErrorResponse(w, req, http.StatusForbidden, nil)
 		}
 	})
+}
+
+func hostForURL(host string) string {
+	isBareIPv6Address := strings.Contains(host, ":") && !strings.HasPrefix(host, "[")
+	if isBareIPv6Address {
+		return "[" + host + "]"
+	}
+	return host
 }
 
 // Private
