@@ -461,6 +461,35 @@ func TestRouter_RemovingRootServiceKeepsWildcardClientCA(t *testing.T) {
 	assert.False(t, apiReached.Load())
 }
 
+func TestRouter_RejectedDeploymentStopsHealthChecks(t *testing.T) {
+	router := testRouter(t)
+	_, first := testBackend(t, "first", http.StatusOK)
+
+	var rejectedHealthChecks atomic.Int64
+	countHealthChecks := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == DefaultHealthCheckPath {
+			rejectedHealthChecks.Add(1)
+		}
+	}
+	_, rejectedWriter := testBackendWithHandler(t, countHealthChecks)
+	_, rejectedReader := testBackendWithHandler(t, countHealthChecks)
+
+	targetOptions := defaultTargetOptions
+	targetOptions.HealthCheckConfig.Interval = 10 * time.Millisecond
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+
+	require.NoError(t, router.DeployService("service1", []string{first}, defaultEmptyReaders, serviceOptions, targetOptions, defaultDeploymentOptions))
+
+	err := router.DeployService("service2", []string{rejectedWriter}, []string{rejectedReader}, serviceOptions, targetOptions, defaultDeploymentOptions)
+	require.Equal(t, ErrorHostInUse, err)
+
+	healthChecksAfterRejection := rejectedHealthChecks.Load()
+	time.Sleep(20 * targetOptions.HealthCheckConfig.Interval)
+	assert.Equal(t, healthChecksAfterRejection, rejectedHealthChecks.Load())
+}
+
 func TestRouter_ReusingEmptyHost(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)

@@ -447,6 +447,10 @@ func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalan
 		return nil
 	})
 
+	if err != nil {
+		lb.Dispose()
+	}
+
 	return replaced, err
 }
 
