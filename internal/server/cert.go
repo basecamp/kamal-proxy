@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -52,11 +51,9 @@ func (m *StaticCertManager) HTTPHandler(handler http.Handler) http.Handler {
 	return handler
 }
 
-type certificateFingerprint [sha256.Size]byte
-
 type ClientCA struct {
-	certPool     *x509.CertPool
-	fingerprints map[certificateFingerprint]bool
+	certPool               *x509.CertPool
+	trustedCertificatesDER map[string]bool
 }
 
 func NewClientCA(tlsClientCAFilePath string) (*ClientCA, error) {
@@ -73,12 +70,12 @@ func NewClientCA(tlsClientCAFilePath string) (*ClientCA, error) {
 	}
 
 	clientCA := &ClientCA{
-		certPool:     x509.NewCertPool(),
-		fingerprints: map[certificateFingerprint]bool{},
+		certPool:               x509.NewCertPool(),
+		trustedCertificatesDER: map[string]bool{},
 	}
 	for _, cert := range certs {
 		clientCA.certPool.AddCert(cert)
-		clientCA.fingerprints[sha256.Sum256(cert.Raw)] = true
+		clientCA.trustedCertificatesDER[string(cert.Raw)] = true
 	}
 	return clientCA, nil
 }
@@ -97,7 +94,7 @@ func (ca *ClientCA) trustsChain(chain []*x509.Certificate) bool {
 
 func (ca *ClientCA) isAnchorOf(chain []*x509.Certificate) bool {
 	chainAnchor := chain[len(chain)-1]
-	return ca.fingerprints[sha256.Sum256(chainAnchor.Raw)]
+	return ca.trustedCertificatesDER[string(chainAnchor.Raw)]
 }
 
 func allCurrentlyValid(certs []*x509.Certificate) bool {

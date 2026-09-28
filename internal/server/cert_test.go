@@ -213,9 +213,20 @@ func TestParseCACertificates(t *testing.T) {
 	})
 }
 
+func BenchmarkClientCA_TrustsConnection(b *testing.B) {
+	ca := generateTestCA(b)
+	clientCA, err := NewClientCA(ca.certPath)
+	require.NoError(b, err)
+	state := testConnectionStateVerifiedBy(b, ca)
+
+	for b.Loop() {
+		clientCA.TrustsConnection(state)
+	}
+}
+
 // Helpers
 
-func testConnectionStateVerifiedBy(t *testing.T, ca testCAFixture) *tls.ConnectionState {
+func testConnectionStateVerifiedBy(t testing.TB, ca testCAFixture) *tls.ConnectionState {
 	t.Helper()
 
 	clientCA, err := NewClientCA(ca.certPath)
