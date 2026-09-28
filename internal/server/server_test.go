@@ -178,6 +178,34 @@ func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 		defer resp.Body.Close()
 	})
 
+	dialTLS12WithProtos := func(protos []string) (*tls.Conn, error) {
+		return tls.Dial("tcp", fmt.Sprintf("localhost:%d", server.HttpsPort()), &tls.Config{
+			InsecureSkipVerify: true,
+			MaxVersion:         tls.VersionTLS12,
+			NextProtos:         protos,
+		})
+	}
+
+	t.Run("allows ACME TLS-ALPN-01 handshake without client certificate", func(t *testing.T) {
+		conn, err := dialTLS12WithProtos([]string{acme.ALPNProto})
+		require.NoError(t, err)
+		defer conn.Close()
+		assert.Equal(t, acme.ALPNProto, conn.ConnectionState().NegotiatedProtocol)
+
+		_, err = conn.Write([]byte("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"))
+		require.NoError(t, err)
+		_, err = conn.Read(make([]byte, 1))
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects ACME ALPN combined with other protocols without client certificate", func(t *testing.T) {
+		conn, err := dialTLS12WithProtos([]string{acme.ALPNProto, "http/1.1"})
+		if err == nil {
+			conn.Close()
+		}
+		assert.Error(t, err)
+	})
+
 	t.Run("negotiates HTTP/2 with trusted client certificate", func(t *testing.T) {
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{

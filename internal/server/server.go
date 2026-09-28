@@ -217,6 +217,10 @@ func (s *Server) startCommandHandler() error {
 
 func (s *Server) createGetConfigForClient(base *tls.Config) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		if isACMETLSALPNChallenge(hello) {
+			return nil, nil
+		}
+
 		host := hello.ServerName
 		if host == "" {
 			host = s.router.defaultTLSHostname()
@@ -233,6 +237,10 @@ func (s *Server) createGetConfigForClient(base *tls.Config) func(*tls.ClientHell
 		}
 		return nil, nil
 	}
+}
+
+func isACMETLSALPNChallenge(hello *tls.ClientHelloInfo) bool {
+	return len(hello.SupportedProtos) == 1 && hello.SupportedProtos[0] == acme.ALPNProto
 }
 
 func (s *Server) buildHandler() http.Handler {
