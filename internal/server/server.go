@@ -217,8 +217,13 @@ func (s *Server) startCommandHandler() error {
 
 func (s *Server) createGetConfigForClient(base *tls.Config) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-		if hello.ServerName != "" {
-			if pool := s.router.clientCACertPool(hello.ServerName); pool != nil {
+		host := hello.ServerName
+		if host == "" {
+			host = s.router.defaultTLSHostname()
+		}
+
+		if host != "" {
+			if pool := s.router.clientCACertPool(host); pool != nil {
 				config := base.Clone()
 				config.GetConfigForClient = nil
 				config.ClientAuth = tls.RequireAndVerifyClientCert

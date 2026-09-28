@@ -160,6 +160,24 @@ func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 
+	t.Run("rejects request without SNI or client certificate", func(t *testing.T) {
+		transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		_, err := (&http.Client{Transport: transport}).Get(fmt.Sprintf("https://127.0.0.1:%d/", server.HttpsPort()))
+		assert.Error(t, err)
+	})
+
+	t.Run("accepts request without SNI with trusted client certificate", func(t *testing.T) {
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				Certificates:       []tls.Certificate{ca.clientCert},
+			},
+		}
+		resp, err := (&http.Client{Transport: transport}).Get(fmt.Sprintf("https://127.0.0.1:%d/", server.HttpsPort()))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+	})
+
 	t.Run("negotiates HTTP/2 with trusted client certificate", func(t *testing.T) {
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{
