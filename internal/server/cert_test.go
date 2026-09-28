@@ -2,6 +2,8 @@ package server
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path"
 	"testing"
@@ -53,7 +55,104 @@ func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
 	require.ErrorContains(t, err, "unable to load certificate")
 }
 
+func TestClientCALoading(t *testing.T) {
+	ca := generateTestCA(t)
+
+	pool, err := loadCACertPool(ca.certPath)
+	require.NoError(t, err)
+
+	_, err = ca.clientCert.Leaf.Verify(x509.VerifyOptions{
+		Roots:     pool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	})
+	assert.NoError(t, err)
+}
+
+func TestClientCALoadingErrorWhenFileDoesNotExist(t *testing.T) {
+	_, err := loadCACertPool("testdata/ca.pem")
+	require.ErrorIs(t, err, ErrorUnableToLoadClientCACertificate)
+}
+
+func TestClientCALoadingErrorWhenFileIsInvalid(t *testing.T) {
+	_, keyPath := prepareTestCertificateFiles(t)
+
+	_, err := loadCACertPool(keyPath)
+	require.ErrorIs(t, err, ErrorUnableToLoadClientCACertificate)
+}
+
+func TestParseCACertificates(t *testing.T) {
+	caPEM := readTestCAPEM(t)
+	otherCAPEM := readTestCAPEM(t)
+
+	parse := func(pemData string) ([]*x509.Certificate, error) {
+		return parseCACertificates([]byte(pemData))
+	}
+
+	t.Run("single certificate", func(t *testing.T) {
+		certs, err := parse(caPEM)
+		require.NoError(t, err)
+		assert.Len(t, certs, 1)
+	})
+
+	t.Run("certificate bundle", func(t *testing.T) {
+		certs, err := parse(caPEM + otherCAPEM)
+		require.NoError(t, err)
+		assert.Len(t, certs, 2)
+	})
+
+	t.Run("text outside PEM blocks", func(t *testing.T) {
+		certs, err := parse("# Test CA\n" + caPEM + "\n# Other CA\n" + otherCAPEM + "\n# End\n")
+		require.NoError(t, err)
+		assert.Len(t, certs, 2)
+	})
+
+	t.Run("empty file", func(t *testing.T) {
+		_, err := parse("")
+		assert.ErrorContains(t, err, "no certificates found")
+	})
+
+	t.Run("text only", func(t *testing.T) {
+		_, err := parse("not a certificate\n")
+		assert.ErrorContains(t, err, "no certificates found")
+	})
+
+	t.Run("private key", func(t *testing.T) {
+		_, err := parse(caPEM + keyPem)
+		assert.ErrorContains(t, err, `unexpected PEM block type "EC PRIVATE KEY"`)
+	})
+
+	t.Run("invalid certificate", func(t *testing.T) {
+		invalid := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("invalid")}))
+
+		_, err := parse(caPEM + invalid)
+		assert.Error(t, err)
+	})
+
+	t.Run("truncated last block", func(t *testing.T) {
+		truncated := otherCAPEM[:len(otherCAPEM)/2]
+
+		_, err := parse(caPEM + truncated)
+		assert.ErrorContains(t, err, "malformed PEM block")
+	})
+
+	t.Run("malformed block followed by a valid one", func(t *testing.T) {
+		truncated := otherCAPEM[:len(otherCAPEM)/2]
+
+		_, err := parse(truncated + caPEM)
+		assert.ErrorContains(t, err, "malformed PEM block")
+	})
+}
+
 // Helpers
+
+func readTestCAPEM(t *testing.T) string {
+	t.Helper()
+
+	pemData, err := os.ReadFile(generateTestCA(t).certPath)
+	require.NoError(t, err)
+
+	return string(pemData)
+}
 
 func prepareTestCertificateFiles(t *testing.T) (string, string) {
 	t.Helper()
