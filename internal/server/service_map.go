@@ -84,16 +84,7 @@ func (m *ServiceMap) ServiceForHost(host string) *Service {
 }
 
 func (m *ServiceMap) ServiceForRequest(req *http.Request) (*Service, string) {
-	host := req.Host
-
-	if strings.Index(host, ":") > 0 {
-		splitHost, _, err := net.SplitHostPort(host)
-		if err == nil {
-			host = splitHost
-		}
-	}
-
-	return m.serviceFor(host, CleanRequestPath(req.URL.Path))
+	return m.serviceFor(requestHost(req), CleanRequestPath(req.URL.Path))
 }
 
 func CleanRequestPath(requestPath string) string {
@@ -193,6 +184,19 @@ func (m *ServiceMap) syncTLSOptionsFromRootDomain() {
 			}
 		}
 	}
+}
+
+func requestHost(req *http.Request) string {
+	host := req.Host
+
+	if strings.Index(host, ":") > 0 {
+		splitHost, _, err := net.SplitHostPort(host)
+		if err == nil {
+			host = splitHost
+		}
+	}
+
+	return host
 }
 
 func NormalizeHosts(hosts []string) []string {
