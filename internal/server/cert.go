@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -10,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 )
 
 var (
@@ -49,24 +51,52 @@ func (m *StaticCertManager) HTTPHandler(handler http.Handler) http.Handler {
 	return handler
 }
 
-func loadCACertPool(tlsClientCACertificateFilePath string) (*x509.CertPool, error) {
-	pemData, err := os.ReadFile(tlsClientCACertificateFilePath)
+type certificateFingerprint [sha256.Size]byte
+
+type ClientCA struct {
+	certPool     *x509.CertPool
+	fingerprints map[certificateFingerprint]bool
+}
+
+func NewClientCA(tlsClientCAFilePath string) (*ClientCA, error) {
+	pemData, err := os.ReadFile(tlsClientCAFilePath)
 	if err != nil {
-		slog.Error("Error loading client CA certificate", "path", tlsClientCACertificateFilePath, "error", err)
+		slog.Error("Error loading client CA certificate", "path", tlsClientCAFilePath, "error", err)
 		return nil, ErrorUnableToLoadClientCACertificate
 	}
 
 	certs, err := parseCACertificates(pemData)
 	if err != nil {
-		slog.Error("Error parsing client CA certificate", "path", tlsClientCACertificateFilePath, "error", err)
+		slog.Error("Error parsing client CA certificate", "path", tlsClientCAFilePath, "error", err)
 		return nil, ErrorUnableToLoadClientCACertificate
 	}
 
-	pool := x509.NewCertPool()
-	for _, cert := range certs {
-		pool.AddCert(cert)
+	clientCA := &ClientCA{
+		certPool:     x509.NewCertPool(),
+		fingerprints: map[certificateFingerprint]bool{},
 	}
-	return pool, nil
+	for _, cert := range certs {
+		clientCA.certPool.AddCert(cert)
+		clientCA.fingerprints[sha256.Sum256(cert.Raw)] = true
+	}
+	return clientCA, nil
+}
+
+func (ca *ClientCA) CertPool() *x509.CertPool {
+	return ca.certPool
+}
+
+func (ca *ClientCA) TrustsConnection(state *tls.ConnectionState) bool {
+	return slices.ContainsFunc(state.VerifiedChains, ca.isAnchorOf)
+}
+
+func (ca *ClientCA) isAnchorOf(chain []*x509.Certificate) bool {
+	if len(chain) == 0 {
+		return false
+	}
+
+	chainAnchor := chain[len(chain)-1]
+	return ca.fingerprints[sha256.Sum256(chainAnchor.Raw)]
 }
 
 func parseCACertificates(pemData []byte) ([]*x509.Certificate, error) {
