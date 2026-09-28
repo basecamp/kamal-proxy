@@ -133,9 +133,9 @@ func TestServiceOptions_Validate(t *testing.T) {
 	assertNotValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "/allow-host", TLSCertificatePath: "cert.pem", TLSPrivateKeyPath: "key.pem"}, "cannot use a custom TLS certificate with a TLS on-demand URL")
 	assertNotValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "/allow-host", CanonicalHost: "example.com"}, "cannot set a canonical host when using a TLS on-demand URL")
 
-	assertValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: true, TLSClientCACertificatePath: "ca.pem"})
-	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, TLSRedirect: true, TLSClientCACertificatePath: "ca.pem"}, "TLS must be enabled to use a TLS client CA")
-	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSClientCACertificatePath: "ca.pem"}, "TLS redirect must be enabled when using a TLS client CA")
+	assertValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: true, TLSClientCAPath: "ca.pem"})
+	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, TLSRedirect: true, TLSClientCAPath: "ca.pem"}, "TLS must be enabled to use a TLS client CA")
+	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSClientCAPath: "ca.pem"}, "TLS redirect must be enabled when using a TLS client CA")
 }
 
 func TestService_DontRedirectToHTTPSWhenTLSAndPlainHTTPAllowed(t *testing.T) {

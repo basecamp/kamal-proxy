@@ -106,7 +106,7 @@ type ServiceOptions struct {
 	TLSCertificatePath          string        `json:"tls_certificate_path"`
 	TLSPrivateKeyPath           string        `json:"tls_private_key_path"`
 	TLSOnDemandURL              string        `json:"tls_on_demand_url"`
-	TLSClientCACertificatePath  string        `json:"tls_client_ca_certificate_path"`
+	TLSClientCAPath             string        `json:"tls_client_ca_path"`
 	TLSRedirect                 bool          `json:"tls_redirect"`
 	CanonicalHost               string        `json:"canonical_host"`
 	ACMEDirectory               string        `json:"acme_directory"`
@@ -135,7 +135,7 @@ func (so ServiceOptions) Validate() error {
 		return fmt.Errorf("%w: TLS must be enabled to use a TLS on-demand URL", ErrServiceOptionsInvalid)
 	}
 
-	if so.TLSClientCACertificatePath != "" {
+	if so.TLSClientCAPath != "" {
 		if !so.TLSEnabled {
 			return fmt.Errorf("%w: TLS must be enabled to use a TLS client CA", ErrServiceOptionsInvalid)
 		}
@@ -604,11 +604,11 @@ func (s *Service) createHostPolicy(options ServiceOptions, certCache autocert.Ca
 }
 
 func (s *Service) createClientCACertPool(options ServiceOptions) (*x509.CertPool, error) {
-	if !options.TLSEnabled || options.TLSClientCACertificatePath == "" {
+	if !options.TLSEnabled || options.TLSClientCAPath == "" {
 		return nil, nil
 	}
 
-	return loadCACertPool(options.TLSClientCACertificatePath)
+	return loadCACertPool(options.TLSClientCAPath)
 }
 
 func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {

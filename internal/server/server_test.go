@@ -200,7 +200,7 @@ func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 	serviceOptions.TLSCertificatePath = certPath
 	serviceOptions.TLSPrivateKeyPath = keyPath
 	serviceOptions.Hosts = []string{"localhost"}
-	serviceOptions.TLSClientCACertificatePath = ca.certPath
+	serviceOptions.TLSClientCAPath = ca.certPath
 
 	testDeployTarget(t, target, server, serviceOptions)
 
@@ -346,7 +346,7 @@ func TestServer_ClientCAEnforcedWhenSNIDiffersFromHost(t *testing.T) {
 		serviceOptions.TLSCertificatePath = certPath
 		serviceOptions.TLSPrivateKeyPath = keyPath
 		serviceOptions.Hosts = hosts
-		serviceOptions.TLSClientCACertificatePath = clientCAPath
+		serviceOptions.TLSClientCAPath = clientCAPath
 
 		var result bool
 		err := server.commandHandler.Deploy(DeployArgs{
