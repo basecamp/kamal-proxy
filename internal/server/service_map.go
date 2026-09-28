@@ -21,9 +21,9 @@ type pathBinding struct {
 type requestServiceMap map[string][]*pathBinding
 
 type requestRoute struct {
-	service         *Service
-	pathPrefix      string
-	hostRootService *Service
+	service             *Service
+	pathPrefix          string
+	coveringRootService *Service
 }
 
 type ServiceMap struct {
@@ -105,10 +105,16 @@ func (m *ServiceMap) ServiceForRequest(req *http.Request) (*Service, string) {
 }
 
 func (m *ServiceMap) RouteForRequest(req *http.Request) requestRoute {
-	bindings := m.bindingsForHost(requestHost(req))
+	host := requestHost(req)
+	bindings := m.bindingsForHost(host)
 	service, pathPrefix := serviceForPath(bindings, req.URL.Path)
 
-	return requestRoute{service: service, pathPrefix: pathPrefix, hostRootService: rootServiceOf(bindings)}
+	coveringRootService := rootServiceOf(bindings)
+	if coveringRootService == nil {
+		coveringRootService = m.rootServiceCovering(host)
+	}
+
+	return requestRoute{service: service, pathPrefix: pathPrefix, coveringRootService: coveringRootService}
 }
 
 // Private
@@ -125,6 +131,15 @@ func serviceForPath(bindings []*pathBinding, path string) (*Service, string) {
 	}
 
 	return nil, ""
+}
+
+func (m *ServiceMap) rootServiceCovering(host string) *Service {
+	for _, coveringHost := range [...]string{host, wildcardHost(host), ""} {
+		if rootService := rootServiceOf(m.requestServiceMap[coveringHost]); rootService != nil {
+			return rootService
+		}
+	}
+	return nil
 }
 
 func rootServiceOf(bindings []*pathBinding) *Service {
