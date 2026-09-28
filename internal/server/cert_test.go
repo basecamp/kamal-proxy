@@ -6,7 +6,9 @@ import (
 	"encoding/pem"
 	"os"
 	"path"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -104,6 +106,38 @@ func TestClientCATrustsConnection(t *testing.T) {
 
 	t.Run("empty chain", func(t *testing.T) {
 		state := &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{}}}
+		assert.False(t, clientCA.TrustsConnection(state))
+	})
+
+	const clientCertIndex, caCertIndex = 0, 1
+
+	withChainCertificate := func(state *tls.ConnectionState, index int, change func(*x509.Certificate)) *tls.ConnectionState {
+		chain := slices.Clone(state.VerifiedChains[0])
+		changedCert := *chain[index]
+		change(&changedCert)
+		chain[index] = &changedCert
+
+		return &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{chain}}
+	}
+
+	t.Run("client certificate expired", func(t *testing.T) {
+		state := withChainCertificate(testConnectionStateVerifiedBy(t, ca), clientCertIndex, func(cert *x509.Certificate) {
+			cert.NotAfter = time.Now().Add(-time.Minute)
+		})
+		assert.False(t, clientCA.TrustsConnection(state))
+	})
+
+	t.Run("client certificate not yet valid", func(t *testing.T) {
+		state := withChainCertificate(testConnectionStateVerifiedBy(t, ca), clientCertIndex, func(cert *x509.Certificate) {
+			cert.NotBefore = time.Now().Add(time.Minute)
+		})
+		assert.False(t, clientCA.TrustsConnection(state))
+	})
+
+	t.Run("CA certificate expired", func(t *testing.T) {
+		state := withChainCertificate(testConnectionStateVerifiedBy(t, ca), caCertIndex, func(cert *x509.Certificate) {
+			cert.NotAfter = time.Now().Add(-time.Minute)
+		})
 		assert.False(t, clientCA.TrustsConnection(state))
 	})
 
