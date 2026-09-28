@@ -55,6 +55,36 @@ func TestServiceMap_ServiceForRequest(t *testing.T) {
 	checkService("6", "http://second.example.com/non-api/test")
 }
 
+func TestServiceMap_RouteForRequestFindsHostRootService(t *testing.T) {
+	sm := NewServiceMap()
+	sm.Set(&Service{name: "root", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
+	sm.Set(&Service{name: "api", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/api"}})})
+	sm.Set(&Service{name: "wildcard", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"*.example.com"}, PathPrefixes: []string{"/", "/admin"}})})
+	sm.Set(&Service{name: "path-only", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"path.example.com"}, PathPrefixes: []string{"/api"}})})
+	sm.Set(&Service{name: "org", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.org"}})})
+
+	checkHostRootService := func(expected string, url string) {
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		hostRootService := sm.RouteForRequest(req).hostRootService
+
+		assert.Equal(t, sm.ServiceForHost(requestHost(req)), hostRootService)
+		if expected == "" {
+			assert.Nil(t, hostRootService)
+		} else {
+			assert.Equal(t, expected, hostRootService.name)
+		}
+	}
+
+	checkHostRootService("root", "http://example.com/")
+	checkHostRootService("root", "http://example.com/api/items")
+	checkHostRootService("root", "http://example.com:8080/api")
+	checkHostRootService("wildcard", "http://app.example.com/admin")
+	checkHostRootService("", "http://path.example.com/api")
+	checkHostRootService("", "http://path.example.com/other")
+	checkHostRootService("", "http://unknown.org/")
+	checkHostRootService("org", "http://example.org/")
+}
+
 func TestServiceMap_CheckAvailability(t *testing.T) {
 	sm := NewServiceMap()
 	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})

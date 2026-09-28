@@ -1049,6 +1049,26 @@ func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
 	assert.Error(t, manager.HostPolicy(context.Background(), "denied.example.com"))
 }
 
+func BenchmarkRouter_RouteForRequest(b *testing.B) {
+	router := NewRouter(filepath.Join(b.TempDir(), "state.json"))
+	_, backend := testBackend(b, "ok", http.StatusOK)
+
+	for _, pathPrefix := range []string{"/", "/api", "/admin"} {
+		serviceOptions := defaultServiceOptions
+		serviceOptions.Hosts = []string{"example.com"}
+		serviceOptions.PathPrefixes = []string{pathPrefix}
+		require.NoError(b, router.DeployService("service"+pathPrefix, []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/api/items", nil)
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = router.routeForRequest(req)
+		}
+	})
+}
+
 // Helpers
 
 func testRouter(t *testing.T) *Router {

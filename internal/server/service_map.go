@@ -20,6 +20,12 @@ type pathBinding struct {
 
 type requestServiceMap map[string][]*pathBinding
 
+type requestRoute struct {
+	service         *Service
+	pathPrefix      string
+	hostRootService *Service
+}
+
 type ServiceMap struct {
 	services           map[string]*Service
 	requestServiceMap  requestServiceMap
@@ -94,17 +100,24 @@ func (m *ServiceMap) ServiceForHost(host string) *Service {
 }
 
 func (m *ServiceMap) ServiceForRequest(req *http.Request) (*Service, string) {
-	return m.serviceFor(requestHost(req), req.URL.Path)
+	route := m.RouteForRequest(req)
+	return route.service, route.pathPrefix
+}
+
+func (m *ServiceMap) RouteForRequest(req *http.Request) requestRoute {
+	bindings := m.bindingsForHost(requestHost(req))
+	service, pathPrefix := serviceForPath(bindings, req.URL.Path)
+
+	return requestRoute{service: service, pathPrefix: pathPrefix, hostRootService: rootServiceOf(bindings)}
 }
 
 // Private
 
 func (m *ServiceMap) serviceFor(host, path string) (*Service, string) {
-	bindings := m.bindingsForHost(host)
-	if bindings == nil {
-		return nil, ""
-	}
+	return serviceForPath(m.bindingsForHost(host), path)
+}
 
+func serviceForPath(bindings []*pathBinding, path string) (*Service, string) {
 	for _, binding := range bindings {
 		if strings.HasPrefix(EnsureTrailingSlash(path), EnsureTrailingSlash(binding.pathPrefix)) {
 			return binding.service, binding.pathPrefix
@@ -112,6 +125,18 @@ func (m *ServiceMap) serviceFor(host, path string) (*Service, string) {
 	}
 
 	return nil, ""
+}
+
+func rootServiceOf(bindings []*pathBinding) *Service {
+	if len(bindings) == 0 {
+		return nil
+	}
+
+	shortestPrefixBinding := bindings[len(bindings)-1]
+	if shortestPrefixBinding.pathPrefix != rootPath {
+		return nil
+	}
+	return shortestPrefixBinding.service
 }
 
 func (m *ServiceMap) bindingsForHost(host string) []*pathBinding {

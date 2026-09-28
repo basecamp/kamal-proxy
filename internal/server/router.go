@@ -135,22 +135,22 @@ func (r *Router) RestoreLastSavedState() error {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	service, prefix := r.serviceForRequest(req)
-	if service == nil {
+	route := r.routeForRequest(req)
+	if route.service == nil {
 		SetErrorResponse(w, req, http.StatusNotFound, nil)
 		return
 	}
 
-	if r.handleConnectionWithoutTrustedClientCertificate(w, req) {
+	if handleConnectionWithoutTrustedClientCertificate(w, req, route.hostRootService) {
 		return
 	}
 
-	if service.options.StripPrefix && prefix != rootPath {
-		ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: prefix})
+	if route.service.options.StripPrefix && route.pathPrefix != rootPath {
+		ctx := context.WithValue(req.Context(), contextKeyRoutingContext, &routingContext{MatchedPrefix: route.pathPrefix})
 		req = req.WithContext(ctx)
 	}
 
-	service.ServeHTTP(w, req)
+	route.service.ServeHTTP(w, req)
 }
 
 func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deploymentOptions DeploymentOptions) error {
@@ -361,18 +361,17 @@ func (r *Router) clientCA(hostname string) *ClientCA {
 	return service.clientCA
 }
 
-func (r *Router) handleConnectionWithoutTrustedClientCertificate(w http.ResponseWriter, req *http.Request) bool {
-	hostService := r.serviceForHost(requestHost(req))
-	if hostService == nil || hostService.clientCA == nil {
+func handleConnectionWithoutTrustedClientCertificate(w http.ResponseWriter, req *http.Request, hostRootService *Service) bool {
+	if hostRootService == nil || hostRootService.clientCA == nil {
 		return false
 	}
 
 	if req.TLS == nil {
-		hostService.certManager.HTTPHandler(redirectToHTTPSOrForbid(hostService.options.TLSRedirect)).ServeHTTP(w, req)
+		hostRootService.certManager.HTTPHandler(redirectToHTTPSOrForbid(hostRootService.options.TLSRedirect)).ServeHTTP(w, req)
 		return true
 	}
 
-	if !hostService.clientCA.TrustsConnection(req.TLS) {
+	if !hostRootService.clientCA.TrustsConnection(req.TLS) {
 		SetErrorResponse(w, req, http.StatusMisdirectedRequest, nil)
 		return true
 	}
@@ -475,11 +474,11 @@ func (r *Router) saveStateSnapshot() error {
 	return nil
 }
 
-func (r *Router) serviceForRequest(req *http.Request) (*Service, string) {
+func (r *Router) routeForRequest(req *http.Request) requestRoute {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	return r.services.ServiceForRequest(req)
+	return r.services.RouteForRequest(req)
 }
 
 func (r *Router) serviceForHost(host string) *Service {
