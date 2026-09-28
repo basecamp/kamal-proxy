@@ -526,6 +526,33 @@ func TestRouter_ClientCALookupsDuringRedeploys(t *testing.T) {
 	<-redeployed
 }
 
+func TestRouter_PlainHTTPToClientCAHostRedirectsIPAddresses(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackend(t, "ok", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSOnDemandURL = "/check"
+	serviceOptions.ACMECachePath = t.TempDir()
+	serviceOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	require.NoError(t, router.DeployService("mtls", []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	checkRedirect := func(url, expectedLocation string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, url, nil))
+
+		assert.Equal(t, http.StatusMovedPermanently, w.Code)
+		assert.Equal(t, expectedLocation, w.Header().Get("Location"))
+	}
+
+	checkRedirect("http://[2001:db8::1]:8080/api?page=2", "https://[2001:db8::1]/api?page=2")
+	checkRedirect("http://[2001:db8::1]/api", "https://[2001:db8::1]/api")
+	checkRedirect("http://192.0.2.1:8080/api", "https://192.0.2.1/api")
+	checkRedirect("http://app.example.com:8080/api", "https://app.example.com/api")
+}
+
 func TestRouter_ReusingEmptyHost(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
