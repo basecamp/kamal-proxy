@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"time"
 )
 
 var (
@@ -87,16 +88,24 @@ func (ca *ClientCA) CertPool() *x509.CertPool {
 }
 
 func (ca *ClientCA) TrustsConnection(state *tls.ConnectionState) bool {
-	return slices.ContainsFunc(state.VerifiedChains, ca.isAnchorOf)
+	return slices.ContainsFunc(state.VerifiedChains, ca.trustsChain)
+}
+
+func (ca *ClientCA) trustsChain(chain []*x509.Certificate) bool {
+	return len(chain) > 0 && ca.isAnchorOf(chain) && allCurrentlyValid(chain)
 }
 
 func (ca *ClientCA) isAnchorOf(chain []*x509.Certificate) bool {
-	if len(chain) == 0 {
-		return false
-	}
-
 	chainAnchor := chain[len(chain)-1]
 	return ca.fingerprints[sha256.Sum256(chainAnchor.Raw)]
+}
+
+func allCurrentlyValid(certs []*x509.Certificate) bool {
+	now := time.Now()
+
+	return !slices.ContainsFunc(certs, func(cert *x509.Certificate) bool {
+		return now.Before(cert.NotBefore) || now.After(cert.NotAfter)
+	})
 }
 
 func parseCACertificates(pemData []byte) ([]*x509.Certificate, error) {
