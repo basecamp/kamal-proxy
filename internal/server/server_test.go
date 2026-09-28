@@ -157,6 +157,7 @@ func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 		}
 		resp, err := (&http.Client{Transport: transport}).Get(fmt.Sprintf("https://localhost:%d/", server.HttpsPort()))
 		require.NoError(t, err)
+		defer resp.Body.Close()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 
