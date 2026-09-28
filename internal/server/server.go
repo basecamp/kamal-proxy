@@ -116,16 +116,18 @@ func (s *Server) startHTTP3Server(handler http.Handler, httpsAddr string) error 
 		return err
 	}
 
+	tlsConfig := &tls.Config{
+		MinVersion:     tls.VersionTLS13,
+		NextProtos:     []string{"h3"},
+		GetCertificate: s.router.GetCertificate,
+	}
+	tlsConfig.GetConfigForClient = s.createGetConfigForClient(tlsConfig)
+
 	s.http3Listener = http3Listener
 	s.http3Server = &http3.Server{
 		Handler:     handler,
 		IdleTimeout: s.config.IdleTimeout,
-		TLSConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS13,
-			NextProtos:         []string{"h3"},
-			GetCertificate:     s.router.GetCertificate,
-			GetConfigForClient: s.createGetConfigForClient(),
-		},
+		TLSConfig:   tlsConfig,
 	}
 
 	go s.http3Server.Serve(s.http3Listener)
@@ -153,6 +155,10 @@ func (s *Server) startHTTPServers() error {
 	if err != nil {
 		return err
 	}
+
+	tlsConfig := httpsTLSConfig(s.router.GetCertificate)
+	tlsConfig.GetConfigForClient = s.createGetConfigForClient(tlsConfig)
+
 	s.httpsListener = httpsListener
 	s.httpsServer = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +168,7 @@ func (s *Server) startHTTPServers() error {
 
 			handler.ServeHTTP(w, r)
 		}),
-		TLSConfig:         httpsTLSConfig(s.router.GetCertificate, s.createGetConfigForClient()),
+		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: s.config.ReadHeaderTimeout,
 		IdleTimeout:       s.config.IdleTimeout,
 	}
@@ -216,15 +222,15 @@ func (s *Server) startCommandHandler() error {
 	return s.commandHandler.Start(s.config.SocketPath())
 }
 
-func (s *Server) createGetConfigForClient() func(*tls.ClientHelloInfo) (*tls.Config, error) {
+func (s *Server) createGetConfigForClient(base *tls.Config) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		if hello.ServerName != "" {
 			if pool := s.router.clientCACertPool(hello.ServerName); pool != nil {
-				return &tls.Config{
-					GetCertificate: s.router.GetCertificate,
-					ClientAuth:     tls.RequireAndVerifyClientCert,
-					ClientCAs:      pool,
-				}, nil
+				config := base.Clone()
+				config.GetConfigForClient = nil
+				config.ClientAuth = tls.RequireAndVerifyClientCert
+				config.ClientCAs = pool
+				return config, nil
 			}
 		}
 		return nil, nil
@@ -262,13 +268,12 @@ func (s *Server) stopHTTPServer(ctx context.Context, server shutdownable) {
 	}
 }
 
-func httpsTLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error), getConfigForClient func(*tls.ClientHelloInfo) (*tls.Config, error)) *tls.Config {
+func httpsTLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)) *tls.Config {
 	return &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		CipherSuites:       aeadCipherSuites,
-		NextProtos:         []string{"h2", "http/1.1", acme.ALPNProto},
-		GetCertificate:     getCertificate,
-		GetConfigForClient: getConfigForClient,
+		MinVersion:     tls.VersionTLS12,
+		CipherSuites:   aeadCipherSuites,
+		NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
+		GetCertificate: getCertificate,
 	}
 }
 
