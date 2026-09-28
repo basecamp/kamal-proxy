@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -122,6 +123,69 @@ func TestServiceMap_CheckHostAvailability_EmptyHostsFirst(t *testing.T) {
 	sm.Set(&Service{name: "1", options: normalizedServiceOptions(defaultServiceOptions)})
 
 	assert.Nil(t, sm.CheckAvailability("2", normalizedServiceOptions(ServiceOptions{Hosts: []string{"app.example.com"}})))
+}
+
+func TestServiceMap_HostBypassingClientCAAfterSet(t *testing.T) {
+	clientCARoot := func(hosts ...string) ServiceOptions {
+		return normalizedServiceOptions(ServiceOptions{Hosts: hosts, TLSEnabled: true, TLSClientCAPath: "ca.pem"})
+	}
+	root := func(hosts ...string) ServiceOptions {
+		return normalizedServiceOptions(ServiceOptions{Hosts: hosts, TLSEnabled: true})
+	}
+	pathOnly := func(hosts ...string) ServiceOptions {
+		return normalizedServiceOptions(ServiceOptions{Hosts: hosts, PathPrefixes: []string{"/api"}})
+	}
+	serviceMap := func(services ...ServiceOptions) *ServiceMap {
+		sm := NewServiceMap()
+		for i, options := range services {
+			sm.Set(&Service{name: fmt.Sprintf("existing-%d", i), options: options})
+		}
+		return sm
+	}
+
+	t.Run("path-only host covered by a wildcard client CA host", func(t *testing.T) {
+		sm := serviceMap(clientCARoot("*.example.com"))
+		assert.Equal(t, "app.example.com", sm.HostBypassingClientCAAfterSet("api", pathOnly("app.example.com")))
+	})
+
+	t.Run("path-only host covered by a catch-all client CA service", func(t *testing.T) {
+		sm := serviceMap(normalizedServiceOptions(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "/check", TLSClientCAPath: "ca.pem"}))
+		assert.Equal(t, "app.example.com", sm.HostBypassingClientCAAfterSet("api", pathOnly("app.example.com")))
+		assert.Equal(t, "*.example.com", sm.HostBypassingClientCAAfterSet("api", pathOnly("*.example.com")))
+	})
+
+	t.Run("wildcard client CA host deployed after a path-only host it covers", func(t *testing.T) {
+		sm := serviceMap(pathOnly("app.example.com"))
+		assert.Equal(t, "app.example.com", sm.HostBypassingClientCAAfterSet("mtls", clientCARoot("*.example.com")))
+	})
+
+	t.Run("path-only host with its own root service", func(t *testing.T) {
+		sm := serviceMap(clientCARoot("*.example.com"), root("app.example.com"))
+		assert.Empty(t, sm.HostBypassingClientCAAfterSet("api", pathOnly("app.example.com")))
+	})
+
+	t.Run("root service replacing the path-only one", func(t *testing.T) {
+		sm := serviceMap(clientCARoot("*.example.com"))
+		sm.Set(&Service{name: "app", options: pathOnly("app.example.com")})
+		assert.Empty(t, sm.HostBypassingClientCAAfterSet("app", root("app.example.com")))
+	})
+
+	t.Run("path-only host covered by a wildcard host without client CA", func(t *testing.T) {
+		sm := serviceMap(root("*.example.com"))
+		assert.Empty(t, sm.HostBypassingClientCAAfterSet("api", pathOnly("app.example.com")))
+	})
+
+	t.Run("path-only host not covered by the wildcard host", func(t *testing.T) {
+		sm := serviceMap(clientCARoot("*.example.com"))
+		assert.Empty(t, sm.HostBypassingClientCAAfterSet("api", pathOnly("example.com")))
+		assert.Empty(t, sm.HostBypassingClientCAAfterSet("api", pathOnly("app.other.example.com")))
+		assert.Empty(t, sm.HostBypassingClientCAAfterSet("api", pathOnly("app.example.org")))
+	})
+
+	t.Run("path service on the wildcard client CA host itself", func(t *testing.T) {
+		sm := serviceMap(clientCARoot("*.example.com"))
+		assert.Empty(t, sm.HostBypassingClientCAAfterSet("api", pathOnly("*.example.com")))
+	})
 }
 
 func BenchmarkServiceMap_SingleServiceRouting(b *testing.B) {

@@ -203,7 +203,10 @@ pass that CA via `--tls-client-ca-path`:
 The file is in PEM format and may contain several CA certificates, all of which
 are trusted. Anything in it that isn't a valid certificate fails the deploy.
 This works with both custom and automatic TLS certificates, and also applies to
-any path-based services on the same hosts.
+any path-based services on the same hosts. Path-based services on a host that
+is only covered by a wildcard host with a client CA would not require client
+certificates, so deploys that would do this are rejected. Deploy a root service
+for that host first.
 
 Client certificates are checked during the TLS handshake, and again on every
 request:

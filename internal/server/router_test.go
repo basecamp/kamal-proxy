@@ -385,6 +385,45 @@ func TestRouter_ReusingHost(t *testing.T) {
 	assert.Equal(t, "first", body)
 }
 
+func TestRouter_PathServiceBypassingWildcardClientCA(t *testing.T) {
+	router := testRouter(t)
+	_, mtls := testBackend(t, "mtls", http.StatusOK)
+	_, api := testBackend(t, "api", http.StatusOK)
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	clientCAOptions := defaultServiceOptions
+	clientCAOptions.Hosts = []string{"*.example.com"}
+	clientCAOptions.TLSEnabled = true
+	clientCAOptions.TLSCertificatePath = certPath
+	clientCAOptions.TLSPrivateKeyPath = keyPath
+	clientCAOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	pathOptions := defaultServiceOptions
+	pathOptions.Hosts = []string{"app.example.com"}
+	pathOptions.PathPrefixes = []string{"/api"}
+
+	t.Run("rejects path service deployed after the wildcard host", func(t *testing.T) {
+		require.NoError(t, router.DeployService("mtls", []string{mtls}, defaultEmptyReaders, clientCAOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+		err := router.DeployService("api", []string{api}, defaultEmptyReaders, pathOptions, defaultTargetOptions, defaultDeploymentOptions)
+		require.Equal(t, ErrorHostBypassesClientCA, err)
+
+		statusCode, _ := sendGETRequest(router, "http://app.example.com/api")
+		assert.Equal(t, http.StatusMovedPermanently, statusCode)
+
+		require.NoError(t, router.RemoveService("mtls"))
+	})
+
+	t.Run("rejects wildcard host deployed after the path service", func(t *testing.T) {
+		require.NoError(t, router.DeployService("api", []string{api}, defaultEmptyReaders, pathOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+		err := router.DeployService("mtls", []string{mtls}, defaultEmptyReaders, clientCAOptions, defaultTargetOptions, defaultDeploymentOptions)
+		require.Equal(t, ErrorHostBypassesClientCA, err)
+
+		require.NoError(t, router.RemoveService("api"))
+	})
+}
+
 func TestRouter_ReusingEmptyHost(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)

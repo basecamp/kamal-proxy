@@ -18,6 +18,7 @@ var (
 	ErrorServiceNotFound             = errors.New("service not found")
 	ErrorTargetFailedToBecomeHealthy = errors.New("target failed to become healthy within configured timeout")
 	ErrorHostInUse                   = errors.New("host settings conflict with another service")
+	ErrorHostBypassesClientCA        = errors.New("host settings would bypass the client CA of a wildcard host")
 	ErrorNoServerName                = errors.New("no server name provided")
 	ErrorUnknownServerName           = errors.New("unknown server name")
 
@@ -430,6 +431,11 @@ func (r *Router) installLoadBalancer(name string, slot TargetSlot, lb *LoadBalan
 		if conflict != nil {
 			slog.Error("Host settings conflict with another service", "service", conflict.name)
 			return ErrorHostInUse
+		}
+
+		if host := r.services.HostBypassingClientCAAfterSet(name, options); host != "" {
+			slog.Error("Host has path-based services but no root service, bypassing the client CA of a wildcard host", "service", name, "host", host)
+			return ErrorHostBypassesClientCA
 		}
 
 		service, err := getService()

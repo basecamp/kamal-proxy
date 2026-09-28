@@ -2,6 +2,7 @@ package server
 
 import (
 	"iter"
+	"maps"
 	"net"
 	"net/http"
 	"slices"
@@ -77,6 +78,16 @@ func (m *ServiceMap) CheckAvailability(name string, options ServiceOptions) *Ser
 	return nil
 }
 
+func (m *ServiceMap) HostBypassingClientCAAfterSet(name string, options ServiceOptions) string {
+	serviceOptions := map[string]ServiceOptions{}
+	for serviceName, service := range m.services {
+		serviceOptions[serviceName] = service.options
+	}
+	serviceOptions[name] = options
+
+	return hostBypassingClientCA(serviceOptions)
+}
+
 func (m *ServiceMap) ServiceForHost(host string) *Service {
 	service, _ := m.serviceFor(host, rootPath)
 	return service
@@ -109,9 +120,8 @@ func (m *ServiceMap) bindingsForHost(host string) []*pathBinding {
 		return bindings
 	}
 
-	sep := strings.Index(host, ".")
-	if sep > 0 {
-		bindings, ok = m.requestServiceMap["*"+host[sep:]]
+	if wildcard := wildcardHost(host); wildcard != "" {
+		bindings, ok = m.requestServiceMap[wildcard]
 		if ok {
 			return bindings
 		}
@@ -184,6 +194,48 @@ func requestHost(req *http.Request) string {
 	}
 
 	return host
+}
+
+func hostBypassingClientCA(serviceOptions map[string]ServiceOptions) string {
+	hosts := map[string]bool{}
+	rootServiceOptions := map[string]ServiceOptions{}
+
+	for _, options := range serviceOptions {
+		for _, host := range options.Hosts {
+			hosts[host] = true
+			if slices.Contains(options.PathPrefixes, rootPath) {
+				rootServiceOptions[host] = options
+			}
+		}
+	}
+
+	for _, host := range slices.Sorted(maps.Keys(hosts)) {
+		if _, hasRootService := rootServiceOptions[host]; hasRootService {
+			continue
+		}
+
+		shadowedRootService, ok := rootServiceOptions[shadowedHost(host, hosts)]
+		if ok && shadowedRootService.RequiresClientCertificate() {
+			return host
+		}
+	}
+
+	return ""
+}
+
+func shadowedHost(host string, hosts map[string]bool) string {
+	if wildcard := wildcardHost(host); wildcard != host && hosts[wildcard] {
+		return wildcard
+	}
+	return ""
+}
+
+func wildcardHost(host string) string {
+	sep := strings.Index(host, ".")
+	if sep > 0 {
+		return "*" + host[sep:]
+	}
+	return ""
 }
 
 func NormalizeHosts(hosts []string) []string {

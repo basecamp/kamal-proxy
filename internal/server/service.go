@@ -179,6 +179,10 @@ func (so ServiceOptions) HasConfiguredHosts() bool {
 	return len(so.Hosts) > 0 && !slices.Contains(so.Hosts, "")
 }
 
+func (so ServiceOptions) RequiresClientCertificate() bool {
+	return so.TLSEnabled && so.TLSClientCAPath != ""
+}
+
 func (so *ServiceOptions) WithPathPrefixes(pathPrefixes []string) ServiceOptions {
 	options := *so
 	options.PathPrefixes = pathPrefixes
@@ -592,7 +596,7 @@ func (s *Service) createHostPolicy(options ServiceOptions, certCache autocert.Ca
 }
 
 func (s *Service) createClientCA(options ServiceOptions) (*ClientCA, error) {
-	if !options.TLSEnabled || options.TLSClientCAPath == "" {
+	if !options.RequiresClientCertificate() {
 		return nil, nil
 	}
 
