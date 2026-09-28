@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -422,6 +423,42 @@ func TestRouter_PathServiceBypassingWildcardClientCA(t *testing.T) {
 
 		require.NoError(t, router.RemoveService("api"))
 	})
+}
+
+func TestRouter_RemovingRootServiceKeepsWildcardClientCA(t *testing.T) {
+	router := testRouter(t)
+	_, mtls := testBackend(t, "mtls", http.StatusOK)
+	_, root := testBackend(t, "root", http.StatusOK)
+
+	var apiReached atomic.Bool
+	_, api := testBackendWithHandler(t, recordRequestsExceptHealthChecks(&apiReached))
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	tlsOptions := defaultServiceOptions
+	tlsOptions.TLSEnabled = true
+	tlsOptions.TLSCertificatePath = certPath
+	tlsOptions.TLSPrivateKeyPath = keyPath
+
+	clientCAOptions := tlsOptions
+	clientCAOptions.Hosts = []string{"*.example.com"}
+	clientCAOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	rootOptions := tlsOptions
+	rootOptions.Hosts = []string{"app.example.com"}
+
+	pathOptions := defaultServiceOptions
+	pathOptions.Hosts = []string{"app.example.com"}
+	pathOptions.PathPrefixes = []string{"/api"}
+
+	require.NoError(t, router.DeployService("mtls", []string{mtls}, defaultEmptyReaders, clientCAOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.DeployService("root", []string{root}, defaultEmptyReaders, rootOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.DeployService("api", []string{api}, defaultEmptyReaders, pathOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	require.NoError(t, router.RemoveService("root"))
+
+	statusCode, _ := sendGETRequest(router, "http://app.example.com/api")
+	assert.Equal(t, http.StatusMovedPermanently, statusCode)
+	assert.False(t, apiReached.Load())
 }
 
 func TestRouter_ReusingEmptyHost(t *testing.T) {
