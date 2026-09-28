@@ -22,9 +22,15 @@ type pathBinding struct {
 type requestServiceMap map[string][]*pathBinding
 
 type requestRoute struct {
-	service             *Service
-	pathPrefix          string
-	coveringRootService *Service
+	service                      *Service
+	pathPrefix                   string
+	clientCertificateRequirement clientCertificateRequirement
+}
+
+type clientCertificateRequirement struct {
+	clientCA    *ClientCA
+	certManager CertManager
+	tlsRedirect bool
 }
 
 type ServiceMap struct {
@@ -115,7 +121,19 @@ func (m *ServiceMap) RouteForRequest(req *http.Request) requestRoute {
 		coveringRootService = m.rootServiceCovering(host)
 	}
 
-	return requestRoute{service: service, pathPrefix: pathPrefix, coveringRootService: coveringRootService}
+	return requestRoute{service: service, pathPrefix: pathPrefix, clientCertificateRequirement: clientCertificateRequirementOf(coveringRootService)}
+}
+
+func clientCertificateRequirementOf(service *Service) clientCertificateRequirement {
+	if service == nil {
+		return clientCertificateRequirement{}
+	}
+
+	return clientCertificateRequirement{
+		clientCA:    service.clientCA,
+		certManager: service.certManager,
+		tlsRedirect: service.options.TLSRedirect,
+	}
 }
 
 func CleanRequestPath(requestPath string) string {

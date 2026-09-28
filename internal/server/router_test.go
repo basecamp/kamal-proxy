@@ -490,6 +490,42 @@ func TestRouter_RejectedDeploymentStopsHealthChecks(t *testing.T) {
 	assert.Equal(t, healthChecksAfterRejection, rejectedHealthChecks.Load())
 }
 
+func TestRouter_ClientCALookupsDuringRedeploys(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackend(t, "ok", http.StatusOK)
+
+	certPath, keyPath := prepareTestCertificateFiles(t)
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+	serviceOptions.TLSEnabled = true
+	serviceOptions.TLSCertificatePath = certPath
+	serviceOptions.TLSPrivateKeyPath = keyPath
+	serviceOptions.TLSClientCAPath = generateTestCA(t).certPath
+
+	deploy := func() {
+		require.NoError(t, router.DeployService("mtls", []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	}
+	deploy()
+
+	var redeploying atomic.Bool
+	redeploying.Store(true)
+	redeployed := make(chan struct{})
+	go func() {
+		defer close(redeployed)
+		defer redeploying.Store(false)
+		for range 20 {
+			deploy()
+		}
+	}()
+
+	for redeploying.Load() {
+		statusCode, _ := sendGETRequest(router, "http://example.com/")
+		assert.Equal(t, http.StatusMovedPermanently, statusCode)
+		assert.NotNil(t, router.clientCA("example.com"))
+	}
+	<-redeployed
+}
+
 func TestRouter_ReusingEmptyHost(t *testing.T) {
 	router := testRouter(t)
 	_, first := testBackend(t, "first", http.StatusOK)
