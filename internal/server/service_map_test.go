@@ -55,41 +55,50 @@ func TestServiceMap_ServiceForRequest(t *testing.T) {
 	checkService("6", "http://second.example.com/non-api/test")
 }
 
-func TestServiceMap_RouteForRequestFindsCoveringRootService(t *testing.T) {
+func TestServiceMap_RouteForRequestUsesCoveringRootServiceClientCA(t *testing.T) {
 	sm := NewServiceMap()
-	sm.Set(&Service{name: "root", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
-	sm.Set(&Service{name: "api", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/api"}})})
-	sm.Set(&Service{name: "wildcard", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"*.example.com"}, PathPrefixes: []string{"/", "/admin"}})})
-	sm.Set(&Service{name: "path-only", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"path.example.com"}, PathPrefixes: []string{"/api"}})})
-	sm.Set(&Service{name: "org", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.org"}})})
-	sm.Set(&Service{name: "path-only-wildcard", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"*.example.net"}, PathPrefixes: []string{"/api"}})})
+	clientCAs := map[string]*ClientCA{}
+	deploy := func(name string, options ServiceOptions) {
+		clientCAs[name] = &ClientCA{}
+		sm.Set(&Service{name: name, options: normalizedServiceOptions(options), clientCA: clientCAs[name]})
+	}
 
-	checkCoveringRootService := func(expected string, url string) {
+	deploy("root", ServiceOptions{Hosts: []string{"example.com"}, TLSRedirect: true})
+	deploy("api", ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/api"}})
+	deploy("wildcard", ServiceOptions{Hosts: []string{"*.example.com"}, PathPrefixes: []string{"/", "/admin"}})
+	deploy("path-only", ServiceOptions{Hosts: []string{"path.example.com"}, PathPrefixes: []string{"/api"}})
+	deploy("org", ServiceOptions{Hosts: []string{"example.org"}})
+	deploy("path-only-wildcard", ServiceOptions{Hosts: []string{"*.example.net"}, PathPrefixes: []string{"/api"}})
+
+	checkClientCA := func(expectedService string, url string) {
 		t.Helper()
-		coveringRootService := sm.RouteForRequest(httptest.NewRequest(http.MethodGet, url, nil)).coveringRootService
+		requirement := sm.RouteForRequest(httptest.NewRequest(http.MethodGet, url, nil)).clientCertificateRequirement
 
-		if expected == "" {
-			assert.Nil(t, coveringRootService)
-		} else if assert.NotNil(t, coveringRootService) {
-			assert.Equal(t, expected, coveringRootService.name)
+		if expectedService == "" {
+			assert.Nil(t, requirement.clientCA)
+		} else {
+			assert.Same(t, clientCAs[expectedService], requirement.clientCA)
 		}
 	}
 
-	checkCoveringRootService("root", "http://example.com/")
-	checkCoveringRootService("root", "http://example.com/api/items")
-	checkCoveringRootService("root", "http://example.com:8080/api")
-	checkCoveringRootService("wildcard", "http://app.example.com/admin")
-	checkCoveringRootService("wildcard", "http://path.example.com/api")
-	checkCoveringRootService("wildcard", "http://path.example.com/other")
-	checkCoveringRootService("org", "http://example.org/")
-	checkCoveringRootService("", "http://unknown.org/")
-	checkCoveringRootService("", "http://app.example.net/api")
+	checkClientCA("root", "http://example.com/")
+	checkClientCA("root", "http://example.com/api/items")
+	checkClientCA("root", "http://example.com:8080/api")
+	checkClientCA("wildcard", "http://app.example.com/admin")
+	checkClientCA("wildcard", "http://path.example.com/api")
+	checkClientCA("wildcard", "http://path.example.com/other")
+	checkClientCA("org", "http://example.org/")
+	checkClientCA("", "http://unknown.org/")
+	checkClientCA("", "http://app.example.net/api")
 
-	sm.Set(&Service{name: "catch-all", options: normalizedServiceOptions(defaultServiceOptions)})
+	assert.True(t, sm.RouteForRequest(httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)).clientCertificateRequirement.tlsRedirect)
+	assert.False(t, sm.RouteForRequest(httptest.NewRequest(http.MethodGet, "http://example.org/", nil)).clientCertificateRequirement.tlsRedirect)
 
-	checkCoveringRootService("catch-all", "http://app.example.net/api")
-	checkCoveringRootService("catch-all", "http://unknown.org/")
-	checkCoveringRootService("wildcard", "http://path.example.com/api")
+	deploy("catch-all", defaultServiceOptions)
+
+	checkClientCA("catch-all", "http://app.example.net/api")
+	checkClientCA("catch-all", "http://unknown.org/")
+	checkClientCA("wildcard", "http://path.example.com/api")
 }
 
 func TestServiceMap_CheckAvailability(t *testing.T) {

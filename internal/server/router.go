@@ -141,7 +141,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if handleConnectionWithoutTrustedClientCertificate(w, req, route.coveringRootService) {
+	if handleConnectionWithoutTrustedClientCertificate(w, req, route.clientCertificateRequirement) {
 		return
 	}
 
@@ -354,24 +354,27 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 }
 
 func (r *Router) clientCA(hostname string) *ClientCA {
-	service := r.serviceForHost(hostname)
+	r.serviceLock.RLock()
+	defer r.serviceLock.RUnlock()
+
+	service := r.services.ServiceForHost(hostname)
 	if service == nil {
 		return nil
 	}
 	return service.clientCA
 }
 
-func handleConnectionWithoutTrustedClientCertificate(w http.ResponseWriter, req *http.Request, coveringRootService *Service) bool {
-	if coveringRootService == nil || coveringRootService.clientCA == nil {
+func handleConnectionWithoutTrustedClientCertificate(w http.ResponseWriter, req *http.Request, requirement clientCertificateRequirement) bool {
+	if requirement.clientCA == nil {
 		return false
 	}
 
 	if req.TLS == nil {
-		coveringRootService.certManager.HTTPHandler(redirectToHTTPSOrForbid(coveringRootService.options.TLSRedirect)).ServeHTTP(w, req)
+		requirement.certManager.HTTPHandler(redirectToHTTPSOrForbid(requirement.tlsRedirect)).ServeHTTP(w, req)
 		return true
 	}
 
-	if !coveringRootService.clientCA.TrustsConnection(req.TLS) {
+	if !requirement.clientCA.TrustsConnection(req.TLS) {
 		SetErrorResponse(w, req, http.StatusMisdirectedRequest, nil)
 		return true
 	}
