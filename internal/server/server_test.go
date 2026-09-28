@@ -118,7 +118,7 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 	ca := generateTestCA(t)
 	target := testTarget(t, func(w http.ResponseWriter, r *http.Request) {})
-	server := testServer(t, false)
+	server := testServer(t, true)
 
 	certPath, keyPath := prepareTestCertificateFiles(t)
 	serviceOptions := defaultServiceOptions
@@ -158,6 +158,57 @@ func TestServer_DeployingHTTPSWithClientCA(t *testing.T) {
 		resp, err := (&http.Client{Transport: transport}).Get(fmt.Sprintf("https://localhost:%d/", server.HttpsPort()))
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("negotiates HTTP/2 with trusted client certificate", func(t *testing.T) {
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				Certificates:       []tls.Certificate{ca.clientCert},
+			},
+			ForceAttemptHTTP2: true,
+		}
+		resp, err := testRequestUsingTransport(server, transport)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "HTTP/2.0", resp.Proto)
+	})
+
+	t.Run("negotiates HTTP/3 with trusted client certificate", func(t *testing.T) {
+		transport := &http3.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				NextProtos:         []string{"h3"},
+				Certificates:       []tls.Certificate{ca.clientCert},
+			},
+		}
+		t.Cleanup(func() { _ = transport.Close() })
+
+		resp, err := testRequestUsingTransport(server, transport)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "HTTP/3.0", resp.Proto)
+	})
+
+	t.Run("refuses CBC suites with trusted client certificate", func(t *testing.T) {
+		conn, err := tls.Dial("tcp", fmt.Sprintf("localhost:%d", server.HttpsPort()), &tls.Config{
+			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS12,
+			MaxVersion:         tls.VersionTLS12,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			},
+			Certificates: []tls.Certificate{ca.clientCert},
+		})
+		if err == nil {
+			conn.Close()
+		}
+		assert.Error(t, err)
 	})
 }
 
@@ -280,7 +331,7 @@ func generateTestCA(t *testing.T) testCAFixture {
 }
 
 func TestHTTPSTLSConfig_AEADOnly(t *testing.T) {
-	config := httpsTLSConfig(nil, nil)
+	config := httpsTLSConfig(nil)
 
 	assert.Equal(t, uint16(tls.VersionTLS12), config.MinVersion)
 	assert.NotEmpty(t, config.CipherSuites)
