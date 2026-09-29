@@ -310,7 +310,10 @@ func (t *Target) rewrite(req *httputil.ProxyRequest) {
 	req.SetURL(t.targetURL)
 	req.Out.Host = req.In.Host
 
-	req.Out.URL.Path = RoutedTargetPath(req.In)
+	if RoutingContext(req.In) != nil {
+		req.Out.URL.Path = RoutedTargetPath(req.In)
+		req.Out.URL.RawPath = ""
+	}
 
 	// Ensure query params are preserved exactly, including those we could not
 	// parse.

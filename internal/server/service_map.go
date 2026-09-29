@@ -4,6 +4,7 @@ import (
 	"iter"
 	"net"
 	"net/http"
+	"path"
 	"slices"
 	"strings"
 )
@@ -92,7 +93,19 @@ func (m *ServiceMap) ServiceForRequest(req *http.Request) (*Service, string) {
 		}
 	}
 
-	return m.serviceFor(host, req.URL.Path)
+	return m.serviceFor(host, CleanRequestPath(req.URL.Path))
+}
+
+func CleanRequestPath(requestPath string) string {
+	if !strings.HasPrefix(requestPath, "/") {
+		return requestPath
+	}
+
+	cleaned := path.Clean(requestPath)
+	if strings.HasSuffix(requestPath, "/") && cleaned != rootPath {
+		cleaned += "/"
+	}
+	return cleaned
 }
 
 // Private

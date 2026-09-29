@@ -39,7 +39,7 @@ func RoutingContext(r *http.Request) *routingContext {
 func RoutedTargetPath(r *http.Request) string {
 	path := r.URL.Path
 	if rc := RoutingContext(r); rc != nil {
-		path = strings.TrimPrefix(path, rc.MatchedPrefix)
+		path = strings.TrimPrefix(CleanRequestPath(path), rc.MatchedPrefix)
 		if path == "" {
 			path = rootPath
 		}

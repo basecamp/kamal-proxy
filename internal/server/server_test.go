@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bufio"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"testing"
@@ -22,6 +24,78 @@ func TestServer_Deploying(t *testing.T) {
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/", server.HttpPort()))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestServer_PathPrefixRoutingUsesCleanedPath(t *testing.T) {
+	root := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("root " + r.RequestURI))
+	})
+	admin := testTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("admin " + r.RequestURI))
+	})
+	server := testServer(t, false)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+	testDeployTargetAs(t, "root", root, server, serviceOptions)
+	serviceOptions.PathPrefixes = []string{"/admin"}
+	testDeployTargetAs(t, "admin", admin, server, serviceOptions)
+
+	serviceOptions = defaultServiceOptions
+	serviceOptions.Hosts = []string{"strip.example.com"}
+	testDeployTargetAs(t, "strip-root", root, server, serviceOptions)
+	serviceOptions.PathPrefixes = []string{"/admin"}
+	serviceOptions.StripPrefix = true
+	testDeployTargetAs(t, "strip-admin", admin, server, serviceOptions)
+
+	// Sent over a raw connection, as the Go HTTP client would clean some of
+	// these paths before sending them.
+	request := func(method, target, host string) (int, string) {
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", server.HttpPort()))
+		require.NoError(t, err)
+		defer conn.Close()
+
+		fmt.Fprintf(conn, "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", method, target, host)
+		resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode, string(body)
+	}
+
+	get := func(target string) string {
+		_, body := request(http.MethodGet, target, "example.com")
+		return body
+	}
+
+	assert.Equal(t, "admin /admin/x", get("/admin/x"))
+	assert.Equal(t, "admin //admin/x", get("//admin/x"))
+	assert.Equal(t, "admin /./admin/x", get("/./admin/x"))
+	assert.Equal(t, "admin /other/../admin/x", get("/other/../admin/x"))
+	assert.Equal(t, "admin /other/%2E%2E/admin/x", get("/other/%2E%2E/admin/x"))
+	assert.Equal(t, "root /admin%5C..%5Cx", get("/admin\\..\\x"))
+	assert.Equal(t, "root /admin/../x", get("/admin/../x"))
+	assert.Equal(t, "admin //admin/x", get("http://example.com//admin/x"))
+
+	getStripped := func(target string) string {
+		_, body := request(http.MethodGet, target, "strip.example.com")
+		return body
+	}
+
+	assert.Equal(t, "admin /x?a=/../b", getStripped("/admin/x?a=/../b"))
+	assert.Equal(t, "admin /x", getStripped("//admin/x"))
+	assert.Equal(t, "admin /x/y/", getStripped("/admin/./x//y/"))
+	assert.Equal(t, "admin /a/b/c", getStripped("/admin/a%2Fb/c"))
+	assert.Equal(t, "admin /a%20b", getStripped("/admin/a%20b"))
+	assert.Equal(t, "root /admin/%2e%2e/x", getStripped("/admin/%2e%2e/x"))
+	assert.Equal(t, "root /admin/..%2f..%2fsecret", getStripped("/admin/..%2f..%2fsecret"))
+
+	// Go's server answers "OPTIONS *" itself, without proxying it.
+	statusCode, body := request(http.MethodOptions, "*", "example.com")
+	assert.Equal(t, http.StatusOK, statusCode)
+	assert.Empty(t, body)
 }
 
 func TestServer_DeployingHTTPS(t *testing.T) {
@@ -109,8 +183,14 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 
 func testDeployTarget(tb testing.TB, target *Target, server *Server, serviceOptions ServiceOptions) {
 	tb.Helper()
+	testDeployTargetAs(tb, "", target, server, serviceOptions)
+}
+
+func testDeployTargetAs(tb testing.TB, service string, target *Target, server *Server, serviceOptions ServiceOptions) {
+	tb.Helper()
 	var result bool
 	err := server.commandHandler.Deploy(DeployArgs{
+		Service:           service,
 		TargetURLs:        []string{target.Address()},
 		DeploymentOptions: defaultDeploymentOptions,
 		ServiceOptions:    serviceOptions,
