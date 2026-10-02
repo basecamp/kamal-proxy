@@ -568,6 +568,99 @@ func TestRouter_PathBasedRoutingStripPrefix(t *testing.T) {
 	assert.Equal(t, "/app", body)
 }
 
+func TestRouter_PathBasedRoutingMatchesCleanedPath(t *testing.T) {
+	router := testRouter(t)
+	_, root := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("root " + r.RequestURI))
+	})
+	_, admin := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("admin " + r.RequestURI))
+	})
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+	require.NoError(t, router.DeployService("root", []string{root}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	serviceOptions.PathPrefixes = []string{"/admin"}
+	require.NoError(t, router.DeployService("admin", []string{admin}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	tests := map[string]string{
+		"/admin/x":               "admin /admin/x",
+		"/admin/x/":              "admin /admin/x/",
+		"/admin/x?a=/../b":       "admin /admin/x?a=/../b",
+		"//admin/x":              "admin //admin/x",
+		"/admin//x":              "admin /admin//x",
+		"/./admin/x":             "admin /./admin/x",
+		"/%2e/admin/x":           "admin /%2e/admin/x",
+		"/other/../admin/x":      "admin /other/../admin/x",
+		"/other/%2e%2e/admin/x":  "admin /other/%2e%2e/admin/x",
+		"/other/%2E%2e/admin/x":  "admin /other/%2E%2e/admin/x",
+		"/other/.%2E/admin/x":    "admin /other/.%2E/admin/x",
+		"/../admin/x":            "admin /../admin/x",
+		"/admin/../x":            "root /admin/../x",
+		"/admin/%2e%2e/x":        "root /admin/%2e%2e/x",
+		"/admin/..":              "root /admin/..",
+		"/admin%2Fx":             "admin /admin%2Fx",
+		"/%61dmin/x":             "admin /%61dmin/x",
+		"/administrator/../x/./": "root /administrator/../x/./",
+		"/admin\\..\\x":          "root /admin%5C..%5Cx",
+		"/x/..\\admin/y":         "root /x/..%5Cadmin/y",
+	}
+
+	for path, expected := range tests {
+		statusCode, body := sendGETRequest(router, "http://example.com"+path)
+		assert.Equal(t, http.StatusOK, statusCode, path)
+		assert.Equal(t, expected, body, path)
+	}
+}
+
+func TestRouter_PathBasedRoutingStripPrefixForwardsCleanedPath(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.RequestURI))
+	})
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.StripPrefix = true
+	serviceOptions.PathPrefixes = []string{"/admin"}
+	require.NoError(t, router.DeployService("admin", []string{backend}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	tests := map[string]string{
+		"/admin/x":       "/x",
+		"/admin":         "/",
+		"/admin/":        "/",
+		"//admin/x":      "/x",
+		"/./admin/x/":    "/x/",
+		"/admin/./x//y/": "/x/y/",
+		"/admin/a%2Fb/c": "/a/b/c",
+		"/admin/a%20b":   "/a%20b",
+		"/%61dmin/x":     "/x",
+	}
+
+	for path, expected := range tests {
+		statusCode, body := sendGETRequest(router, "http://example.com"+path)
+		assert.Equal(t, http.StatusOK, statusCode, path)
+		assert.Equal(t, expected, body, path)
+	}
+
+	statusCode, _ := sendGETRequest(router, "http://example.com/admin/..%2f..%2fsecret")
+	assert.Equal(t, http.StatusNotFound, statusCode)
+}
+
+func TestRouter_HostRoutingForwardsPathUntouched(t *testing.T) {
+	router := testRouter(t)
+	_, backend := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(r.RequestURI))
+	})
+
+	require.NoError(t, router.DeployService("service1", []string{backend}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	for _, path := range []string{"//x", "/a/./b", "/a/../b", "/a/%2e%2e/b", "/a%2Fb"} {
+		statusCode, body := sendGETRequest(router, "http://example.com"+path)
+		assert.Equal(t, http.StatusOK, statusCode, path)
+		assert.Equal(t, path, body, path)
+	}
+}
+
 func TestRouter_HealthCheckWhilePausedWithPathPrefix(t *testing.T) {
 	router := testRouter(t)
 	_, backend := testBackend(t, "ok", http.StatusOK)

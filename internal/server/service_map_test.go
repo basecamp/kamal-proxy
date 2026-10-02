@@ -52,6 +52,47 @@ func TestServiceMap_ServiceForRequest(t *testing.T) {
 	checkService("4", "http://other.example.com/api/test")
 	checkService("5", "http://second.example.com/api/test")
 	checkService("6", "http://second.example.com/non-api/test")
+
+	checkService("2", "http://example.com//api/test")
+	checkService("2", "http://example.com/./api/test")
+	checkService("2", "http://example.com/other/../api/test")
+	checkService("2", "http://example.com/other/%2e%2e/api/test")
+	checkService("2", "http://example.com/api%2Ftest")
+	checkService("3", "http://example.com/api//special")
+	checkService("1", "http://example.com/api/../test")
+	checkService("1", "http://example.com/api/%2E%2E")
+	checkService("3", "http://example.com/api/special/../special/test")
+	checkService("2", "http://example.com/api/special/..")
+	checkService("4", "http://other.example.com//api/test")
+	checkService("4", "http://other.example.com/x/../api/test")
+	checkService("5", "http://second.example.com/x/../api/test")
+	checkService("6", "http://second.example.com/api/../test")
+}
+
+func TestCleanRequestPath(t *testing.T) {
+	tests := map[string]string{
+		"/":           "/",
+		"/a/b":        "/a/b",
+		"/a/b/":       "/a/b/",
+		"//a":         "/a",
+		"/a//b":       "/a/b",
+		"/a/b//":      "/a/b/",
+		"/./a":        "/a",
+		"/a/./b":      "/a/b",
+		"/a/../b":     "/b",
+		"/a/b/../":    "/a/",
+		"/a/..":       "/",
+		"/../a":       "/a",
+		"/../../a/..": "/",
+		"/a/...":      "/a/...",
+		"/a/.b":       "/a/.b",
+		"*":           "*",
+		"":            "",
+	}
+
+	for path, expected := range tests {
+		assert.Equal(t, expected, CleanRequestPath(path), path)
+	}
 }
 
 func TestServiceMap_CheckAvailability(t *testing.T) {

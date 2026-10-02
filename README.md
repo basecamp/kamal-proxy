@@ -118,6 +118,12 @@ the original path (including the prefix), specify `--strip-path-prefix=false`:
 
     kamal-proxy deploy service1 --target web-1:3000 --path-prefix=/api --strip-path-prefix=false
 
+Path prefixes are matched against the request path after resolving `.` and
+`..` segments and collapsing repeated slashes, so `/other/../api/users` is
+routed to the `/api` service. When the prefix is stripped, the upstream
+receives that cleaned path with the prefix removed. Otherwise the path is
+forwarded exactly as it was sent.
+
 
 ### Excluding paths from metrics
 
