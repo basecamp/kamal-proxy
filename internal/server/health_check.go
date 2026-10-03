@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 )
 
@@ -33,9 +34,16 @@ type HealthCheck struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	start  sync.Once
 }
 
 func NewHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval time.Duration, timeout time.Duration, host string) *HealthCheck {
+	hc := newHealthCheck(consumer, endpoint, interval, timeout, host)
+	hc.Start()
+	return hc
+}
+
+func newHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval time.Duration, timeout time.Duration, host string) *HealthCheck {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	hc := &HealthCheck{
@@ -49,8 +57,11 @@ func NewHealthCheck(consumer HealthCheckConsumer, endpoint *url.URL, interval ti
 		cancel: cancel,
 	}
 
-	go hc.run()
 	return hc
+}
+
+func (hc *HealthCheck) Start() {
+	hc.start.Do(func() { go hc.run() })
 }
 
 func (hc *HealthCheck) Close() {

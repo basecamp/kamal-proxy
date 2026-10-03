@@ -143,6 +143,14 @@ func (t *Target) Address() string {
 	return t.targetURL.Host
 }
 
+func (t *Target) ContainerName() string { return t.targetURL.Hostname() }
+
+func (t *Target) markUnhealthyForWake() {
+	t.inflightLock.Lock()
+	t.state = TargetStateUnhealthy
+	t.inflightLock.Unlock()
+}
+
 func (t *Target) State() TargetState {
 	t.inflightLock.Lock()
 	defer t.inflightLock.Unlock()
@@ -217,16 +225,23 @@ WAIT_FOR_REQUESTS_TO_COMPLETE:
 
 func (t *Target) BeginHealthChecks(stateConsumer TargetStateConsumer) {
 	t.stateConsumer = stateConsumer
+	t.RestartHealthChecks()
+}
 
+func (t *Target) RestartHealthChecks() {
 	t.withInflightLock(func() {
+		if t.healthcheck != nil {
+			t.healthcheck.Close()
+		}
 		healthCheckURL := t.buildHealthCheckURL()
-		t.healthcheck = NewHealthCheck(
+		t.healthcheck = newHealthCheck(
 			t,
 			healthCheckURL,
 			t.options.HealthCheckConfig.Interval,
 			t.options.HealthCheckConfig.Timeout,
 			t.options.HealthCheckConfig.Host,
 		)
+		t.healthcheck.Start()
 	})
 }
 
