@@ -1,25 +1,40 @@
-FROM golang:1.27.1 AS build
+# syntax=docker/dockerfile:1
+
+FROM gcr.io/distroless/static-debian13@sha256:58133991db06659feaabe0f4e97a35cebf15ef4ea08f8a4c6d2ee5f75e4aa6a0 AS runtime
+
+FROM --platform=$BUILDPLATFORM golang:1.27.1 AS build
 
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN go mod download
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY . .
+
 ARG VERSION=dev
-RUN make build VERSION=$VERSION
+ARG TARGETOS
+ARG TARGETARCH
 
-FROM ubuntu:noble-20251013 AS base
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH make build VERSION=$VERSION
 
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=build /app/bin/kamal-proxy /usr/local/bin/
+COPY --from=runtime /etc/passwd /etc/group /rootfs/etc/
+
+RUN echo "kamal-proxy:x:1001:1001::/home/kamal-proxy:/sbin/nologin" >> /rootfs/etc/passwd \
+    && echo "kamal-proxy:x:1001:" >> /rootfs/etc/group \
+    && mkdir -p /rootfs/home/kamal-proxy/.config/kamal-proxy
+
+FROM runtime
+
+COPY --link --from=build /rootfs/etc/passwd /rootfs/etc/group /etc/
+COPY --link --from=build --chown=1001:1001 /rootfs/home /home
+COPY --link --from=build /app/bin/kamal-proxy /usr/local/bin/
 
 EXPOSE 80 443
 
-RUN useradd kamal-proxy \
-    && mkdir -p /home/kamal-proxy/.config/kamal-proxy \
-    && chown -R kamal-proxy:kamal-proxy /home/kamal-proxy
-
-USER kamal-proxy:kamal-proxy
+USER 1001:1001
 
 CMD ["kamal-proxy", "run"]
