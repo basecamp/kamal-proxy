@@ -118,7 +118,8 @@ func (s *Server) startHTTP3Server(handler http.Handler, httpsAddr string) error 
 
 	s.http3Listener = http3Listener
 	s.http3Server = &http3.Server{
-		Handler: handler,
+		Handler:     handler,
+		IdleTimeout: s.config.IdleTimeout,
 		TLSConfig: &tls.Config{
 			MinVersion:     tls.VersionTLS13,
 			NextProtos:     []string{"h3"},
@@ -142,7 +143,9 @@ func (s *Server) startHTTPServers() error {
 	}
 	s.httpListener = httpListener
 	s.httpServer = &http.Server{
-		Handler: handler,
+		Handler:           handler,
+		ReadHeaderTimeout: s.config.ReadHeaderTimeout,
+		IdleTimeout:       s.config.IdleTimeout,
 	}
 
 	httpsListener, err := net.Listen("tcp", httpsAddr)
@@ -158,7 +161,9 @@ func (s *Server) startHTTPServers() error {
 
 			handler.ServeHTTP(w, r)
 		}),
-		TLSConfig: httpsTLSConfig(s.router.GetCertificate),
+		TLSConfig:         httpsTLSConfig(s.router.GetCertificate),
+		ReadHeaderTimeout: s.config.ReadHeaderTimeout,
+		IdleTimeout:       s.config.IdleTimeout,
 	}
 
 	go s.httpServer.Serve(s.httpListener)
@@ -182,7 +187,7 @@ func (s *Server) startMetricsServer() error {
 	}
 
 	addr := fmt.Sprintf("%s:%d", s.config.Bind, s.config.MetricsPort)
-	handler := metrics.Enable()
+	handler := WithRequestBodyTimeoutMiddleware(s.config.RequestBodyTimeout, metrics.Enable())
 
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -190,8 +195,10 @@ func (s *Server) startMetricsServer() error {
 	}
 	s.metricsListener = l
 	s.metricsServer = &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: s.config.ReadHeaderTimeout,
+		IdleTimeout:       s.config.IdleTimeout,
 	}
 
 	go s.metricsServer.Serve(s.metricsListener)
@@ -214,6 +221,7 @@ func (s *Server) buildHandler() http.Handler {
 	// Note: handlers are executed in the inverse order.
 	handler = s.router
 	handler, _ = WithErrorPageMiddleware(pages.DefaultErrorPages, true, handler)
+	handler = WithRequestBodyTimeoutMiddleware(s.config.RequestBodyTimeout, handler)
 	handler = WithLoggingMiddleware(slog.Default(), s.config.HttpPort, s.config.HttpsPort, handler)
 	handler = WithRequestIDMiddleware(handler)
 	handler = WithRequestStartMiddleware(handler)

@@ -84,7 +84,17 @@ func testServer(t testing.TB, http3Enabled bool) *Server {
 		HttpsPort:          0,
 		AlternateConfigDir: t.TempDir(),
 		HTTP3Enabled:       http3Enabled,
+		ReadHeaderTimeout:  DefaultReadHeaderTimeout,
+		IdleTimeout:        DefaultIdleTimeout,
+		RequestBodyTimeout: DefaultRequestBodyTimeout,
 	}
+
+	return testServerWithConfig(t, config)
+}
+
+func testServerWithConfig(t testing.TB, config *Config) *Server {
+	t.Helper()
+
 	router := NewRouter(config.StatePath())
 	server := NewServer(config, router)
 	err := server.Start()

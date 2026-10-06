@@ -44,6 +44,10 @@ const (
 	MaxIdleConnsPerHost = 100
 	ProxyBufferSize     = 32 * KB
 
+	DefaultReadHeaderTimeout  = time.Second * 10
+	DefaultIdleTimeout        = time.Second * 60
+	DefaultRequestBodyTimeout = time.Second * 60
+
 	DefaultTargetTimeout       = time.Second * 30
 	DefaultMaxMemoryBufferSize = 1 * MB
 	DefaultMaxRequestBodySize  = 0

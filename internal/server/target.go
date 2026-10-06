@@ -364,6 +364,12 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 		return
 	}
 
+	if t.isRequestBodyTimeout(err) || requestBodyTimedOut(r) {
+		slog.Info("Timed out reading request body", "target", t.Address(), "path", r.URL.Path, "error", err)
+		SetErrorResponse(w, r, http.StatusRequestTimeout, nil)
+		return
+	}
+
 	if t.isGatewayTimeout(err) {
 		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
 		return
@@ -395,6 +401,10 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 func (t *Target) isRequestEntityTooLarge(err error) bool {
 	var maxBytesError *http.MaxBytesError
 	return errors.As(err, &maxBytesError)
+}
+
+func (t *Target) isRequestBodyTimeout(err error) bool {
+	return errors.Is(err, ErrRequestBodyTimeout)
 }
 
 func (t *Target) isGatewayTimeout(err error) bool {
