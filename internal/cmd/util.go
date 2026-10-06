@@ -4,6 +4,7 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
+	"time"
 )
 
 const (
@@ -45,6 +46,20 @@ func getEnvInt(key string, defaultValue int) int {
 	}
 
 	return intValue
+}
+
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	value, ok := findEnv(key)
+	if !ok {
+		return defaultValue
+	}
+
+	durationValue, err := time.ParseDuration(value)
+	if err != nil {
+		return defaultValue
+	}
+
+	return durationValue
 }
 
 func getEnvBool(key string, defaultValue bool) bool {

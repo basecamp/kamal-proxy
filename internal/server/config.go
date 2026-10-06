@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"syscall"
+	"time"
 )
 
 const (
@@ -18,6 +19,10 @@ type Config struct {
 	HttpsPort    int
 	MetricsPort  int
 	HTTP3Enabled bool
+
+	ReadHeaderTimeout  time.Duration
+	IdleTimeout        time.Duration
+	RequestBodyTimeout time.Duration
 
 	AlternateConfigDir string
 }

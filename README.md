@@ -199,6 +199,28 @@ your certificate file and the corresponding private key:
     kamal-proxy deploy service1 --target web-1:3000 --host app1.example.com --tls --tls-certificate-path cert.pem --tls-private-key-path key.pem
 
 
+## Client timeouts
+
+Kamal Proxy closes connections from clients that stop sending data, so that
+slow or stalled clients cannot hold connections open indefinitely. Three
+timeouts apply, each configurable with a `run` option:
+
+- `--read-header-timeout` (default `10s`) bounds the time a client has to send
+  its request headers. It also bounds the TLS handshake.
+- `--idle-timeout` (default `60s`) bounds how long a keep-alive connection may
+  sit idle between requests.
+- `--request-body-timeout` (default `60s`) bounds how long the proxy waits for
+  a client to send more of its request body. The timer restarts with each read
+  of the body, so it limits stalls rather than total upload time. A client
+  that stalls while its body is being forwarded receives a `408 Request
+  Timeout`. If the response was already sent without reading the body (for
+  example a `404` or a redirect), the connection is closed instead.
+
+Setting a timeout to `0` disables it. These timeouts apply to all services;
+`--target-timeout` on `deploy` is separate, and bounds how long the proxy waits
+for a target to respond.
+
+
 ## Specifying `run` options with environment variables
 
 In some environments, like when running a Docker container, it can be convenient

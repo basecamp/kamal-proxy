@@ -25,6 +25,9 @@ func (h *RequestBufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		if errors.Is(err, ErrMaximumSizeExceeded) {
 			SetErrorResponse(w, r, http.StatusRequestEntityTooLarge, nil)
+		} else if errors.Is(err, ErrRequestBodyTimeout) {
+			slog.Info("Timed out reading request body", "path", r.URL.Path, "error", err)
+			SetErrorResponse(w, r, http.StatusRequestTimeout, nil)
 		} else if isChunkedEncodingError(err) {
 			slog.Info("Malformed chunked request", "path", r.URL.Path, "error", err)
 			SetErrorResponse(w, r, http.StatusBadRequest, nil)
