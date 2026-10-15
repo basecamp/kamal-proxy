@@ -62,6 +62,14 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	return durationValue
 }
 
+func getEnvString(key, defaultValue string) string {
+	value, ok := findEnv(key)
+	if !ok {
+		return defaultValue
+	}
+	return value
+}
+
 func getEnvBool(key string, defaultValue bool) bool {
 	value, ok := findEnv(key)
 	if !ok {
