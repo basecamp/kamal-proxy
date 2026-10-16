@@ -275,6 +275,10 @@ func (r *Router) RemoveService(name string) error {
 		service.Dispose()
 		r.services.Remove(service.name)
 
+		if host := r.services.HostBypassingClientCA(); host != "" {
+			slog.Warn("Host has path-based services but no root service, so requests to it are rejected by the client CA of a wildcard host", "service", name, "host", host)
+		}
+
 		return nil
 	})
 }

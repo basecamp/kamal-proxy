@@ -6,11 +6,13 @@ import (
 	"crypto/tls"
 	"encoding/gob"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -454,11 +456,26 @@ func TestRouter_RemovingRootServiceKeepsWildcardClientCA(t *testing.T) {
 	require.NoError(t, router.DeployService("root", []string{root}, defaultEmptyReaders, rootOptions, defaultTargetOptions, defaultDeploymentOptions))
 	require.NoError(t, router.DeployService("api", []string{api}, defaultEmptyReaders, pathOptions, defaultTargetOptions, defaultDeploymentOptions))
 
+	logs := captureLogs(t)
 	require.NoError(t, router.RemoveService("root"))
+
+	assert.Contains(t, logs.String(), "Host has path-based services but no root service")
+	assert.Contains(t, logs.String(), "app.example.com")
 
 	statusCode, _ := sendGETRequest(router, "http://app.example.com/api")
 	assert.Equal(t, http.StatusMovedPermanently, statusCode)
 	assert.False(t, apiReached.Load())
+}
+
+func TestRouter_RemovingServiceWithoutBypassingClientCADoesNotWarn(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "target", http.StatusOK)
+	require.NoError(t, router.DeployService("service", []string{target}, defaultEmptyReaders, defaultServiceOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	logs := captureLogs(t)
+	require.NoError(t, router.RemoveService("service"))
+
+	assert.NotContains(t, logs.String(), "Host has path-based services but no root service")
 }
 
 func TestRouter_RejectedDeploymentStopsHealthChecks(t *testing.T) {
@@ -1292,6 +1309,31 @@ func BenchmarkRouter_RouteForRequest(b *testing.B) {
 }
 
 // Helpers
+
+type lockedLogBuffer struct {
+	mutex  sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (l *lockedLogBuffer) Write(p []byte) (int, error) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return l.buffer.Write(p)
+}
+
+func (l *lockedLogBuffer) String() string {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return l.buffer.String()
+}
+
+func captureLogs(t *testing.T) *lockedLogBuffer {
+	logs := &lockedLogBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return logs
+}
 
 func testRouter(t *testing.T) *Router {
 	statePath := filepath.Join(t.TempDir(), "state.json")

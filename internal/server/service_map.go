@@ -96,13 +96,14 @@ func (m *ServiceMap) HostBypassingClientCAAfterSet(name string, options ServiceO
 		return ""
 	}
 
-	serviceOptions := map[string]ServiceOptions{}
-	for serviceName, service := range m.services {
-		serviceOptions[serviceName] = service.options
-	}
+	serviceOptions := m.serviceOptionsByName()
 	serviceOptions[name] = options
 
 	return hostBypassingClientCA(serviceOptions)
+}
+
+func (m *ServiceMap) HostBypassingClientCA() string {
+	return hostBypassingClientCA(m.serviceOptionsByName())
 }
 
 func (m *ServiceMap) ServiceForHost(host string) *Service {
@@ -148,6 +149,14 @@ func CleanRequestPath(requestPath string) string {
 }
 
 // Private
+
+func (m *ServiceMap) serviceOptionsByName() map[string]ServiceOptions {
+	serviceOptions := map[string]ServiceOptions{}
+	for serviceName, service := range m.services {
+		serviceOptions[serviceName] = service.options
+	}
+	return serviceOptions
+}
 
 func (m *ServiceMap) anyServiceRequiresClientCertificate() bool {
 	for _, service := range m.services {
