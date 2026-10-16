@@ -89,16 +89,16 @@ func (ca *ClientCA) TrustsConnection(state *tls.ConnectionState) bool {
 }
 
 func (ca *ClientCA) trustsChain(chain []*x509.Certificate) bool {
-	trustedChain, found := ca.chainUpToTrustedCertificate(chain)
-	return found && allCurrentlyValid(trustedChain)
+	trustedChain := ca.chainUpToTrustedCertificate(chain)
+	return len(trustedChain) > 0 && allCurrentlyValid(trustedChain)
 }
 
-func (ca *ClientCA) chainUpToTrustedCertificate(chain []*x509.Certificate) ([]*x509.Certificate, bool) {
+func (ca *ClientCA) chainUpToTrustedCertificate(chain []*x509.Certificate) []*x509.Certificate {
 	trustedIndex := slices.IndexFunc(chain, ca.trusts)
 	if trustedIndex < 0 {
-		return nil, false
+		return nil
 	}
-	return chain[:trustedIndex+1], true
+	return chain[:trustedIndex+1]
 }
 
 func (ca *ClientCA) trusts(cert *x509.Certificate) bool {
