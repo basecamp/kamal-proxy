@@ -106,11 +106,6 @@ func (m *ServiceMap) ServiceForHost(host string) *Service {
 	return service
 }
 
-func (m *ServiceMap) ServiceForRequest(req *http.Request) (*Service, string) {
-	route := m.RouteForRequest(req)
-	return route.service, route.pathPrefix
-}
-
 func (m *ServiceMap) RouteForRequest(req *http.Request) requestRoute {
 	host := requestHost(req)
 	bindings := m.bindingsForHost(host)

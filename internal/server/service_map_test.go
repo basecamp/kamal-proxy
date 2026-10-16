@@ -31,7 +31,7 @@ func TestServiceMap_ServiceForHost(t *testing.T) {
 	assert.Nil(t, sm.ServiceForHost("app.example.com"))
 }
 
-func TestServiceMap_ServiceForRequest(t *testing.T) {
+func TestServiceMap_RouteForRequest(t *testing.T) {
 	sm := NewServiceMap()
 	sm.Set(&Service{name: "1", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}})})
 	sm.Set(&Service{name: "2", options: normalizedServiceOptions(ServiceOptions{Hosts: []string{"example.com"}, PathPrefixes: []string{"/api"}})})
@@ -41,8 +41,8 @@ func TestServiceMap_ServiceForRequest(t *testing.T) {
 	sm.Set(&Service{name: "6", options: normalizedServiceOptions(defaultServiceOptions)})
 
 	checkService := func(expected string, url string) {
-		servivce, _ := sm.ServiceForRequest(httptest.NewRequest(http.MethodGet, url, nil))
-		assert.Equal(t, expected, servivce.name)
+		route := sm.RouteForRequest(httptest.NewRequest(http.MethodGet, url, nil))
+		assert.Equal(t, expected, route.service.name)
 	}
 
 	checkService("1", "http://example.com/")
@@ -283,7 +283,7 @@ func BenchmarkServiceMap_SingleServiceRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 }
@@ -298,7 +298,7 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 
@@ -306,7 +306,7 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://anything.two.example.com/", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 
@@ -314,7 +314,7 @@ func BenchmarkServiceMap_WilcardRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://missing.example.com/", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 }
@@ -330,7 +330,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/api", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 
@@ -338,7 +338,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://one.example.com/", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 
@@ -346,7 +346,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/app", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 
@@ -354,7 +354,7 @@ func BenchmarkServiceMap_HostAndPathBasedRouting(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
 
 		for b.Loop() {
-			_, _ = sm.ServiceForRequest(req)
+			_ = sm.RouteForRequest(req)
 		}
 	})
 }
