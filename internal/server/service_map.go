@@ -92,6 +92,10 @@ func (m *ServiceMap) CheckAvailability(name string, options ServiceOptions) *Ser
 }
 
 func (m *ServiceMap) HostBypassingClientCAAfterSet(name string, options ServiceOptions) string {
+	if !options.RequiresClientCertificate() && !m.anyServiceRequiresClientCertificate() {
+		return ""
+	}
+
 	serviceOptions := map[string]ServiceOptions{}
 	for serviceName, service := range m.services {
 		serviceOptions[serviceName] = service.options
@@ -144,6 +148,15 @@ func CleanRequestPath(requestPath string) string {
 }
 
 // Private
+
+func (m *ServiceMap) anyServiceRequiresClientCertificate() bool {
+	for _, service := range m.services {
+		if service.options.RequiresClientCertificate() {
+			return true
+		}
+	}
+	return false
+}
 
 func (m *ServiceMap) serviceFor(host, path string) (*Service, string) {
 	return serviceForPath(m.bindingsForHost(host), path)
