@@ -116,12 +116,11 @@ func (s *Server) startHTTP3Server(handler http.Handler, httpsAddr string) error 
 		return err
 	}
 
-	tlsConfig := &tls.Config{
+	tlsConfig := s.withPerHostClientAuth(&tls.Config{
 		MinVersion:     tls.VersionTLS13,
 		NextProtos:     []string{"h3"},
 		GetCertificate: s.router.GetCertificate,
-	}
-	tlsConfig.GetConfigForClient = s.createGetConfigForClient(tlsConfig)
+	})
 
 	s.http3Listener = http3Listener
 	s.http3Server = &http3.Server{
@@ -156,8 +155,7 @@ func (s *Server) startHTTPServers() error {
 		return err
 	}
 
-	tlsConfig := httpsTLSConfig(s.router.GetCertificate)
-	tlsConfig.GetConfigForClient = s.createGetConfigForClient(tlsConfig)
+	tlsConfig := s.withPerHostClientAuth(httpsTLSConfig(s.router.GetCertificate))
 
 	s.httpsListener = httpsListener
 	s.httpsServer = &http.Server{
@@ -220,6 +218,12 @@ func (s *Server) startCommandHandler() error {
 	_ = os.Remove(s.config.SocketPath())
 
 	return s.commandHandler.Start(s.config.SocketPath())
+}
+
+func (s *Server) withPerHostClientAuth(base *tls.Config) *tls.Config {
+	base.GetConfigForClient = s.createGetConfigForClient(base)
+
+	return base
 }
 
 func (s *Server) createGetConfigForClient(base *tls.Config) func(*tls.ClientHelloInfo) (*tls.Config, error) {
