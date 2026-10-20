@@ -36,46 +36,47 @@ func NewLogPathFilter(patterns []string) (*LogPathFilter, error) {
 	return filter, nil
 }
 
+// Filter replaces the text each pattern selects in the path. Every pattern is
+// matched against the original path, so one pattern's replacement can't stop
+// another from matching.
 func (f *LogPathFilter) Filter(path string) string {
 	if f == nil {
 		return path
 	}
 
+	spans := [][2]int{}
 	for _, re := range f.patterns {
-		path = filterMatches(re, path)
+		spans = append(spans, matchedSpans(re, path)...)
 	}
-	return path
+	return replaceSpans(path, spans)
 }
 
-// LoggedPath returns the request path as it should appear in logs, with the
-// sensitive parts that the service's log filter matches replaced.
+// LoggedPath returns the request path as it should appear in logs. For a
+// request routed to a service with a log filter, that's the path the client
+// requested, filtered, even after the path has been rewritten for the target.
 func LoggedPath(r *http.Request) string {
-	return LoggingRequestContext(r).PathFilter.Filter(r.URL.Path)
+	return LoggingRequestContext(r).loggedPath(r)
 }
 
 // Private
 
-func filterMatches(re *regexp.Regexp, s string) string {
-	matches := re.FindAllStringSubmatchIndex(s, -1)
-	if matches == nil {
-		return s
-	}
-
+func matchedSpans(re *regexp.Regexp, s string) [][2]int {
 	spans := [][2]int{}
-	for _, match := range matches {
+	for _, match := range re.FindAllStringSubmatchIndex(s, -1) {
+		// Without capture groups, the whole match is the only span
+		first := 2
 		if re.NumSubexp() == 0 {
-			spans = append(spans, [2]int{match[0], match[1]})
-			continue
+			first = 0
 		}
 
-		for i := 2; i < len(match); i += 2 {
+		for i := first; i < len(match); i += 2 {
 			if match[i] >= 0 && match[i] < match[i+1] {
 				spans = append(spans, [2]int{match[i], match[i+1]})
 			}
 		}
 	}
 
-	return replaceSpans(s, spans)
+	return spans
 }
 
 // replaceSpans replaces each span with the filtered marker. A span that

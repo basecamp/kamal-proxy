@@ -24,7 +24,8 @@ type loggingRequestContext struct {
 	RequestHeaders  []string
 	ResponseHeaders []string
 	ExcludeMetrics  bool
-	PathFilter      *LogPathFilter
+	FilteredPath    string
+	PathFiltered    bool
 }
 
 type LoggingMiddleware struct {
@@ -49,6 +50,20 @@ func LoggingRequestContext(r *http.Request) *loggingRequestContext {
 		return &loggingRequestContext{}
 	}
 	return lrc
+}
+
+func (lrc *loggingRequestContext) filterPath(r *http.Request, filter *LogPathFilter) {
+	if filter != nil {
+		lrc.FilteredPath = filter.Filter(r.URL.Path)
+		lrc.PathFiltered = true
+	}
+}
+
+func (lrc *loggingRequestContext) loggedPath(r *http.Request) string {
+	if lrc.PathFiltered {
+		return lrc.FilteredPath
+	}
+	return r.URL.Path
 }
 
 func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +99,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		attrs := []slog.Attr{
 			slog.String("host", r.Host),
 			slog.Int("port", port),
-			slog.String("path", loggingRequestContext.PathFilter.Filter(r.URL.Path)),
+			slog.String("path", loggingRequestContext.loggedPath(r)),
 			slog.String("request_id", r.Header.Get("X-Request-ID")),
 			slog.Int("status", writer.statusCode),
 			slog.String("service", loggingRequestContext.Service),

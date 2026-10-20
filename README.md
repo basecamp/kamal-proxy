@@ -163,13 +163,16 @@ otherwise the whole match is. The flag may be repeated:
       --log-filter-path '^/shared/([^/]+)/files/(.+)'
 
 A request for `/invitations/abc123/accept` is then logged with the path
-`/invitations/[FILTERED]/accept`. The filter applies to every log line the
-proxy writes for a request routed to the service, including its error lines.
-The path is matched in full, including any path prefix, after decoding, so an
+`/invitations/[FILTERED]/accept`. Use non-capturing groups, `(?:...)`, for
+grouping that shouldn't be filtered. Every expression is matched against the
+original path, in full, including any path prefix, after decoding, so an
 encoded `%2F` within a segment is matched as `/`.
 
-Requests that don't route to any service aren't filtered, since no service's
-filter applies to them.
+The filtered path is logged wherever the proxy logs the path of a request
+routed to the service, including its error lines. Other values are logged as
+they are: the query string, any headers logged with `--log-request-header` or
+`--log-response-header`, and error messages. Requests that don't route to any
+service aren't filtered, since no service's filter applies to them.
 
 
 ### Automatic TLS

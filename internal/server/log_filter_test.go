@@ -36,13 +36,18 @@ func TestLogPathFilter_Filter(t *testing.T) {
 	// Every match is replaced
 	assertFiltered([]string{`/t/([^/]+)`}, "/t/one/t/two", "/t/[FILTERED]/t/[FILTERED]")
 
-	// Each pattern applies in turn
+	// Every pattern applies, each matched against the original path
 	assertFiltered([]string{`/invites/([^/]+)`, `/tokens/([^/]+)`}, "/invites/abc/tokens/def", "/invites/[FILTERED]/tokens/[FILTERED]")
+	assertFiltered([]string{`^/accounts/([^/]+)`, `^/accounts/[0-9]+/invites/([^/]+)`}, "/accounts/42/invites/abc", "/accounts/[FILTERED]/invites/[FILTERED]")
 
 	// Nested and optional groups
 	assertFiltered([]string{`/a/(([^/]+)/b)`}, "/a/x/b/c", "/a/[FILTERED]/c")
 	assertFiltered([]string{`/a/([^/]+)(?:/b/([^/]+))?`}, "/a/x", "/a/[FILTERED]")
 	assertFiltered([]string{`/a/([^/]+)(?:/b/([^/]+))?`}, "/a/x/b/y", "/a/[FILTERED]/b/[FILTERED]")
+
+	// Empty matches replace nothing
+	assertFiltered([]string{`x*`}, "/abc", "/abc")
+	assertFiltered([]string{`/a/([^/]*)`}, "/a/", "/a/")
 
 	// Paths that don't match are unchanged
 	assertFiltered([]string{`/invites/([^/]+)`}, "/projects/1", "/projects/1")
@@ -103,12 +108,51 @@ func TestService_LogFilterPaths(t *testing.T) {
 		assert.NotContains(t, logs, "secret-value")
 	})
 
-	t.Run("request log when the service is paused", func(t *testing.T) {
+	t.Run("request log when the service is stopped", func(t *testing.T) {
 		service := testCreateService(t, serviceOptions, defaultTargetOptions)
 		require.NoError(t, service.Stop(time.Second, DefaultStopMessage))
 		logs := testServeLogged(t, service, "/invites/secret-value")
 
 		assert.Equal(t, "/invites/[FILTERED]", testLogLine(t, logs, "Request")["path"])
+		assert.NotContains(t, logs, "secret-value")
+	})
+
+	t.Run("rollout debug log", func(t *testing.T) {
+		service := testCreateService(t, serviceOptions, defaultTargetOptions)
+		service.UpdateLoadBalancer(NewLoadBalancer(service.active.Targets(), DefaultWriterAffinityTimeout, false), TargetSlotRollout)
+		require.NoError(t, service.SetRolloutSplit(100, nil))
+		require.NoError(t, service.EnableRollout())
+
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/invites/secret-value", nil)
+		req.AddCookie(&http.Cookie{Name: RolloutCookieName, Value: "first"})
+		logs := testServeRequestLogged(t, service, req)
+
+		assert.Equal(t, "/invites/[FILTERED]", testLogLine(t, logs, "Using rollout for request")["path"])
+		assert.NotContains(t, logs, "secret-value")
+	})
+
+	t.Run("error log for a service under a stripped path prefix", func(t *testing.T) {
+		_, target := testBackendWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/invites/") {
+				conn, _, err := w.(http.Hijacker).Hijack()
+				require.NoError(t, err)
+				conn.Close()
+			}
+		})
+
+		prefixedOptions := defaultServiceOptions
+		prefixedOptions.PathPrefixes = []string{"/app"}
+		prefixedOptions.StripPrefix = true
+		prefixedOptions.LogFilterPaths = []string{`^/app/invites/([^/]+)`}
+
+		router := NewRouter("")
+		require.NoError(t, router.DeployService("app", []string{target}, defaultEmptyReaders, prefixedOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/app/invites/secret-value", nil)
+		logs := testServeHandlerLogged(t, router, req)
+
+		assert.Equal(t, "/app/invites/[FILTERED]", testLogLine(t, logs, "Error while proxying")["path"])
+		assert.Equal(t, "/app/invites/[FILTERED]", testLogLine(t, logs, "Request")["path"])
 		assert.NotContains(t, logs, "secret-value")
 	})
 
@@ -144,18 +188,24 @@ func testServeLogged(t *testing.T, service *Service, path string) string {
 	return testServeRequestLogged(t, service, httptest.NewRequest(http.MethodGet, "http://example.com"+path, nil))
 }
 
-// testServeRequestLogged serves the request through the logging middleware,
-// capturing both the request log line and anything logged along the way.
 func testServeRequestLogged(t *testing.T, service *Service, req *http.Request) string {
+	t.Helper()
+	return testServeHandlerLogged(t, service, req)
+}
+
+// testServeHandlerLogged serves the request through the logging middleware,
+// capturing the request log line and anything logged along the way, debug
+// lines included.
+func testServeHandlerLogged(t *testing.T, handler http.Handler, req *http.Request) string {
 	t.Helper()
 
 	out := &strings.Builder{}
-	logger := slog.New(slog.NewJSONHandler(out, nil))
+	logger := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	previous := slog.Default()
 	slog.SetDefault(logger)
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
-	WithLoggingMiddleware(logger, 80, 443, service).ServeHTTP(httptest.NewRecorder(), req)
+	WithLoggingMiddleware(logger, 80, 443, handler).ServeHTTP(httptest.NewRecorder(), req)
 	return out.String()
 }
 

@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -216,7 +217,7 @@ type Service struct {
 
 	certManager   CertManager
 	middleware    http.Handler
-	logPathFilter *LogPathFilter
+	logPathFilter atomic.Pointer[LogPathFilter]
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -318,7 +319,7 @@ func (s *Service) RemoveRollout() (*LoadBalancer, error) {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	LoggingRequestContext(r).PathFilter = s.logPathFilter
+	LoggingRequestContext(r).filterPath(r, s.logPathFilter.Load())
 
 	if s.options.ShouldExcludeMetrics(r) {
 		LoggingRequestContext(r).ExcludeMetrics = true
@@ -511,7 +512,7 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 	s.targetOptions = targetOptions
 	s.certManager = certManager
 	s.middleware = middleware
-	s.logPathFilter = logPathFilter
+	s.logPathFilter.Store(logPathFilter)
 
 	return nil
 }
@@ -541,7 +542,7 @@ func (s *Service) loadBalancers() (active, rollout *LoadBalancer) {
 func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 	lb := s.active
 	if s.rollout != nil && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
-		slog.Debug("Using rollout for request", "service", s.name, "path", req.URL.Path)
+		slog.Debug("Using rollout for request", "service", s.name, "path", LoggedPath(req))
 		LoggingRequestContext(req).Rollout = true
 		lb = s.rollout
 	}
