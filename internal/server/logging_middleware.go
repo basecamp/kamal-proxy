@@ -24,6 +24,7 @@ type loggingRequestContext struct {
 	RequestHeaders  []string
 	ResponseHeaders []string
 	ExcludeMetrics  bool
+	PathFilter      *LogPathFilter
 }
 
 type LoggingMiddleware struct {
@@ -83,7 +84,7 @@ func (h *LoggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		attrs := []slog.Attr{
 			slog.String("host", r.Host),
 			slog.Int("port", port),
-			slog.String("path", r.URL.Path),
+			slog.String("path", loggingRequestContext.PathFilter.Filter(r.URL.Path)),
 			slog.String("request_id", r.Header.Get("X-Request-ID")),
 			slog.Int("status", writer.statusCode),
 			slog.String("service", loggingRequestContext.Service),

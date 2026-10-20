@@ -33,10 +33,10 @@ func (h *ResponseBufferMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	err := responseWriter.Send()
 	if err != nil {
 		if errors.Is(err, ErrMaximumSizeExceeded) {
-			slog.Info("Response exceeded max response limit", "path", r.URL.Path)
+			slog.Info("Response exceeded max response limit", "path", LoggedPath(r))
 			SetErrorResponse(w, r, http.StatusInternalServerError, nil)
 		} else {
-			slog.Error("Error sending response", "path", r.URL.Path, "error", err)
+			slog.Error("Error sending response", "path", LoggedPath(r), "error", err)
 			SetErrorResponse(w, r, http.StatusInternalServerError, nil)
 		}
 		return
