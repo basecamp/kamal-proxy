@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/rand"
 	"errors"
 	"log/slog"
 	"net"
@@ -14,6 +15,12 @@ var registered sync.Once
 type CommandHandler struct {
 	rpcListener net.Listener
 	router      *Router
+	drains      sync.Map
+}
+
+type pendingDrain struct {
+	done chan struct{}
+	err  error
 }
 
 type DeployArgs struct {
@@ -123,6 +130,48 @@ func (h *CommandHandler) Close() error {
 
 func (h *CommandHandler) Deploy(args DeployArgs, reply *bool) error {
 	return h.router.DeployService(args.Service, args.TargetURLs, args.ReaderURLs, args.ServiceOptions, args.TargetOptions, args.DeploymentOptions)
+}
+
+// DeployAsyncDrain returns once the healthy targets have taken over new traffic.
+// Draining continues even if the deploying client disconnects or its hook fails.
+func (h *CommandHandler) DeployAsyncDrain(args DeployArgs, reply *string) error {
+	id := rand.Text()
+	drain := &pendingDrain{done: make(chan struct{})}
+	h.drains.Store(id, drain)
+	started := make(chan struct{})
+
+	go func() {
+		drain.err = h.router.deployService(args.Service, args.TargetURLs, args.ReaderURLs, args.ServiceOptions, args.TargetOptions, args.DeploymentOptions, func() {
+			close(started)
+		})
+		close(drain.done)
+		// Allow the caller to wait after draining has finished, but expire results
+		// if it never waits. WaitDrain consumes the result on the normal path.
+		time.AfterFunc(5*time.Minute, func() { h.drains.Delete(id) })
+	}()
+
+	select {
+	case <-started:
+		*reply = id
+		return nil
+	case <-drain.done:
+		if drain.err != nil {
+			h.drains.Delete(id)
+			return drain.err
+		}
+		*reply = id
+		return nil
+	}
+}
+
+func (h *CommandHandler) WaitDrain(id string, reply *bool) error {
+	value, ok := h.drains.LoadAndDelete(id)
+	if !ok {
+		return errors.New("unknown drain")
+	}
+	drain := value.(*pendingDrain)
+	<-drain.done
+	return drain.err
 }
 
 func (h *CommandHandler) Pause(args PauseArgs, reply *bool) error {

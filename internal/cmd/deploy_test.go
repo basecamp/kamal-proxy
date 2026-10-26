@@ -1,6 +1,13 @@
 package cmd
 
 import (
+	"bytes"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/rpc"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -9,6 +16,40 @@ import (
 
 	"github.com/basecamp/kamal-proxy/internal/server"
 )
+
+func TestDeployCommand_AsyncDrain(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "proxy.sock")
+	t.Setenv("KAMAL_PROXY_SOCKET", socketPath)
+	handler := server.NewCommandHandler(server.NewRouter(filepath.Join(t.TempDir(), "state.json")))
+	rpcServer := rpc.NewServer()
+	require.NoError(t, rpcServer.RegisterName("kamal-proxy", handler))
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go rpcServer.ServeConn(conn)
+		}
+	}()
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(backend.Close)
+	deploy := newDeployCommand()
+	var output bytes.Buffer
+	deploy.cmd.SetOut(&output)
+	deploy.cmd.SetArgs([]string{"service", "--target", strings.TrimPrefix(backend.URL, "http://"), "--async-drain"})
+	require.NoError(t, deploy.cmd.Execute())
+	drainID := strings.TrimSpace(output.String())
+	require.NotEmpty(t, drainID)
+	require.NotContains(t, drainID, "\n")
+
+	wait := newWaitDrainCommand()
+	wait.cmd.SetArgs([]string{drainID})
+	require.NoError(t, wait.cmd.Execute())
+}
 
 func TestDeployCommand_TLSRequiresHost(t *testing.T) {
 	assertTLSHostValidation := func(t *testing.T, hosts []string, allowed bool) {
