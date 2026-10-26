@@ -13,6 +13,7 @@ type deployCommand struct {
 	cmd        *cobra.Command
 	args       server.DeployArgs
 	tlsStaging bool
+	asyncDrain bool
 }
 
 func newDeployCommand() *deployCommand {
@@ -44,6 +45,7 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeploymentOptions.DeployTimeout, "deploy-timeout", server.DefaultDeployTimeout, "Maximum time to wait for the new target to become healthy")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.DeploymentOptions.DrainTimeout, "drain-timeout", server.DefaultDrainTimeout, "Maximum time to allow existing connections to drain before removing old target")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.DeploymentOptions.Force, "force", false, "Skip health checks and force deployment")
+	deployCommand.cmd.Flags().BoolVar(&deployCommand.asyncDrain, "async-drain", false, "Return a drain ID after traffic switches; use wait-drain to wait for existing requests to finish")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Interval, "health-check-interval", server.DefaultHealthCheckInterval, "Interval between health checks")
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Timeout, "health-check-timeout", server.DefaultHealthCheckTimeout, "Time each health check must complete in")
 	deployCommand.cmd.Flags().StringVar(&deployCommand.args.TargetOptions.HealthCheckConfig.Path, "health-check-path", server.DefaultHealthCheckPath, "Path to check for health")
@@ -82,6 +84,14 @@ func (c *deployCommand) run(cmd *cobra.Command, args []string) error {
 	}
 
 	return withRPCClient(globalConfig.SocketPath(), func(client *rpc.Client) error {
+		if c.asyncDrain {
+			var drainID string
+			if err := client.Call("kamal-proxy.DeployAsyncDrain", c.args, &drainID); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), drainID)
+			return nil
+		}
 		var response bool
 		return client.Call("kamal-proxy.Deploy", c.args, &response)
 	})
