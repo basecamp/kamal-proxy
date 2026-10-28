@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/quic-go/quic-go/http3"
@@ -180,6 +181,14 @@ func TestServer_DeployingHTTPS(t *testing.T) {
 }
 
 // Helpers
+
+func recordRequestsExceptHealthChecks(requested *atomic.Bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != DefaultHealthCheckPath {
+			requested.Store(true)
+		}
+	}
+}
 
 func testDeployTarget(tb testing.TB, target *Target, server *Server, serviceOptions ServiceOptions) {
 	tb.Helper()

@@ -2,6 +2,7 @@ package server
 
 import (
 	"iter"
+	"maps"
 	"net"
 	"net/http"
 	"path"
@@ -19,6 +20,18 @@ type pathBinding struct {
 }
 
 type requestServiceMap map[string][]*pathBinding
+
+type requestRoute struct {
+	service                      *Service
+	pathPrefix                   string
+	clientCertificateRequirement clientCertificateRequirement
+}
+
+type clientCertificateRequirement struct {
+	clientCA    *ClientCA
+	certManager CertManager
+	tlsRedirect bool
+}
 
 type ServiceMap struct {
 	services           map[string]*Service
@@ -78,22 +91,49 @@ func (m *ServiceMap) CheckAvailability(name string, options ServiceOptions) *Ser
 	return nil
 }
 
+func (m *ServiceMap) HostBypassingClientCAAfterSet(name string, options ServiceOptions) string {
+	if !options.RequiresClientCertificate() && !m.anyServiceRequiresClientCertificate() {
+		return ""
+	}
+
+	serviceOptions := m.serviceOptionsByName()
+	serviceOptions[name] = options
+
+	return hostBypassingClientCA(serviceOptions)
+}
+
+func (m *ServiceMap) HostBypassingClientCA() string {
+	return hostBypassingClientCA(m.serviceOptionsByName())
+}
+
 func (m *ServiceMap) ServiceForHost(host string) *Service {
 	service, _ := m.serviceFor(host, rootPath)
 	return service
 }
 
-func (m *ServiceMap) ServiceForRequest(req *http.Request) (*Service, string) {
-	host := req.Host
+func (m *ServiceMap) RouteForRequest(req *http.Request) requestRoute {
+	host := requestHost(req)
+	bindings := m.bindingsForHost(host)
+	service, pathPrefix := serviceForPath(bindings, CleanRequestPath(req.URL.Path))
 
-	if strings.Index(host, ":") > 0 {
-		splitHost, _, err := net.SplitHostPort(host)
-		if err == nil {
-			host = splitHost
-		}
+	coveringRootService := rootServiceOf(bindings)
+	if coveringRootService == nil {
+		coveringRootService = m.rootServiceCovering(host)
 	}
 
-	return m.serviceFor(host, CleanRequestPath(req.URL.Path))
+	return requestRoute{service: service, pathPrefix: pathPrefix, clientCertificateRequirement: clientCertificateRequirementOf(coveringRootService)}
+}
+
+func clientCertificateRequirementOf(service *Service) clientCertificateRequirement {
+	if service == nil {
+		return clientCertificateRequirement{}
+	}
+
+	return clientCertificateRequirement{
+		clientCA:    service.clientCA,
+		certManager: service.certManager,
+		tlsRedirect: service.options.TLSRedirect,
+	}
 }
 
 func CleanRequestPath(requestPath string) string {
@@ -110,12 +150,28 @@ func CleanRequestPath(requestPath string) string {
 
 // Private
 
-func (m *ServiceMap) serviceFor(host, path string) (*Service, string) {
-	bindings := m.bindingsForHost(host)
-	if bindings == nil {
-		return nil, ""
+func (m *ServiceMap) serviceOptionsByName() map[string]ServiceOptions {
+	serviceOptions := map[string]ServiceOptions{}
+	for serviceName, service := range m.services {
+		serviceOptions[serviceName] = service.options
 	}
+	return serviceOptions
+}
 
+func (m *ServiceMap) anyServiceRequiresClientCertificate() bool {
+	for _, service := range m.services {
+		if service.options.RequiresClientCertificate() {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *ServiceMap) serviceFor(host, path string) (*Service, string) {
+	return serviceForPath(m.bindingsForHost(host), path)
+}
+
+func serviceForPath(bindings []*pathBinding, path string) (*Service, string) {
 	for _, binding := range bindings {
 		if strings.HasPrefix(EnsureTrailingSlash(path), EnsureTrailingSlash(binding.pathPrefix)) {
 			return binding.service, binding.pathPrefix
@@ -125,15 +181,35 @@ func (m *ServiceMap) serviceFor(host, path string) (*Service, string) {
 	return nil, ""
 }
 
+func (m *ServiceMap) rootServiceCovering(host string) *Service {
+	for _, coveringHost := range [...]string{host, wildcardHost(host), ""} {
+		if rootService := rootServiceOf(m.requestServiceMap[coveringHost]); rootService != nil {
+			return rootService
+		}
+	}
+	return nil
+}
+
+func rootServiceOf(bindings []*pathBinding) *Service {
+	if len(bindings) == 0 {
+		return nil
+	}
+
+	shortestPrefixBinding := bindings[len(bindings)-1]
+	if shortestPrefixBinding.pathPrefix != rootPath {
+		return nil
+	}
+	return shortestPrefixBinding.service
+}
+
 func (m *ServiceMap) bindingsForHost(host string) []*pathBinding {
 	bindings, ok := m.requestServiceMap[host]
 	if ok {
 		return bindings
 	}
 
-	sep := strings.Index(host, ".")
-	if sep > 0 {
-		bindings, ok = m.requestServiceMap["*"+host[sep:]]
+	if wildcard := wildcardHost(host); wildcard != "" {
+		bindings, ok = m.requestServiceMap[wildcard]
 		if ok {
 			return bindings
 		}
@@ -193,6 +269,61 @@ func (m *ServiceMap) syncTLSOptionsFromRootDomain() {
 			}
 		}
 	}
+}
+
+func requestHost(req *http.Request) string {
+	host := req.Host
+
+	if strings.Index(host, ":") > 0 {
+		splitHost, _, err := net.SplitHostPort(host)
+		if err == nil {
+			host = splitHost
+		}
+	}
+
+	return host
+}
+
+func hostBypassingClientCA(serviceOptions map[string]ServiceOptions) string {
+	hosts := map[string]bool{}
+	rootServiceOptions := map[string]ServiceOptions{}
+
+	for _, options := range serviceOptions {
+		for _, host := range options.Hosts {
+			hosts[host] = true
+			if slices.Contains(options.PathPrefixes, rootPath) {
+				rootServiceOptions[host] = options
+			}
+		}
+	}
+
+	for _, host := range slices.Sorted(maps.Keys(hosts)) {
+		if _, hasRootService := rootServiceOptions[host]; hasRootService {
+			continue
+		}
+
+		shadowedRootService, ok := rootServiceOptions[shadowedHost(host, hosts)]
+		if ok && shadowedRootService.RequiresClientCertificate() {
+			return host
+		}
+	}
+
+	return ""
+}
+
+func shadowedHost(host string, hosts map[string]bool) string {
+	if wildcard := wildcardHost(host); wildcard != host && hosts[wildcard] {
+		return wildcard
+	}
+	return ""
+}
+
+func wildcardHost(host string) string {
+	sep := strings.Index(host, ".")
+	if sep > 0 {
+		return "*" + host[sep:]
+	}
+	return ""
 }
 
 func NormalizeHosts(hosts []string) []string {

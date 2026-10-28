@@ -105,6 +105,7 @@ type ServiceOptions struct {
 	TLSCertificatePath          string        `json:"tls_certificate_path"`
 	TLSPrivateKeyPath           string        `json:"tls_private_key_path"`
 	TLSOnDemandURL              string        `json:"tls_on_demand_url"`
+	TLSClientCAPath             string        `json:"tls_client_ca_path"`
 	TLSRedirect                 bool          `json:"tls_redirect"`
 	CanonicalHost               string        `json:"canonical_host"`
 	ACMEDirectory               string        `json:"acme_directory"`
@@ -131,6 +132,10 @@ func (so ServiceOptions) Validate() error {
 
 	if so.TLSOnDemandURL != "" && !so.TLSEnabled {
 		return fmt.Errorf("%w: TLS must be enabled to use a TLS on-demand URL", ErrServiceOptionsInvalid)
+	}
+
+	if so.TLSClientCAPath != "" && !so.TLSEnabled {
+		return fmt.Errorf("%w: TLS must be enabled to use a TLS client CA", ErrServiceOptionsInvalid)
 	}
 
 	if so.TLSEnabled {
@@ -178,6 +183,10 @@ func (so ServiceOptions) HasConfiguredHosts() bool {
 	return len(so.Hosts) > 0 && !slices.Contains(so.Hosts, "")
 }
 
+func (so ServiceOptions) RequiresClientCertificate() bool {
+	return so.TLSEnabled && so.TLSClientCAPath != ""
+}
+
 func (so *ServiceOptions) WithPathPrefixes(pathPrefixes []string) ServiceOptions {
 	options := *so
 	options.PathPrefixes = pathPrefixes
@@ -210,6 +219,7 @@ type Service struct {
 	rolloutController *RolloutController
 
 	certManager CertManager
+	clientCA    *ClientCA
 	middleware  http.Handler
 }
 
@@ -489,6 +499,11 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
+	clientCA, err := s.createClientCA(options)
+	if err != nil {
+		return err
+	}
+
 	middleware, err := s.createMiddleware(options, certManager)
 	if err != nil {
 		return err
@@ -497,6 +512,7 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 	s.options = options
 	s.targetOptions = targetOptions
 	s.certManager = certManager
+	s.clientCA = clientCA
 	s.middleware = middleware
 
 	return nil
@@ -581,6 +597,14 @@ func (s *Service) createHostPolicy(options ServiceOptions, certCache autocert.Ca
 	}
 
 	return autocert.HostWhitelist(options.Hosts...), nil
+}
+
+func (s *Service) createClientCA(options ServiceOptions) (*ClientCA, error) {
+	if !options.RequiresClientCertificate() {
+		return nil, nil
+	}
+
+	return NewClientCA(options.TLSClientCAPath)
 }
 
 func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
