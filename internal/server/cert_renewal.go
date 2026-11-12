@@ -24,7 +24,7 @@ var (
 	ErrorCertRenewalInvalidHost       = errors.New("invalid host")
 	ErrorCertRenewalUnknownHost       = errors.New("host is not served by this service")
 	ErrorCertRenewalNotStored         = errors.New("certificate was issued but could not be stored")
-	ErrorCertRenewalServiceChanged    = errors.New("the service changed during renewal, redeploy it to load them")
+	ErrorCertRenewalServiceChanged    = errors.New("the service changed during renewal")
 
 	errorCertRenewalFinished = errors.New("certificate renewal has finished")
 )
