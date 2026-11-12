@@ -209,6 +209,7 @@ type Service struct {
 	pauseController   *PauseController
 	rolloutController *RolloutController
 
+	handler     http.Handler
 	certManager CertManager
 	middleware  http.Handler
 	renewalLock sync.Mutex
@@ -490,15 +491,16 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
-	middleware, err := s.createMiddleware(options, certManager)
+	handler, err := s.createHandler(options)
 	if err != nil {
 		return err
 	}
 
 	s.options = options
 	s.targetOptions = targetOptions
+	s.handler = handler
 	s.certManager = certManager
-	s.middleware = middleware
+	s.middleware = s.createMiddleware(options, handler, certManager)
 
 	return nil
 }
@@ -591,7 +593,7 @@ func (s *Service) createHostPolicy(options ServiceOptions, certCache autocert.Ca
 	return autocert.HostWhitelist(options.Hosts...), nil
 }
 
-func (s *Service) createMiddleware(options ServiceOptions, certManager CertManager) (http.Handler, error) {
+func (s *Service) createHandler(options ServiceOptions) (http.Handler, error) {
 	var err error
 	var handler http.Handler = http.HandlerFunc(s.serviceRequestWithTarget)
 
@@ -605,6 +607,10 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 		}
 	}
 
+	return handler, nil
+}
+
+func (s *Service) createMiddleware(options ServiceOptions, handler http.Handler, certManager CertManager) http.Handler {
 	if certManager != nil {
 		slog.Debug("Using ACME handler", "service", s.name)
 		handler = certManager.HTTPHandler(handler)
@@ -614,7 +620,7 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 		handler = WithClientIPMiddleware(options.ClientIPHeader, handler)
 	}
 
-	return handler, nil
+	return handler
 }
 
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
