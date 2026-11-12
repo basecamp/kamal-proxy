@@ -71,6 +71,11 @@ type RolloutRemoveArgs struct {
 	DrainTimeout time.Duration
 }
 
+type CertRenewArgs struct {
+	Service string
+	Hosts   []string
+}
+
 type ListResponse struct {
 	Targets ServiceDescriptionMap `json:"services"`
 }
@@ -139,6 +144,10 @@ func (h *CommandHandler) Resume(args ResumeArgs, reply *bool) error {
 
 func (h *CommandHandler) Remove(args RemoveArgs, reply *bool) error {
 	return h.router.RemoveService(args.Service)
+}
+
+func (h *CommandHandler) CertRenew(args CertRenewArgs, reply *bool) error {
+	return h.router.RenewCertificates(args.Service, args.Hosts)
 }
 
 func (h *CommandHandler) List(args bool, reply *ListResponse) error {

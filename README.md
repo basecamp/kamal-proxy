@@ -162,6 +162,25 @@ Additionally, when using path-based routing, TLS options must be set on the
 root path. Services deployed to other paths on the same host will use the same
 TLS settings as those specified for the root path.
 
+Certificates are renewed automatically before they expire. If you need to
+replace a certificate sooner (for example, after it has been revoked), you can
+renew it manually:
+
+    kamal-proxy cert renew service1
+
+By default, this renews the certificates for all of the service's hosts. Use
+`--host` (which can be repeated) to renew only some of them. New certificates
+are requested one host at a time. If a request fails, the certificate it would
+have replaced stays in use, later hosts are not attempted, and the error lists
+the certificates that were renewed before the failure.
+
+When using path-based routing, renew the certificates through the service on
+the root path, as that is the service that manages TLS for its hosts.
+
+Manual renewal counts towards the certificate authority's rate limits (such as
+Let's Encrypt's limit on duplicate certificates), so it should only be used
+when needed. It is not available for services using a custom TLS certificate.
+
 
 ### On-demand TLS
 
@@ -188,6 +207,10 @@ to the endpoint, with the hostname in a `host` query parameter (for example,
 certificate issuance; any other response denies it, and the status code and up
 to 256 bytes of the response body are logged to help with debugging. Checks
 time out after 2 seconds, denying issuance for that attempt.
+
+To renew a certificate manually for an on-demand service, specify the host:
+
+    kamal-proxy cert renew service1 --host customer.example.com
 
 
 ### Custom TLS certificate

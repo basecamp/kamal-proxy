@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -307,6 +308,30 @@ func (r *Router) ResumeService(name string) error {
 	return service.Resume()
 }
 
+func (r *Router) RenewCertificates(name string, hosts []string) error {
+	service, options, hosts, err := r.certificatesToRenew(name, hosts)
+	if err != nil {
+		return err
+	}
+
+	renewed, err := service.RenewCertificates(options, hosts)
+	if len(renewed) > 0 {
+		// Replace the service's certificate manager, so that the renewed
+		// certificates are loaded from the cache. The service may have
+		// changed while they were being issued, so check it again.
+		reloadErr := r.withWriteLock(func() error {
+			return r.reloadRenewedCertificates(name, service, options)
+		})
+		if reloadErr != nil {
+			reloadErr = fmt.Errorf("certificates for %s were renewed but could not be loaded: %w", strings.Join(renewed, ", "), reloadErr)
+			slog.Error("Unable to reload certificates after renewal", "service", name, "error", reloadErr)
+			return errors.Join(err, reloadErr)
+		}
+	}
+
+	return err
+}
+
 func (r *Router) ListActiveServices() ServiceDescriptionMap {
 	result := ServiceDescriptionMap{}
 
@@ -334,18 +359,18 @@ func (r *Router) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 		}
 	}
 
-	service := r.serviceForHost(hello.ServerName)
+	service, certManager := r.certManagerForHost(hello.ServerName)
 	if service == nil {
 		slog.Debug("ACME: Unable to get certificate (unknown server name)")
 		return nil, ErrorUnknownServerName
 	}
 
-	if service.certManager == nil {
+	if certManager == nil {
 		slog.Debug("ACME: Unable to get certificate (service does not support TLS)")
 		return nil, ErrorUnknownServerName
 	}
 
-	return service.certManager.GetCertificate(hello)
+	return certManager.GetCertificate(hello)
 }
 
 // Private
@@ -435,11 +460,17 @@ func (r *Router) serviceForRequest(req *http.Request) (*Service, string) {
 	return r.services.ServiceForRequest(req)
 }
 
-func (r *Router) serviceForHost(host string) *Service {
+// certManagerForHost reads the certificate manager under the lock, as it is
+// replaced when a service is updated or its certificates are renewed.
+func (r *Router) certManagerForHost(host string) (*Service, CertManager) {
 	r.serviceLock.RLock()
 	defer r.serviceLock.RUnlock()
 
-	return r.services.ServiceForHost(host)
+	service := r.services.ServiceForHost(host)
+	if service == nil {
+		return nil, nil
+	}
+	return service, service.certManager
 }
 
 func (r *Router) serviceForName(name string) *Service {
