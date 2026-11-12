@@ -317,8 +317,11 @@ func (r *Router) RenewCertificates(name string, hosts []string) error {
 	renewed, err := service.RenewCertificates(options, hosts)
 	if len(renewed) > 0 {
 		// Replace the service's certificate manager, so that the renewed
-		// certificates are loaded from the cache.
-		reloadErr := r.withWriteLock(service.reloadCertManager)
+		// certificates are loaded from the cache. The service may have
+		// changed while they were being issued, so check it again.
+		reloadErr := r.withWriteLock(func() error {
+			return r.reloadRenewedCertificates(name, service, options)
+		})
 		if reloadErr != nil {
 			reloadErr = fmt.Errorf("certificates for %s were renewed but could not be loaded: %w", strings.Join(renewed, ", "), reloadErr)
 			slog.Error("Unable to reload certificates after renewal", "service", name, "error", reloadErr)

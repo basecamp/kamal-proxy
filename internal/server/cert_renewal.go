@@ -24,6 +24,7 @@ var (
 	ErrorCertRenewalInvalidHost       = errors.New("invalid host")
 	ErrorCertRenewalUnknownHost       = errors.New("host is not served by this service")
 	ErrorCertRenewalNotStored         = errors.New("certificate was issued but could not be stored")
+	ErrorCertRenewalServiceChanged    = errors.New("the service changed during renewal, redeploy it to load them")
 
 	errorCertRenewalFinished = errors.New("certificate renewal has finished")
 )
@@ -116,6 +117,28 @@ func (r *Router) certificatesToRenew(name string, hosts []string) (*Service, Ser
 	}
 
 	return service, options, hosts, nil
+}
+
+// reloadRenewedCertificates reloads the certificate manager of a service
+// whose certificates were renewed using options. It must be called with the
+// router's write lock held. If the service was removed or replaced, or no
+// longer reads its certificates from the cache that was renewed, it is left
+// as it is: reloading would either update a service that is no longer
+// served, or load certificates from a different cache.
+func (r *Router) reloadRenewedCertificates(name string, service *Service, options ServiceOptions) error {
+	if r.services.Get(name) != service || !service.servesRootPath() {
+		return ErrorCertRenewalServiceChanged
+	}
+
+	if _, ok := service.certManager.(*autocert.Manager); !ok {
+		return ErrorCertRenewalServiceChanged
+	}
+
+	if service.options.ScopedCachePath() != options.ScopedCachePath() {
+		return ErrorCertRenewalServiceChanged
+	}
+
+	return service.reloadCertManager()
 }
 
 // reloadCertManager replaces the service's certificate manager, and the

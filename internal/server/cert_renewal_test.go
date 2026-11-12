@@ -170,6 +170,86 @@ func TestRouter_RenewCertificates_ReloadsWhenRSARenewalFails(t *testing.T) {
 	assert.Equal(t, oldWWW.SerialNumber, testServedLeaf(t, router, ecdsaClientHello("www.example.com")).SerialNumber, "doesn't renew later hosts")
 }
 
+func TestRouter_RenewCertificates_ServiceReplacedDuringRenewal(t *testing.T) {
+	ca := newTestACMEServer(t)
+	router, cache := testRouterWithACMEService(t, ca, "service1", []string{"example.com"})
+	writeTestCachedCertificate(t, cache, "example.com", false)
+
+	service := router.serviceForName("service1")
+	options := service.options
+	_, certManager := router.certManagerForHost("example.com")
+	_, target := testBackend(t, "second", http.StatusOK)
+
+	var once sync.Once
+	ca.onFinalize(func() {
+		once.Do(func() {
+			assert.NoError(t, router.RemoveService("service1"))
+			assert.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, options, defaultTargetOptions, defaultDeploymentOptions))
+		})
+	})
+
+	err := router.RenewCertificates("service1", nil)
+	require.ErrorIs(t, err, ErrorCertRenewalServiceChanged)
+	require.ErrorContains(t, err, "certificates for example.com were renewed but could not be loaded")
+	assert.Equal(t, 1, ca.issuedCount())
+
+	assert.NotSame(t, service, router.serviceForName("service1"))
+	assert.Same(t, certManager, service.certManager, "the removed service is not reloaded")
+}
+
+func TestRouter_RenewCertificates_CacheChangedDuringRenewal(t *testing.T) {
+	ca := newTestACMEServer(t)
+	router, cache := testRouterWithACMEService(t, ca, "service1", []string{"example.com"})
+	writeTestCachedCertificate(t, cache, "example.com", false)
+
+	service := router.serviceForName("service1")
+	options := service.options
+	options.ACMECachePath = t.TempDir()
+	_, target := testBackend(t, "second", http.StatusOK)
+
+	certManagers := make(chan CertManager, 1)
+	var once sync.Once
+	ca.onFinalize(func() {
+		once.Do(func() {
+			assert.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, options, defaultTargetOptions, defaultDeploymentOptions))
+			_, certManager := router.certManagerForHost("example.com")
+			certManagers <- certManager
+		})
+	})
+
+	err := router.RenewCertificates("service1", nil)
+	require.ErrorIs(t, err, ErrorCertRenewalServiceChanged)
+	require.ErrorContains(t, err, "certificates for example.com were renewed but could not be loaded")
+	assert.Equal(t, 1, ca.issuedCount())
+
+	assert.Same(t, service, router.serviceForName("service1"))
+	_, current := router.certManagerForHost("example.com")
+	assert.Same(t, <-certManagers, current, "the certificate manager using the new cache is not reloaded")
+}
+
+func TestRouter_RenewCertificates_ReloadsAfterDeployKeepingCache(t *testing.T) {
+	ca := newTestACMEServer(t)
+	router, cache := testRouterWithACMEService(t, ca, "service1", []string{"example.com"})
+	writeTestCachedCertificate(t, cache, "example.com", false)
+
+	options := router.serviceForName("service1").options
+	_, target := testBackend(t, "second", http.StatusOK)
+
+	var once sync.Once
+	ca.onFinalize(func() {
+		once.Do(func() {
+			// Load the existing certificate into the new manager's memory, so
+			// it would keep serving it without a reload.
+			assert.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, options, defaultTargetOptions, defaultDeploymentOptions))
+			_, err := router.GetCertificate(ecdsaClientHello("example.com"))
+			assert.NoError(t, err)
+		})
+	})
+
+	require.NoError(t, router.RenewCertificates("service1", nil))
+	assert.True(t, ca.issued(testServedLeaf(t, router, ecdsaClientHello("example.com"))))
+}
+
 func TestRouter_RenewCertificates_NormalizesHosts(t *testing.T) {
 	ca := newTestACMEServer(t)
 	router, cache := testRouterWithACMEService(t, ca, "service1", []string{"example.com", "www.example.com"})
@@ -493,6 +573,8 @@ type testACMEServer struct {
 
 	rejectRSA bool
 
+	beforeFinalize func()
+
 	caKey  *ecdsa.PrivateKey
 	caCert *x509.Certificate
 
@@ -568,6 +650,13 @@ func newTestACMEServer(t *testing.T) *testACMEServer {
 }
 
 func (s *testACMEServer) finalize(w http.ResponseWriter, r *http.Request) {
+	s.lock.Lock()
+	beforeFinalize := s.beforeFinalize
+	s.lock.Unlock()
+	if beforeFinalize != nil {
+		beforeFinalize()
+	}
+
 	var jws struct{ Payload string }
 	var payload struct{ CSR string }
 	csr, err := func() (*x509.CertificateRequest, error) {
@@ -621,6 +710,13 @@ func (s *testACMEServer) finalize(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", s.URL+"/order/1")
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "valid", "certificate": fmt.Sprintf("%s/cert/%d", s.URL, id)})
+}
+
+// onFinalize sets a function to call before each certificate is issued.
+func (s *testACMEServer) onFinalize(fn func()) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.beforeFinalize = fn
 }
 
 func (s *testACMEServer) issued(leaf *x509.Certificate) bool {
