@@ -127,9 +127,11 @@ func (s *Service) renewCertificate(options ServiceOptions, cache autocert.Cache,
 		if err != nil {
 			return err
 		}
-		// Allow the http-01 challenge, as the service's manager does. The
-		// challenge responses are stored in the shared cache, so the service's
-		// manager can answer them.
+		// The CA's validation requests reach the service's own manager, not
+		// this one. That works because autocert also stores challenge
+		// responses (tls-alpn-01 certificates and http-01 tokens) in the
+		// cache, and falls back to the cache when it doesn't hold them in
+		// memory. Allow http-01 as well, as the service's manager does.
 		manager.HTTPHandler(nil)
 
 		if _, err := manager.GetCertificate(hello); err != nil {

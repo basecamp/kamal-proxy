@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -227,6 +229,33 @@ func TestRenewalClientHellosSelectCertificateType(t *testing.T) {
 	cert, err = manager.GetCertificate(rsaClientHello("example.com"))
 	require.NoError(t, err)
 	assert.IsType(t, &rsa.PrivateKey{}, cert.PrivateKey)
+}
+
+func TestService_AnswersChallengesStoredByRenewalManager(t *testing.T) {
+	serviceOptions := ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, ACMECachePath: t.TempDir()}
+	service := testCreateService(t, serviceOptions, defaultTargetOptions)
+	cache := autocert.DirCache(serviceOptions.ScopedCachePath())
+
+	// A renewal manager stores the tls-alpn-01 challenge certificate in the
+	// shared cache; the service's manager must serve it to the CA.
+	writeTestCachedCertificate(t, cache, "example.com+token", false)
+
+	cert, err := service.certManager.GetCertificate(&tls.ClientHelloInfo{
+		ServerName:      "example.com",
+		SupportedProtos: []string{acme.ALPNProto},
+	})
+	require.NoError(t, err)
+	assert.IsType(t, &ecdsa.PrivateKey{}, cert.PrivateKey)
+
+	// Likewise for http-01 tokens.
+	require.NoError(t, cache.Put(context.Background(), "token123+http-01", []byte("key-authorization")))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/.well-known/acme-challenge/token123", nil)
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+	assert.Equal(t, "key-authorization", w.Body.String())
 }
 
 // Helpers
