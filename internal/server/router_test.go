@@ -236,6 +236,11 @@ func TestRouter_UpdatingOptionsWhileServing(t *testing.T) {
 
 	done := make(chan struct{})
 	var wg sync.WaitGroup
+	// Stop and join the workers even if a redeploy fails the test
+	defer func() {
+		close(done)
+		wg.Wait()
+	}()
 
 	serve := func(url string, check func(statusCode int)) {
 		defer wg.Done()
@@ -280,9 +285,6 @@ func TestRouter_UpdatingOptionsWhileServing(t *testing.T) {
 		require.NoError(t, router.DeployService("root", []string{target}, defaultEmptyReaders, rootOptions, targetOptions, defaultDeploymentOptions))
 		require.NoError(t, router.DeployService("api", []string{target}, defaultEmptyReaders, apiOptions, targetOptions, defaultDeploymentOptions))
 	}
-
-	close(done)
-	wg.Wait()
 }
 
 func TestRouter_CanonicalHostRedirect(t *testing.T) {
