@@ -56,6 +56,11 @@ func (m *StaticCertManager) HTTPHandler(handler http.Handler) http.Handler {
 // A handshake that is issuing a certificate through the manager at that moment
 // fails too. New handshakes use the service's current manager, which issues
 // the certificate again if needed.
+//
+// Only new requests are refused: one already in flight when the manager is
+// retired can still complete and store its certificate in the shared cache.
+// That is at most one renewal finishing, with a valid certificate for the same
+// host, rather than renewals continuing in the background.
 func retireCertManager(certManager CertManager) {
 	manager, ok := certManager.(*autocert.Manager)
 	if !ok || manager.Client == nil || manager.Client.HTTPClient == nil {
