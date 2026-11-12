@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -215,6 +216,77 @@ func TestRouter_UpdatingOptions(t *testing.T) {
 	assert.Empty(t, body)
 }
 
+func TestRouter_UpdatingOptionsWhileServing(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+	certPath, keyPath := prepareTestCertificateFiles(t)
+
+	rootOptions := defaultServiceOptions
+	rootOptions.Hosts = []string{"example.com"}
+	rootOptions.TLSEnabled = true
+	rootOptions.TLSCertificatePath = certPath
+	rootOptions.TLSPrivateKeyPath = keyPath
+
+	apiOptions := defaultServiceOptions
+	apiOptions.Hosts = []string{"example.com"}
+	apiOptions.PathPrefixes = []string{"/api"}
+
+	require.NoError(t, router.DeployService("root", []string{target}, defaultEmptyReaders, rootOptions, defaultTargetOptions, defaultDeploymentOptions))
+	require.NoError(t, router.DeployService("api", []string{target}, defaultEmptyReaders, apiOptions, defaultTargetOptions, defaultDeploymentOptions))
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	// Stop and join the workers even if a redeploy fails the test
+	defer func() {
+		close(done)
+		wg.Wait()
+	}()
+
+	serve := func(url string, check func(statusCode int)) {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				req := httptest.NewRequest(http.MethodGet, url, nil)
+				req.TLS = &tls.ConnectionState{}
+				statusCode, _ := sendRequest(router, req)
+				check(statusCode)
+			}
+		}
+	}
+
+	wg.Add(3)
+	go serve("https://example.com/", func(statusCode int) {
+		assert.Equal(t, http.StatusOK, statusCode)
+	})
+	// A path-based service only inherits its TLS settings from the root
+	// service once its update is installed, so its status isn't checked.
+	go serve("https://example.com/api", func(int) {})
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				cert, err := router.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"})
+				assert.NoError(t, err)
+				assert.NotNil(t, cert)
+			}
+		}
+	}()
+
+	for i := range 20 {
+		targetOptions := defaultTargetOptions
+		targetOptions.ResponseTimeout = DefaultTargetTimeout + time.Duration(i)*time.Second
+
+		require.NoError(t, router.DeployService("root", []string{target}, defaultEmptyReaders, rootOptions, targetOptions, defaultDeploymentOptions))
+		require.NoError(t, router.DeployService("api", []string{target}, defaultEmptyReaders, apiOptions, targetOptions, defaultDeploymentOptions))
+	}
+}
+
 func TestRouter_CanonicalHostRedirect(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)
@@ -288,8 +360,8 @@ func TestRouter_DeploymentsWithErrorsDoNotUpdateService(t *testing.T) {
 		for _, service := range services {
 			sm.Set(service)
 		}
-		persistedOptions := sm.Get("service1").options
-		persistedTargetOptions := sm.Get("service1").targetOptions
+		persistedOptions := sm.Get("service1").state.Load().options
+		persistedTargetOptions := sm.Get("service1").state.Load().targetOptions
 
 		assert.Equal(t, serviceOptions.TLSPrivateKeyPath, persistedOptions.TLSPrivateKeyPath)
 		assert.Equal(t, serviceOptions.TLSCertificatePath, persistedOptions.TLSCertificatePath)
@@ -1095,7 +1167,7 @@ func TestRouter_RestoreLastSavedState_TLSOnDemandURL(t *testing.T) {
 	service := router.services.Get("ondemand")
 	require.NotNil(t, service)
 
-	manager, ok := service.certManager.(*autocert.Manager)
+	manager, ok := service.state.Load().certManager.(*autocert.Manager)
 	require.True(t, ok)
 	require.NotNil(t, manager.HostPolicy)
 

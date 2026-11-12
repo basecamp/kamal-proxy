@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -197,10 +198,22 @@ func (so ServiceOptions) ScopedCachePath() string {
 	return path.Join(so.ACMECachePath, hash)
 }
 
-type Service struct {
-	name          string
+// serviceState is the part of a service that a deployment replaces. It is
+// never modified once published, so that a request or TLS handshake can load
+// it once, without locking, and see a consistent configuration throughout.
+type serviceState struct {
 	options       ServiceOptions
 	targetOptions TargetOptions
+	certManager   CertManager
+	middleware    http.Handler
+}
+
+type Service struct {
+	name string
+
+	// Once the service is in the router, state is only replaced while holding
+	// the router's write lock, so that updates don't overwrite each other.
+	state atomic.Pointer[serviceState]
 
 	active      *LoadBalancer
 	rollout     *LoadBalancer
@@ -208,9 +221,6 @@ type Service struct {
 
 	pauseController   *PauseController
 	rolloutController *RolloutController
-
-	certManager CertManager
-	middleware  http.Handler
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -312,14 +322,16 @@ func (s *Service) RemoveRollout() (*LoadBalancer, error) {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.options.ShouldExcludeMetrics(r) {
+	state := s.state.Load()
+
+	if state.options.ShouldExcludeMetrics(r) {
 		LoggingRequestContext(r).ExcludeMetrics = true
 	} else {
 		metrics.Tracker.AddInflightRequest(s.name)
 		defer metrics.Tracker.SubtractInflightRequest(s.name)
 	}
 
-	s.middleware.ServeHTTP(w, r)
+	state.middleware.ServeHTTP(w, r)
 }
 
 type marshalledService struct {
@@ -344,8 +356,10 @@ func (s *Service) Describe() ServiceDescription {
 	active, rollout, controller := s.active, s.rollout, s.currentRolloutController()
 	s.serviceLock.RUnlock()
 
-	hosts := make([]string, 0, len(s.options.Hosts))
-	for _, host := range s.options.Hosts {
+	options := s.state.Load().options
+
+	hosts := make([]string, 0, len(options.Hosts))
+	for _, host := range options.Hosts {
 		if host == "" {
 			host = "*"
 		}
@@ -357,10 +371,10 @@ func (s *Service) Describe() ServiceDescription {
 
 	return ServiceDescription{
 		Hosts:        hosts,
-		PathPrefixes: s.options.PathPrefixes,
+		PathPrefixes: options.PathPrefixes,
 		Targets:      targets,
 		ReadTargets:  readers,
-		TLS:          s.options.TLSEnabled,
+		TLS:          options.TLSEnabled,
 		State:        s.pauseController.GetState().String(),
 		Rollout: RolloutDescription{
 			Enabled:     controller.Enabled,
@@ -384,6 +398,8 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 	active, rollout, rolloutController := s.active, s.rollout, s.rolloutController
 	s.serviceLock.RUnlock()
 
+	state := s.state.Load()
+
 	activeTargets, activeReaders := targetNames(active)
 	rolloutTargets, rolloutReaders := targetNames(rollout)
 
@@ -393,8 +409,8 @@ func (s *Service) MarshalJSON() ([]byte, error) {
 		ActiveReaders:     activeReaders,
 		RolloutTargets:    rolloutTargets,
 		RolloutReaders:    rolloutReaders,
-		Options:           s.options,
-		TargetOptions:     s.targetOptions,
+		Options:           state.options,
+		TargetOptions:     state.targetOptions,
 		PauseController:   s.pauseController,
 		RolloutController: rolloutController,
 	})
@@ -494,12 +510,28 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
-	s.options = options
-	s.targetOptions = targetOptions
-	s.certManager = certManager
-	s.middleware = middleware
+	s.state.Store(&serviceState{
+		options:       options,
+		targetOptions: targetOptions,
+		certManager:   certManager,
+		middleware:    middleware,
+	})
 
 	return nil
+}
+
+// inheritTLSOptions sets the TLS options of a service that doesn't serve the
+// root path to those of the service that does.
+func (s *Service) inheritTLSOptions(enabled, redirect bool) {
+	current := s.state.Load()
+	if current.options.TLSEnabled == enabled && current.options.TLSRedirect == redirect {
+		return
+	}
+
+	state := *current
+	state.options.TLSEnabled = enabled
+	state.options.TLSRedirect = redirect
+	s.state.Store(&state)
 }
 
 func (s *Service) Drain(timeout time.Duration) {
@@ -536,7 +568,7 @@ func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 }
 
 func (s *Service) servesRootPath() bool {
-	return slices.Contains(s.options.PathPrefixes, rootPath)
+	return slices.Contains(s.state.Load().options.PathPrefixes, rootPath)
 }
 
 func (s *Service) createCertManager(options ServiceOptions) (CertManager, error) {
@@ -612,16 +644,18 @@ func (s *Service) createMiddleware(options ServiceOptions, certManager CertManag
 func (s *Service) serviceRequestWithTarget(w http.ResponseWriter, r *http.Request) {
 	LoggingRequestContext(r).Service = s.name
 
-	if !s.options.TLSEnabled && r.TLS != nil {
+	state := s.state.Load()
+
+	if !state.options.TLSEnabled && r.TLS != nil {
 		SetErrorResponse(w, r, http.StatusServiceUnavailable, nil)
 		return
 	}
 
-	if s.handleRedirectsIfNeeded(w, r) {
+	if s.handleRedirectsIfNeeded(w, r, &state.options) {
 		return
 	}
 
-	if s.handlePausedAndStoppedRequests(w, r) {
+	if s.handlePausedAndStoppedRequests(w, r, &state.targetOptions) {
 		return
 	}
 
@@ -639,8 +673,8 @@ func (s *Service) startLoadBalancerRequest(w http.ResponseWriter, r *http.Reques
 	return lb.StartRequest(w, r)
 }
 
-func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request) bool {
-	if s.pauseController.GetState() != PauseStateRunning && s.targetOptions.IsHealthCheckRequest(r) {
+func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.Request, targetOptions *TargetOptions) bool {
+	if s.pauseController.GetState() != PauseStateRunning && targetOptions.IsHealthCheckRequest(r) {
 		// When paused or stopped, return success for any health check
 		// requests from downstream services. Otherwise, they might consider
 		// us as unhealthy while in that state, and remove us from their
@@ -665,8 +699,8 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 	return false
 }
 
-func (s *Service) handleRedirectsIfNeeded(w http.ResponseWriter, r *http.Request) bool {
-	if url := s.redirectURLIfNeeded(r); url != "" {
+func (s *Service) handleRedirectsIfNeeded(w http.ResponseWriter, r *http.Request, options *ServiceOptions) bool {
+	if url := s.redirectURLIfNeeded(r, options); url != "" {
 		w.Header().Set("Connection", "close")
 		http.Redirect(w, r, url, http.StatusMovedPermanently)
 		return true
@@ -677,7 +711,7 @@ func (s *Service) handleRedirectsIfNeeded(w http.ResponseWriter, r *http.Request
 // redirectURLIfNeeded returns a full absolute URL to redirect to when either
 // TLS redirection or canonical host redirection should occur. If no redirect is
 // needed, it returns an empty string.
-func (s *Service) redirectURLIfNeeded(r *http.Request) string {
+func (s *Service) redirectURLIfNeeded(r *http.Request, options *ServiceOptions) string {
 	if !isInternalRequest(r) {
 		host, _, err := net.SplitHostPort(r.Host)
 		if err != nil {
@@ -690,13 +724,13 @@ func (s *Service) redirectURLIfNeeded(r *http.Request) string {
 		}
 
 		desiredScheme := currentScheme
-		if s.options.TLSEnabled && s.options.TLSRedirect && currentScheme == "http" {
+		if options.TLSEnabled && options.TLSRedirect && currentScheme == "http" {
 			desiredScheme = "https"
 		}
 
 		desiredHost := host
-		if s.options.CanonicalHost != "" && host != s.options.CanonicalHost {
-			desiredHost = s.options.CanonicalHost
+		if options.CanonicalHost != "" && host != options.CanonicalHost {
+			desiredHost = options.CanonicalHost
 		}
 
 		if desiredScheme != currentScheme || desiredHost != host {
