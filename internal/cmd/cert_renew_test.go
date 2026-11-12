@@ -3,6 +3,7 @@ package cmd
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -20,7 +21,12 @@ func TestCertRenewCommand_ParsesHosts(t *testing.T) {
 }
 
 func TestCertRenewCommand_CallsServerOverRPC(t *testing.T) {
-	dir := t.TempDir()
+	// Keep the socket path short, as t.TempDir() can exceed the length limit
+	// for unix sockets on macOS.
+	dir, err := os.MkdirTemp("", "kp")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
 	socketPath := filepath.Join(dir, "kamal-proxy.sock")
 	t.Setenv("KAMAL_PROXY_SOCKET", socketPath)
 
