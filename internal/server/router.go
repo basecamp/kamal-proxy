@@ -307,6 +307,26 @@ func (r *Router) ResumeService(name string) error {
 	return service.Resume()
 }
 
+func (r *Router) RenewCertificates(name string, hosts []string) error {
+	service := r.serviceForName(name)
+	if service == nil {
+		return ErrorServiceNotFound
+	}
+
+	renewed, err := service.RenewCertificates(hosts)
+	if len(renewed) > 0 {
+		// Replace the service's certificate manager, so that the renewed
+		// certificates are loaded from the cache.
+		reloadErr := r.withWriteLock(service.ReloadCertManager)
+		if reloadErr != nil {
+			slog.Error("Unable to reload certificates after renewal", "service", name, "error", reloadErr)
+			return errors.Join(err, reloadErr)
+		}
+	}
+
+	return err
+}
+
 func (r *Router) ListActiveServices() ServiceDescriptionMap {
 	result := ServiceDescriptionMap{}
 

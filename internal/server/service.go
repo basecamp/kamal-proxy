@@ -211,6 +211,7 @@ type Service struct {
 
 	certManager CertManager
 	middleware  http.Handler
+	renewalLock sync.Mutex
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -558,7 +559,14 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 
 	certCache := autocert.DirCache(options.ScopedCachePath())
 
-	hostPolicy, err := s.createHostPolicy(options, certCache)
+	return s.createACMEManager(options, certCache, certCache)
+}
+
+// createACMEManager builds an autocert manager that stores certificates in
+// certCache. The host policy checks policyCache for certificates that have
+// already been issued.
+func (s *Service) createACMEManager(options ServiceOptions, certCache autocert.Cache, policyCache autocert.Cache) (*autocert.Manager, error) {
+	hostPolicy, err := s.createHostPolicy(options, policyCache)
 	if err != nil {
 		return nil, err
 	}

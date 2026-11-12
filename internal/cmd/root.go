@@ -28,6 +28,7 @@ func Execute() {
 	rootCmd.AddCommand(newResumeCommand().cmd)
 	rootCmd.AddCommand(newListCommand().cmd)
 	rootCmd.AddCommand(newRolloutCommand().cmd)
+	rootCmd.AddCommand(newCertCommand().cmd)
 	rootCmd.AddCommand(newVersionCommand().cmd)
 
 	err := rootCmd.Execute()
