@@ -230,6 +230,8 @@ func (s *Service) UpdateOptions(options ServiceOptions, targetOptions TargetOpti
 }
 
 func (s *Service) Dispose() {
+	retireCertManager(s.certManager)
+
 	active, rollout := s.loadBalancers()
 
 	active.Dispose()
@@ -494,10 +496,14 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
+	retired := s.certManager
+
 	s.options = options
 	s.targetOptions = targetOptions
 	s.certManager = certManager
 	s.middleware = middleware
+
+	retireCertManager(retired)
 
 	return nil
 }
@@ -567,7 +573,10 @@ func (s *Service) createCertManager(options ServiceOptions) (CertManager, error)
 		Prompt:     autocert.AcceptTOS,
 		Cache:      certCache,
 		HostPolicy: hostPolicy,
-		Client:     &acme.Client{DirectoryURL: options.ACMEDirectory},
+		Client: &acme.Client{
+			DirectoryURL: options.ACMEDirectory,
+			HTTPClient:   &http.Client{Transport: &renewalTransport{}},
+		},
 	}, nil
 }
 
