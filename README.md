@@ -170,8 +170,12 @@ renew it manually:
 
 By default, this renews the certificates for all of the service's hosts. Use
 `--host` (which can be repeated) to renew only some of them. New certificates
-are requested one host at a time; if a request fails, the existing certificate
-remains in use and the error is reported.
+are requested one host at a time. If a request fails, the certificate it would
+have replaced stays in use, later hosts are not attempted, and the error lists
+the certificates that were renewed before the failure.
+
+When using path-based routing, renew the certificates through the service on
+the root path, as that is the service that manages TLS for its hosts.
 
 Manual renewal counts towards the certificate authority's rate limits (such as
 Let's Encrypt's limit on duplicate certificates), so it should only be used
