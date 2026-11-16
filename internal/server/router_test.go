@@ -73,6 +73,22 @@ func TestRouter_Removing(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, statusCode)
 }
 
+func TestRouter_RemovingRetiresCertManager(t *testing.T) {
+	router := testRouter(t)
+	_, target := testBackend(t, "first", http.StatusOK)
+
+	serviceOptions := defaultServiceOptions
+	serviceOptions.Hosts = []string{"example.com"}
+	serviceOptions.TLSEnabled = true
+	serviceOptions.ACMECachePath = t.TempDir()
+
+	require.NoError(t, router.DeployService("service1", []string{target}, defaultEmptyReaders, serviceOptions, defaultTargetOptions, defaultDeploymentOptions))
+	transport := testCertTransport(t, router.services.Get("service1").certManager)
+
+	require.NoError(t, router.RemoveService("service1"))
+	assert.True(t, transport.closed.Load())
+}
+
 func TestRouter_DeployServiceMultipleHosts(t *testing.T) {
 	router := testRouter(t)
 	_, target := testBackend(t, "first", http.StatusOK)

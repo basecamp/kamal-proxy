@@ -2,8 +2,11 @@ package server
 
 import (
 	"crypto/tls"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -54,6 +57,28 @@ func TestErrorWhenKeyFormatIsInvalid(t *testing.T) {
 }
 
 // Helpers
+
+func TestRenewalTransport_FailsRequestsOnceClosed(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+	}))
+	t.Cleanup(server.Close)
+
+	transport := &renewalTransport{}
+	client := &http.Client{Transport: transport}
+
+	resp, err := client.Get(server.URL)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, int32(1), requests.Load())
+
+	transport.close()
+
+	_, err = client.Get(server.URL)
+	require.ErrorIs(t, err, errorCertManagerRetired)
+	assert.Equal(t, int32(1), requests.Load())
+}
 
 func prepareTestCertificateFiles(t *testing.T) (string, string) {
 	t.Helper()

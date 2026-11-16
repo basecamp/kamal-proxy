@@ -3,14 +3,18 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -176,6 +180,42 @@ func TestService_UseStaticTLSCertificateWhenConfigured(t *testing.T) {
 	)
 
 	require.IsType(t, &StaticCertManager{}, service.certManager)
+}
+
+func TestService_RetireReplacedCertManager(t *testing.T) {
+	options := ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, ACMECachePath: t.TempDir()}
+	service := testCreateService(t, options, defaultTargetOptions)
+	replaced := testCertTransport(t, service.certManager)
+
+	require.NoError(t, service.UpdateOptions(options, defaultTargetOptions))
+	current := testCertTransport(t, service.certManager)
+
+	assert.True(t, replaced.closed.Load())
+	assert.False(t, current.closed.Load())
+}
+
+func TestService_RetiredCertManagerDoesNotContactCA(t *testing.T) {
+	var requests atomic.Int32
+	ca := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(ca.Close)
+
+	options := ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, ACMECachePath: t.TempDir(), ACMEDirectory: ca.URL}
+	service := testCreateService(t, options, defaultTargetOptions)
+	replaced := service.certManager
+
+	require.NoError(t, service.UpdateOptions(options, defaultTargetOptions))
+
+	// Renewals go through the same ACME client as issuance.
+	_, err := replaced.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"})
+	require.ErrorIs(t, err, errorCertManagerRetired)
+	assert.Zero(t, requests.Load())
+
+	_, err = service.certManager.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"})
+	require.Error(t, err)
+	assert.NotZero(t, requests.Load())
 }
 
 func TestService_RejectTLSRequestsWhenNotConfigured(t *testing.T) {
@@ -418,4 +458,16 @@ func testCreateServiceWithHandler(t *testing.T, options ServiceOptions, targetOp
 	service.active.WaitUntilHealthy(time.Second)
 
 	return service
+}
+
+func testCertTransport(t *testing.T, certManager CertManager) *renewalTransport {
+	t.Helper()
+
+	manager, ok := certManager.(*autocert.Manager)
+	require.True(t, ok)
+
+	transport, ok := manager.Client.HTTPClient.Transport.(*renewalTransport)
+	require.True(t, ok)
+
+	return transport
 }
