@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basecamp/kamal-proxy/internal/pages"
 )
 
 func TestService_ServeRequest(t *testing.T) {
@@ -24,6 +27,155 @@ func TestService_ServeRequest(t *testing.T) {
 	service.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+}
+
+func TestService_StoppedRequestDoesNotWakeIdleContainer(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	options.IdleWakeTimeout = time.Second
+	service := testCreateService(t, options, defaultTargetOptions)
+	t.Cleanup(service.Dispose)
+	lifecycle := &fakeLifecycle{}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+	require.NoError(t, service.pauseController.Stop(DefaultStopMessage))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Zero(t, lifecycle.starts.Load())
+}
+
+func TestService_RedirectDoesNotWakeIdleContainer(t *testing.T) {
+	options := ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSRedirect: true, IdleTimeout: time.Minute, IdleWakeTimeout: time.Second}
+	service := testCreateService(t, options, defaultTargetOptions)
+	t.Cleanup(service.Dispose)
+	lifecycle := &fakeLifecycle{}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusMovedPermanently, w.Code)
+	assert.Zero(t, lifecycle.starts.Load())
+}
+
+func TestService_InternalRequestDoesNotWakeIdleContainer(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	options.IdleWakeTimeout = time.Second
+	service := testCreateService(t, options, defaultTargetOptions)
+	t.Cleanup(service.Dispose)
+	lifecycle := &fakeLifecycle{}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req = req.WithContext(markInternalRequest(req.Context()))
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	assert.Zero(t, lifecycle.starts.Load())
+}
+
+func TestService_WakeFailureDoesNotExposeLifecycleError(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	options.IdleWakeTimeout = time.Second
+	service := testCreateService(t, options, defaultTargetOptions)
+	t.Cleanup(service.Dispose)
+	lifecycle := &fakeLifecycle{startErr: errors.New("secret-container: permission denied on /var/run/docker.sock")}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	handler, err := WithErrorPageMiddleware(pages.DefaultErrorPages, true, service)
+	require.NoError(t, err)
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.NotContains(t, w.Body.String(), "secret-container")
+	assert.NotContains(t, w.Body.String(), "docker.sock")
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+}
+
+func TestService_HealthCheckReportsWakeFailure(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	options.IdleWakeTimeout = time.Second
+	service := testCreateService(t, options, defaultTargetOptions)
+	t.Cleanup(service.Dispose)
+	lifecycle := &fakeLifecycle{startErr: errors.New("start failed")}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	healthReq := httptest.NewRequest(http.MethodGet, "http://example.com"+defaultTargetOptions.HealthCheckConfig.Path, nil)
+	healthResponse := httptest.NewRecorder()
+	service.ServeHTTP(healthResponse, healthReq)
+
+	assert.Equal(t, http.StatusServiceUnavailable, healthResponse.Code)
+}
+
+func TestService_WakeStartsActiveAndRolloutTargets(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	options.IdleWakeTimeout = time.Second
+	service := testCreateServiceWithHandler(t, options, defaultTargetOptions, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("active"))
+	}))
+	t.Cleanup(service.Dispose)
+	_, rolloutTarget := testBackend(t, "rollout", http.StatusOK)
+	target, err := NewTarget(rolloutTarget, defaultTargetOptions)
+	require.NoError(t, err)
+	rollout := NewLoadBalancer(TargetList{target}, DefaultWriterAffinityTimeout, false)
+	require.NoError(t, rollout.WaitUntilHealthy(time.Second))
+	service.UpdateLoadBalancer(rollout, TargetSlotRollout)
+	require.NoError(t, service.SetRolloutSplit(100, nil))
+	require.NoError(t, service.EnableRollout())
+	lifecycle := &fakeLifecycle{}
+	service.idleController.mu.Lock()
+	service.idleController.lifecycle = lifecycle
+	service.idleController.State = IdleStateSleeping
+	service.idleController.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.AddCookie(&http.Cookie{Name: RolloutCookieName, Value: "1"})
+	w := httptest.NewRecorder()
+	service.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "rollout", w.Body.String())
+	assert.Equal(t, int32(2), lifecycle.starts.Load())
+}
+
+func TestService_WaitUntilIdleTargetsHealthyWithoutLoadBalancer(t *testing.T) {
+	options := defaultServiceOptions
+	options.IdleTimeout = time.Minute
+	service, err := NewService("test", options, defaultTargetOptions, &fakeLifecycle{})
+	require.NoError(t, err)
+	t.Cleanup(service.idleController.Close)
+
+	assert.ErrorIs(t, service.waitUntilIdleTargetsHealthy(time.Second), ErrorNoHealthyTargets)
 }
 
 func TestService_ClientIPHeaderRewritesXForwardedFor(t *testing.T) {
@@ -124,6 +276,8 @@ func TestServiceOptions_Validate(t *testing.T) {
 
 	assertValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "/allow-host"})
 	assertValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "https://example.com/allow-host"})
+	assertNotValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "/allow-host", IdleTimeout: time.Minute}, "idle mode cannot be used with a local TLS on-demand URL")
+	assertValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "https://example.com/allow-host", IdleTimeout: time.Minute})
 	assertNotValid(ServiceOptions{Hosts: []string{"example.com"}, TLSEnabled: true, TLSOnDemandURL: "/allow-host"}, "cannot set hosts when using a TLS on-demand URL")
 	assertNotValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "ftp://example.com/allow-host"}, "unsupported scheme")
 	assertNotValid(ServiceOptions{TLSEnabled: true, TLSOnDemandURL: "://invalid-url"}, "unable to parse tls-on-demand-url")
@@ -394,6 +548,17 @@ func TestService_UnmarshallingStateFromLegacyFormat(t *testing.T) {
 	assert.Equal(t, 3*time.Second, service.targetOptions.ResponseTimeout)
 }
 
+func TestNewServiceWithIdleLifecycleBeforeActiveLoadBalancer(t *testing.T) {
+	service, err := NewService("test", ServiceOptions{
+		IdleTimeout:     time.Minute,
+		IdleWakeTimeout: time.Second,
+	}, defaultTargetOptions, &fakeLifecycle{})
+	require.NoError(t, err)
+	t.Cleanup(service.idleController.Close)
+
+	assert.Empty(t, service.idleController.ContainerNames)
+}
+
 func testCreateService(t *testing.T, options ServiceOptions, targetOptions TargetOptions) *Service {
 	return testCreateServiceWithHandler(
 		t, options, targetOptions,
@@ -411,7 +576,7 @@ func testCreateServiceWithHandler(t *testing.T, options ServiceOptions, targetOp
 	target, err := NewTarget(serverURL.Host, targetOptions)
 	require.NoError(t, err)
 
-	service, err := NewService("test", options, targetOptions)
+	service, err := NewService("test", options, targetOptions, &fakeLifecycle{})
 	require.NoError(t, err)
 
 	service.UpdateLoadBalancer(NewLoadBalancer(TargetList{target}, DefaultWriterAffinityTimeout, false), TargetSlotActive)

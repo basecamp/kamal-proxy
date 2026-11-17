@@ -52,6 +52,9 @@ func newDeployCommand() *deployCommand {
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.WriterAffinityTimeout, "writer-affinity-timeout", server.DefaultWriterAffinityTimeout, "Time after a write before read requests will be routed to readers")
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.ServiceOptions.ReadTargetsAcceptWebsockets, "read-target-websockets", false, "Route WebSocket traffic to read targets, when available")
 
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.IdleTimeout, "idle-timeout", 0, "Stop container after this duration of inactivity (0 to disable)")
+	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.ServiceOptions.IdleWakeTimeout, "idle-wake-timeout", server.DefaultIdleWakeTimeout, "Max time to hold request while waking container")
+
 	deployCommand.cmd.Flags().DurationVar(&deployCommand.args.TargetOptions.ResponseTimeout, "target-timeout", server.DefaultTargetTimeout, "Maximum time to wait for the target server to respond when serving requests")
 
 	deployCommand.cmd.Flags().BoolVar(&deployCommand.args.TargetOptions.BufferRequests, "buffer-requests", false, "Buffer requests before forwarding to target")
