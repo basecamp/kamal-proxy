@@ -106,7 +106,11 @@ func (p *PauseController) Resume() error {
 }
 
 func (p *PauseController) Wait() (PauseWaitAction, string) {
-	state, stopMessage, pauseChannel, failChannel := p.getWaitState()
+	state, stopMessage, pauseChannel, failTimer := p.getWaitState()
+
+	if failTimer != nil {
+		defer failTimer.Stop()
+	}
 
 	switch state {
 	case PauseStateRunning:
@@ -124,18 +128,18 @@ func (p *PauseController) Wait() (PauseWaitAction, string) {
 			default:
 				return PauseWaitActionProceed, ""
 			}
-		case <-failChannel:
+		case <-failTimer.C:
 			return PauseWaitActionTimedOut, ""
 		}
 	}
 }
 
-func (p *PauseController) getWaitState() (PauseState, string, chan bool, <-chan time.Time) {
+func (p *PauseController) getWaitState() (PauseState, string, chan bool, *time.Timer) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	if p.State == PauseStatePaused {
-		return PauseStatePaused, "", p.pauseChannel, time.After(p.FailAfter)
+		return PauseStatePaused, "", p.pauseChannel, time.NewTimer(p.FailAfter)
 	}
 
 	return p.State, p.StopMessage, nil, nil
