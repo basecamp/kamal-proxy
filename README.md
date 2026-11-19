@@ -58,6 +58,24 @@ Because traffic is only routed to a new instance once it's healthy, and traffic
 is drained completely from old instances before they are removed, deployments
 take place with zero downtime.
 
+### Running work when draining begins
+
+By default, `deploy` returns after the new targets are healthy, traffic has
+switched, and the old targets have drained. To notify retiring applications at
+the start of draining, use `--async-drain`:
+
+```sh
+drain_id=$(kamal-proxy deploy service1 --target web-2:3000 --async-drain)
+# Notify the retiring application, for example to close its SSE streams.
+kamal-proxy wait-drain "$drain_id"
+```
+
+The first command returns a drain ID only after the healthy targets take over
+new traffic. Existing requests continue draining under the configured drain
+timeout, even if the deploying client disconnects. `wait-drain` waits for that
+specific deployment's drain to finish and consumes its ID. IDs are local to the
+running proxy; unconsumed IDs expire five minutes after draining finishes.
+
 ### Customizing the health check
 
 By default, Kamal Proxy will test the health of each service by sending a `GET`

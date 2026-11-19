@@ -149,6 +149,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) DeployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deploymentOptions DeploymentOptions) error {
+	return r.deployService(name, targetURLs, readerURLs, options, targetOptions, deploymentOptions, nil)
+}
+
+func (r *Router) deployService(name string, targetURLs, readerURLs []string, options ServiceOptions, targetOptions TargetOptions, deploymentOptions DeploymentOptions, onDraining func()) error {
 	if err := options.Validate(); err != nil {
 		return err
 	}
@@ -168,6 +172,9 @@ func (r *Router) DeployService(name string, targetURLs, readerURLs []string, opt
 		return err
 	}
 
+	if onDraining != nil {
+		onDraining()
+	}
 	if replaced != nil {
 		replaced.Dispose()
 		replaced.DrainAll(deploymentOptions.DrainTimeout)
