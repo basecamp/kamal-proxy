@@ -147,6 +147,33 @@ Paths are specified as the upstream receives them. Services deployed using
 stripped path prefixes should specify their excluded paths in the un-prefixed
 form.
 
+### Filtering sensitive paths from logs
+
+Some URLs carry a secret in the path itself, such as an invitation token or
+a signed link. The proxy logs the path of every request, so those secrets
+end up in its logs unless they are filtered.
+
+To filter them, use `--log-filter-path` when deploying. Each value is a
+regular expression matched against the request path. When the expression has
+capture groups, the text each group matches is replaced with `[FILTERED]`;
+otherwise the whole match is. The flag may be repeated:
+
+    kamal-proxy deploy service1 --target web-1:3000 \
+      --log-filter-path '/invitations/([^/]+)' \
+      --log-filter-path '^/shared/([^/]+)/files/(.+)'
+
+A request for `/invitations/abc123/accept` is then logged with the path
+`/invitations/[FILTERED]/accept`. Use non-capturing groups, `(?:...)`, for
+grouping that shouldn't be filtered. Every expression is matched against the
+original path, in full, including any path prefix, after decoding, so an
+encoded `%2F` within a segment is matched as `/`.
+
+The filtered path is logged wherever the proxy logs the path of a request
+routed to the service, including its error lines. Other values are logged as
+they are: the query string, any headers logged with `--log-request-header` or
+`--log-response-header`, and error messages. Requests that don't route to any
+service aren't filtered, since no service's filter applies to them.
+
 
 ### Automatic TLS
 

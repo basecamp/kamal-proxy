@@ -135,3 +135,22 @@ func TestDeployCommand_CanonicalHostValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestDeployCommand_LogFilterPath(t *testing.T) {
+	t.Run("patterns keep their commas and can be repeated", func(t *testing.T) {
+		cmd := newDeployCommand()
+		require.NoError(t, cmd.cmd.ParseFlags([]string{"--log-filter-path", `/invites/([^/]{6,})`, "--log-filter-path", `/tokens/([^/]+)`}))
+
+		assert.Equal(t, []string{`/invites/([^/]{6,})`, `/tokens/([^/]+)`}, cmd.args.ServiceOptions.LogFilterPaths)
+		require.NoError(t, cmd.preRun(cmd.cmd, []string{"test-service"}))
+	})
+
+	t.Run("an invalid pattern is rejected", func(t *testing.T) {
+		cmd := newDeployCommand()
+		require.NoError(t, cmd.cmd.ParseFlags([]string{"--log-filter-path", `/invites/([^/]+`}))
+
+		err := cmd.preRun(cmd.cmd, []string{"test-service"})
+		require.ErrorContains(t, err, "invalid log filter path")
+		require.ErrorIs(t, err, server.ErrServiceOptionsInvalid)
+	})
+}

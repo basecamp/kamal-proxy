@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -115,6 +116,7 @@ type ServiceOptions struct {
 	ReadTargetsAcceptWebsockets bool          `json:"read_targets_accept_websockets"`
 	ExcludeMetricsPaths         []string      `json:"exclude_metrics_paths"`
 	ClientIPHeader              string        `json:"client_ip_header"`
+	LogFilterPaths              []string      `json:"log_filter_paths"`
 }
 
 func (so *ServiceOptions) ShouldExcludeMetrics(r *http.Request) bool {
@@ -157,6 +159,10 @@ func (so ServiceOptions) Validate() error {
 		if !slices.Contains(so.PathPrefixes, rootPath) {
 			return fmt.Errorf("%w: TLS settings must be specified on the root path service", ErrServiceOptionsInvalid)
 		}
+	}
+
+	if _, err := NewLogPathFilter(so.LogFilterPaths); err != nil {
+		return fmt.Errorf("%w: %w", ErrServiceOptionsInvalid, err)
 	}
 
 	if so.CanonicalHost != "" && len(so.Hosts) > 0 && so.Hosts[0] != "" {
@@ -209,8 +215,9 @@ type Service struct {
 	pauseController   *PauseController
 	rolloutController *RolloutController
 
-	certManager CertManager
-	middleware  http.Handler
+	certManager   CertManager
+	middleware    http.Handler
+	logPathFilter atomic.Pointer[LogPathFilter]
 }
 
 func NewService(name string, options ServiceOptions, targetOptions TargetOptions) (*Service, error) {
@@ -312,6 +319,8 @@ func (s *Service) RemoveRollout() (*LoadBalancer, error) {
 }
 
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	LoggingRequestContext(r).filterPath(r, s.logPathFilter.Load())
+
 	if s.options.ShouldExcludeMetrics(r) {
 		LoggingRequestContext(r).ExcludeMetrics = true
 	} else {
@@ -494,10 +503,16 @@ func (s *Service) initialize(options ServiceOptions, targetOptions TargetOptions
 		return err
 	}
 
+	logPathFilter, err := NewLogPathFilter(options.LogFilterPaths)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrServiceOptionsInvalid, err)
+	}
+
 	s.options = options
 	s.targetOptions = targetOptions
 	s.certManager = certManager
 	s.middleware = middleware
+	s.logPathFilter.Store(logPathFilter)
 
 	return nil
 }
@@ -527,7 +542,7 @@ func (s *Service) loadBalancers() (active, rollout *LoadBalancer) {
 func (s *Service) loadBalancerForRequest(req *http.Request) *LoadBalancer {
 	lb := s.active
 	if s.rollout != nil && s.rolloutController != nil && s.rolloutController.RequestUsesRolloutGroup(req) {
-		slog.Debug("Using rollout for request", "service", s.name, "path", req.URL.Path)
+		slog.Debug("Using rollout for request", "service", s.name, "path", LoggedPath(req))
 		LoggingRequestContext(req).Rollout = true
 		lb = s.rollout
 	}
@@ -657,7 +672,7 @@ func (s *Service) handlePausedAndStoppedRequests(w http.ResponseWriter, r *http.
 		return true
 
 	case PauseWaitActionTimedOut:
-		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", r.URL.Path)
+		slog.Warn("Rejecting request due to expired pause", "service", s.name, "path", LoggedPath(r))
 		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
 		return true
 	}

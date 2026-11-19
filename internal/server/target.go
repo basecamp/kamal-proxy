@@ -365,7 +365,7 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 	}
 
 	if t.isRequestBodyTimeout(err) || requestBodyTimedOut(r) {
-		slog.Info("Timed out reading request body", "target", t.Address(), "path", r.URL.Path, "error", err)
+		slog.Info("Timed out reading request body", "target", t.Address(), "path", LoggedPath(r), "error", err)
 		SetErrorResponse(w, r, http.StatusRequestTimeout, nil)
 		return
 	}
@@ -383,18 +383,18 @@ func (t *Target) handleProxyError(w http.ResponseWriter, r *http.Request, err er
 	}
 
 	if t.isDraining(err) {
-		slog.Info("Request cancelled due to draining", "target", t.Address(), "path", r.URL.Path)
+		slog.Info("Request cancelled due to draining", "target", t.Address(), "path", LoggedPath(r))
 		SetErrorResponse(w, r, http.StatusGatewayTimeout, nil)
 		return
 	}
 
 	if isChunkedEncodingError(err) {
-		slog.Info("Malformed request", "target", t.Address(), "path", r.URL.Path, "error", err)
+		slog.Info("Malformed request", "target", t.Address(), "path", LoggedPath(r), "error", err)
 		SetErrorResponse(w, r, http.StatusBadRequest, nil)
 		return
 	}
 
-	slog.Error("Error while proxying", "target", t.Address(), "path", r.URL.Path, "error", err)
+	slog.Error("Error while proxying", "target", t.Address(), "path", LoggedPath(r), "error", err)
 	SetErrorResponse(w, r, http.StatusBadGateway, nil)
 }
 
