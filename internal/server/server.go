@@ -200,10 +200,17 @@ func (s *Server) startMetricsServer() error {
 		ReadHeaderTimeout: s.config.ReadHeaderTimeout,
 		IdleTimeout:       s.config.IdleTimeout,
 	}
+	if s.config.MetricsTls {
+		s.metricsServer.TLSConfig = &tls.Config{
+			MinVersion:     tls.VersionTLS13,
+			GetCertificate: s.router.GetCertificate,
+		}
+		go s.metricsServer.ServeTLS(s.metricsListener, "", "")
+	} else {
+		go s.metricsServer.Serve(s.metricsListener)
+	}
 
-	go s.metricsServer.Serve(s.metricsListener)
-
-	slog.Info("Metrics enabled", "address", addr)
+	slog.Info("Metrics enabled", "port", s.config.MetricsPort, "TLS", s.config.MetricsTls)
 
 	return nil
 }
